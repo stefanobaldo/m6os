@@ -13,8 +13,10 @@ subsystem.
 Said aloud, "m6" is "MSiX": MSX + Unix. The name also points at Sixth Edition
 Unix, the small, readable Unix that left Bell Labs and seeded everything after it.
 
-**Status:** work has not started. The repository holds the project's terms; the
-first code arrives with the build tooling.
+**Status:** the build tooling is in place. `make check` assembles the test
+programs and runs them in a headless openMSX, on an MSX2 with a 128K memory
+mapper, in CI on every change. No system code exists yet; see
+[`CONTRIBUTING.md`](CONTRIBUTING.md) for how to build and test.
 
 ## Documents
 
