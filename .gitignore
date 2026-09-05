@@ -4,3 +4,5 @@ build/
 tools/openmsx/systemroms/*
 !tools/openmsx/systemroms/.gitkeep
 .DS_Store
+tools/openmsx/.filecache
+tools/openmsx/software/
