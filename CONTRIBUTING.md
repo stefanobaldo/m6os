@@ -31,3 +31,29 @@ If an issue goes quiet, say so on it.
   [Developer Certificate of Origin](https://developercertificate.org/): you wrote
   the change or otherwise have the right to submit it under this project's
   license. Pull requests with unsigned commits fail the DCO check.
+
+## Building and testing
+
+`make check` is the one command: it fetches every tool it needs, builds, and
+runs every test. It is what CI runs on every pull request, and what a pull
+request is expected to pass.
+
+Prerequisites: `make`, a C++ compiler (sjasmplus is built from source),
+`curl`, `unzip`, `xz` and `shasum`. On x86_64 Linux nothing else: openMSX is
+fetched too. Elsewhere, install openMSX 21.0 and have `openmsx` on `PATH`;
+there is no portable build to fetch, and the version is checked.
+
+Every download is pinned by version and checksum in `tools/fetch-*.sh`. Tools
+land in `.tools/` (ignored by git) and the ROMs in `tools/openmsx/systemroms/`;
+`make distclean` removes both, `make clean` only the build output.
+
+`make` alone assembles the test programs into `build/` and prints one
+`SIZE <name> <bytes>` line per binary. `tools/run-test.sh <name>` runs a single
+test: it builds a disk image with the Nextor system files, the program and an
+`AUTOEXEC.BAT` that runs it, boots it in headless openMSX on an MSX2 with a
+128K mapper, and reads the program's verdict from memory. The harness's exit
+code is 0 for a pass, 1 for a fail and 2 when no verdict arrived in time; its
+messages go to stderr, and stdout carries what the program wrote through the
+emulator's debug device. `build/<name>.lst` is the assembler listing, and
+`build/<name>.err` the raw stderr of the last emulator run, before the harness
+filters it.

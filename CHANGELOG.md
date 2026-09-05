@@ -12,3 +12,14 @@ there is something to qualify; `0.1.0` is cut after it has been, and is the firs
 version anyone else is meant to install.
 
 ## [Unreleased]
+
+### Added
+
+- Build system: `make` assembles the programs under `tests/` with sjasmplus
+  1.24.0 and reports the size of every binary it produces.
+- Test harness: `make check` fetches the pinned tools (sjasmplus, openMSX 21.0,
+  a C-BIOS build that hosts Nextor, Nextor 2.1.4), builds a bootable disk image
+  per test and runs it in headless openMSX on an MSX2 with a 128K memory
+  mapper, reading the program's verdict back from memory.
+- Continuous integration: `make check` runs on every pull request and on every
+  push to `main`.
