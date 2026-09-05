@@ -13,9 +13,12 @@ subsystem.
 Said aloud, "m6" is "MSiX": MSX + Unix. The name also points at Sixth Edition
 Unix, the small, readable Unix that left Bell Labs and seeded everything after it.
 
-**Status:** the build tooling is in place. `make check` assembles the test
-programs and runs them in a headless openMSX, on an MSX2 with a 128K memory
-mapper, in CI on every change. No system code exists yet; see
+**Status:** the first piece of system code is in: a module that finds the
+Nextor driver behind a drive letter and reads and writes device sectors by
+calling the driver's own entry point directly, with the Nextor kernel
+bypassed. A test proves it on every change, in a headless openMSX against
+the Sunrise IDE driver, on an MSX2 with a 128K memory mapper, through
+`make check`. There is no kernel yet; see
 [`CONTRIBUTING.md`](CONTRIBUTING.md) for how to build and test.
 
 ## Documents
