@@ -1,0 +1,6 @@
+.tools/
+build/
+*.dsk
+tools/openmsx/systemroms/*
+!tools/openmsx/systemroms/.gitkeep
+.DS_Store
