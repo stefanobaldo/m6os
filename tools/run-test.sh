@@ -26,9 +26,24 @@ cp .tools/nextor/NEXTOR.SYS .tools/nextor/COMMAND2.COM "$staging/"
 cp "$com" "$staging/$upper.COM"
 printf '%s\r\n' "$upper" > "$staging/AUTOEXEC.BAT"
 
+# openMSX's Linux build probes the ALSA sequencer for MIDI ports whenever it
+# builds its pluggables: the call is compiled in (PluggableFactory, guarded by
+# COMPONENT_ALSAMIDI) with no runtime switch, so on a machine with no
+# sequencer -- every CI runner -- libasound and then openMSX each print one
+# line about it. Nothing here uses MIDI. Drop those two lines and nothing
+# else: only the alsa-lib source line number and the strerror text are left
+# loose, so an alsa-lib update puts the noise back in the log instead of
+# silently widening what the filter hides. stderr is collected first so
+# openMSX's exit status survives, which a pipeline would replace with grep's.
 openmsx_run() {
+    status=0
     "$OPENMSX" -machine m6-msx2-128k -setting tools/openmsx/settings.xml \
-        -command "set renderer none" "$@"
+        -command "set renderer none" "$@" 2> "build/$name.err" || status=$?
+    grep -v \
+        -e '^ALSA lib seq_hw\.c:[0-9]*:(snd_seq_hw_open) open /dev/snd/seq failed: ' \
+        -e '^error: Could not open sequencer: ' \
+        "build/$name.err" >&2 || :
+    return $status
 }
 
 export M6_IMAGE="$ROOT/build/$name.dsk" M6_STAGING="$ROOT/$staging"

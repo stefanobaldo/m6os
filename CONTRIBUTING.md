@@ -54,4 +54,6 @@ test: it builds a disk image with the Nextor system files, the program and an
 128K mapper, and reads the program's verdict from memory. The harness's exit
 code is 0 for a pass, 1 for a fail and 2 when no verdict arrived in time; its
 messages go to stderr, and stdout carries what the program wrote through the
-emulator's debug device. `build/<name>.lst` is the assembler listing.
+emulator's debug device. `build/<name>.lst` is the assembler listing, and
+`build/<name>.err` the raw stderr of the last emulator run, before the harness
+filters it.
