@@ -1,0 +1,30 @@
+<?xml version="1.0" ?>
+<!DOCTYPE msxconfig SYSTEM 'msxconfig2.dtd'>
+<msxconfig>
+  <info>
+    <name>Sunrise ATA-IDE with Nextor 2.1.4</name>
+    <manufacturer>Sunrise</manufacturer>
+    <code/>
+    <release_year>1995</release_year>
+    <description>ATA-IDE interface with the Nextor 2.1.4 kernel ROM and one hard disk, the image given with -hda. No slave: openMSX's stock extension declares one and creates a 100 MB image for it on every run.</description>
+    <type>external hard disk</type>
+  </info>
+  <devices>
+    <primary slot="any">
+      <secondary slot="any">
+        <SunriseIDE id="Sunrise IDE">
+          <mem base="0x0000" size="0x10000"/>
+          <rom>
+            <filename>Nextor-2.1.4.SunriseIDE.ROM</filename>
+            <sha1>d03ea188cb0d6cfcb07a02fcc8ec01896a3a7fb7</sha1>
+          </rom>
+          <master>
+            <type>IDEHD</type>
+            <filename>hd_master.dsk</filename>
+            <size>2</size>
+          </master>
+        </SunriseIDE>
+      </secondary>
+    </primary>
+  </devices>
+</msxconfig>
