@@ -13,7 +13,9 @@
 #
 # Environment: M6_TEST (the test's name), M6_TEST_DIR (its directory; if it
 # holds <name>.tcl, that file is sourced before polling starts), M6_DEADLINE
-# (optional, seconds of real time; default 60).
+# (optional, seconds of real time; default 60). A test's .tcl may
+# `set show_screen 1` to have the text screen printed on a pass as well as
+# on a failure, for a test whose report is worth keeping in the log.
 set MAILBOX  0x8000
 set PASS     0xA5
 set FAIL     0x5A
@@ -21,6 +23,7 @@ set FAIL     0x5A
 set DEADLINE [expr {[info exists ::env(M6_DEADLINE)] ? $::env(M6_DEADLINE) : 60}]
 
 set test $::env(M6_TEST)
+set show_screen 0
 set throttle off
 set mute on
 
@@ -33,7 +36,7 @@ proc screen {} {
 # openMSX's Tcl exit does not unwind the script; callers return after it.
 proc finish {code msg} {
     puts stderr "harness: $::test: $msg"
-    if {$code != 0} { puts stderr [screen] }
+    if {$code != 0 || $::show_screen} { puts stderr [screen] }
     exit $code
 }
 
