@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    env:
+      # openMSX runs with `set renderer none`, but SDL still initialises video
+      # and audio, and the runner has neither a display nor a sound device.
+      SDL_VIDEODRIVER: dummy
+      SDL_AUDIODRIVER: dummy
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache the fetched tools
+        uses: actions/cache@v4
+        with:
+          path: |
+            .tools
+            tools/openmsx/systemroms
+          key: tools-${{ runner.os }}-${{ hashFiles('tools/fetch-*.sh', 'tools/lib.sh') }}
+
+      - name: Build and test
+        run: make check
