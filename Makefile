@@ -16,7 +16,7 @@ OPENMSX   := $(if $(wildcard .tools/openmsx/bin/openmsx),.tools/openmsx/bin/open
 TESTS     := $(notdir $(patsubst %/,%,$(dir $(wildcard tests/*/*.asm))))
 TEST_BINS := $(foreach t,$(TESTS),build/$(t).com)
 
-.PHONY: all check-sjasmplus check-openmsx check-tools sizes clean distclean
+.PHONY: all check check-sjasmplus check-openmsx check-tools fetch sizes clean distclean
 
 all: check-sjasmplus $(TEST_BINS) sizes
 
@@ -49,6 +49,20 @@ check-openmsx:
 	    echo "openMSX $(OPENMSX_VERSION) required, found '$$v' via $(OPENMSX); run tools/fetch-openmsx.sh" >&2; exit 1; }
 
 check-tools: check-sjasmplus check-openmsx
+
+fetch:
+	tools/fetch-sjasmplus.sh
+	tools/fetch-openmsx.sh
+	tools/fetch-cbios.sh
+	tools/fetch-nextor.sh
+
+# The one command: tools, build, every test in name order, stop at the first
+# failure, summary.
+check: fetch
+	@$(MAKE) --no-print-directory all check-tools
+	@set -e; n=0; for t in $(TESTS); do \
+	    echo "TEST $$t"; tools/run-test.sh $$t; n=$$((n + 1)); \
+	done; echo "OK: $$n test(s) passed"
 
 clean:
 	rm -rf build
