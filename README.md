@@ -23,9 +23,9 @@ the Sunrise IDE driver, on an MSX2 with a 128K memory mapper, through
 
 **Hardware.** The emulator holds the baseline — an MSX2 with a 128K mapper, the
 smallest machine m6 targets — and real hardware holds the rest. The driver call
-is verified on an MSX2+ at 3.58 MHz and on a One Chip MSX, against the SD Mapper
-V2 driver through an MSX-Pico+. A run against the Sunrise IDE driver, through a
-Carnivore2, is still pending.
+is verified on an MSX2+ at 3.58 MHz and on a One Chip MSX, against two Nextor 2
+drivers written by different authors: the SD Mapper V2 driver through an
+MSX-Pico+, and the Sunrise IDE driver through a Carnivore2.
 
 ## Documents
 
