@@ -699,6 +699,10 @@ cluster:    dw  0
 n:          dw  0
 t0:         dw  0
 
+; The driver module's two external needs: under Nextor, the BIOS routine and
+; the DOS variable.
+nx_enaslt   equ ENASLT
+nx_ramslot1 equ RAMAD1
         include "nextor/abi2.asm"
 
         ASSERT $ < 4000h

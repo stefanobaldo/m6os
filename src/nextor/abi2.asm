@@ -2,15 +2,20 @@
 ; and write device sectors by calling its DEV_RW entry point directly —
 ; slot switch, bank switch, call — never through the Nextor kernel.
 ;
-; nx_find needs the Nextor BDOS and exists only while Nextor is resident.
-; nx_rw needs nothing of Nextor: ENASLT, RAMAD1 and the ROM addresses in
-; nextor.inc. Its dependencies are listed there so a kernel that has taken
-; the machine can satisfy them itself.
+; nx_find needs the Nextor BDOS and exists only while Nextor is resident;
+; a file that defines NX_RW_ONLY before including this one leaves it out.
+; nx_rw needs nothing of Nextor. Its two external needs are supplied by the
+; including file: nx_enaslt, a routine with the BIOS ENASLT's contract
+; (A = slot, HL = address, interrupts disabled on return), and nx_ramslot1,
+; the address of a byte holding the RAM slot to put back in page 1. A
+; program under Nextor points them at ENASLT and RAMAD1; a kernel that has
+; taken the machine points them at its own.
 ;
 ; Both expect a stack outside page 1, run the driver with interrupts
 ; disabled and return with them enabled. The including file includes
 ; nextor/nextor.inc first.
 
+    IFNDEF NX_RW_ONLY
 ; nx_find — fill a driver descriptor for a drive.
 ; In:  A = drive (0 = A:), IX -> NXD_SIZE-byte descriptor,
 ;      HL -> 64-byte scratch buffer, not in page 1.
@@ -77,15 +82,15 @@ nx_find:
         push    ix
         ld      a,(ix+NXD_SLOT)
         ld      hl,4000h
-        call    ENASLT
+        call    nx_enaslt
         pop     ix
         ei
         ld      a,(NX_K_SIZE)
         ld      (ix+NXD_BANK),a
         push    ix
-        ld      a,(RAMAD1)
+        ld      a,(nx_ramslot1)
         ld      hl,4000h
-        call    ENASLT
+        call    nx_enaslt
         pop     ix
         ei
         call    nx_enter
@@ -119,6 +124,7 @@ nx_find:
 
 nx_sign:
         db      "NEXTOR_DRIVER",0
+    ENDIF
 
 ; nx_rw — read or write device sectors through the driver's DEV_RW.
 ; In:  IX -> descriptor, Cy = 0 read / 1 write, B = sector count,
@@ -159,7 +165,7 @@ nx_enter:
         push    ix
         ld      a,(ix+NXD_SLOT)
         ld      hl,4000h
-        call    ENASLT                  ; returns with interrupts disabled
+        call    nx_enaslt               ; returns with interrupts disabled
         pop     ix
         ld      a,(NX_CUR_BANK)
         ld      (nx_saved_bank),a
@@ -172,9 +178,9 @@ nx_enter:
 nx_leave:
         ld      a,(nx_saved_bank)
         call    NX_CHGBNK
-        ld      a,(RAMAD1)
+        ld      a,(nx_ramslot1)
         ld      hl,4000h
-        call    ENASLT
+        call    nx_enaslt
         ei
         ret
 
