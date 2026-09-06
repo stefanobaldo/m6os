@@ -1,0 +1,43 @@
+; The interrupt entry.
+;
+; The Z80 runs in mode 1: every interrupt jumps to 0038h, which the loader
+; and k_irq_init point at k_isr. The VDP is the only interrupt source on the
+; base machine; it raises INT at every vertical retrace (60 Hz) and holds it
+; until status register 0 is read, so reading S#0 is the acknowledgement.
+; Nothing else is done per tick. The BIOS's own handler — hooks, keyboard
+; scan every third tick — never runs again.
+
+; k_irq_init — install the vector, select S#0, zero the counter. Call with
+; interrupts disabled; the caller enables them. Corrupts AF, BC, HL.
+k_irq_init:
+        ld      a,0C3h
+        ld      (K_INTRPT),a
+        ld      hl,K_ISR
+        ld      (K_INTRPT+1),hl
+        ld      a,(K_REC+KR_VDPRD)
+        inc     a
+        ld      (k_isr_in+1),a          ; the status port, into the IN below
+        ld      a,(K_REC+KR_VDPWR)
+        inc     a
+        ld      c,a
+        xor     a
+        out     (c),a                   ; R#15 = 0: S#0 is what IN reads
+        ld      a,80h+15
+        out     (c),a
+        ld      hl,0
+        ld      (K_TICKS),hl
+        ret
+
+; k_isr — acknowledge the VDP and count. Preserves everything.
+k_isr:
+        push    af
+k_isr_in:
+        in      a,(0)                   ; S#0; the port is patched at init
+        push    hl
+        ld      hl,(K_TICKS)
+        inc     hl
+        ld      (K_TICKS),hl
+        pop     hl
+        pop     af
+        ei
+        reti
