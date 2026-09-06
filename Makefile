@@ -12,9 +12,15 @@ OPENMSX_VERSION   := 21.0
 SJASMPLUS := $(if $(wildcard .tools/sjasmplus/bin/sjasmplus),.tools/sjasmplus/bin/sjasmplus,sjasmplus)
 OPENMSX   := $(if $(wildcard .tools/openmsx/bin/openmsx),.tools/openmsx/bin/openmsx,openmsx)
 
-# Every tests/<name>/<name>.asm builds to build/<name>.com.
+# Every tests/<name>/<name>.asm builds to build/<name>.com. A test may include
+# modules from src/ (the build passes -Isrc); every src/ file is a prerequisite
+# of every test binary, so a module edit rebuilds the tests that include it.
 TESTS     := $(notdir $(patsubst %/,%,$(dir $(wildcard tests/*/*.asm))))
 TEST_BINS := $(foreach t,$(TESTS),build/$(t).com)
+SRC_FILES := $(wildcard src/*/*.asm src/*/*.inc)
+# sjasmplus rejects an include path that does not exist, so -Isrc is passed
+# only once there is a src/ to point at.
+INCLUDES  := -Itests $(if $(wildcard src),-Isrc)
 
 .PHONY: all check check-sjasmplus check-openmsx check-tools fetch sizes clean distclean
 
@@ -26,8 +32,8 @@ build:
 # A pattern rule cannot say tests/%/%.asm (only the first % is the stem), so
 # one explicit rule is generated per test.
 define test_rule
-build/$(1).com: tests/$(1)/$(1).asm tests/m6test.inc | build
-	$$(SJASMPLUS) --nologo --msg=war -Itests --raw=$$@ --lst=build/$(1).lst $$<
+build/$(1).com: tests/$(1)/$(1).asm tests/m6test.inc $$(SRC_FILES) | build
+	$$(SJASMPLUS) --nologo --msg=war $$(INCLUDES) --raw=$$@ --lst=build/$(1).lst $$<
 endef
 $(foreach t,$(TESTS),$(eval $(call test_rule,$(t))))
 
