@@ -12,8 +12,18 @@ proc post_verdict {} {
     if {[catch {diskmanipulator export hda $dir} err]} {
         return "export from the image failed: $err"
     }
-    set f [file join $dir M6WRITE.TST]
-    if {![file exists $f]} { return "M6WRITE.TST is not on the volume" }
+    # The exporter writes an 8.3 name in lower case, so the name on disk is
+    # not the name the program created. On a case-insensitive filesystem
+    # either spelling opens the file and the difference never shows; on a
+    # case-sensitive one only the exporter's does. Match without case.
+    set f ""
+    foreach entry [glob -nocomplain -directory $dir -types f *] {
+        if {[string equal -nocase [file tail $entry] "M6WRITE.TST"]} {
+            set f $entry
+            break
+        }
+    }
+    if {$f eq ""} { return "M6WRITE.TST is not on the volume" }
     set fh [open $f rb]
     set data [read $fh]
     close $fh
