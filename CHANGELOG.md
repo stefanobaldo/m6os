@@ -44,8 +44,12 @@ version anyone else is meant to install.
   refusals, checks the cap, and measures a 16K page copy by `LDIR` and by
   unrolled `LDI`. Runs on the 128K machine and on a new 4 MB machine
   definition, each with and without `mem=128`; on the 4 MB machine the
-  allocation walks segments 128 to 255, which no machine on the bench can
-  reach.
+  allocation walks segments 128 to 255. Also run on an MSX2+ at 3.58 MHz and
+  on a One Chip MSX, where detection reports 32 segments, 64 with a Carnivore2
+  inserted, and 128 and 256 at 2 MB and 4 MB — 256 where Nextor reports 255 —
+  and a second mapper of 432K answers 27 segments, a count that is not a power
+  of two; a 16K page copy takes 105.48 ms by `LDIR` and 94.02 ms by unrolled
+  `LDI` on the 3.58 MHz machine.
 - Test harness: a test may list command lines to run with
   (`tests/<name>/args`, one run per line); on a run that never reports, the
   harness prints which slot the memory scan was in.
