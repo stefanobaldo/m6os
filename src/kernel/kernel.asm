@@ -3,11 +3,11 @@
 ; there after filling the capture record, then jumps to K_ENTRY.
 ;
 ; What is here: slot switching, the interrupt entry, the console, the
-; Nextor driver call, and k_main, the boot sequence, which ends by jumping
-; wherever the record says. The image includes the tests' shared
-; definitions for the mailbox and the debug device. The stack is the last
-; thing in the image and its top is K_END; a loader may put a program's own
-; block above it.
+; Nextor driver call, memory — mapper detection and the segment allocator —
+; and k_main, the boot sequence, which ends by jumping wherever the record
+; says. The image includes the tests' shared definitions for the mailbox
+; and the debug device. The stack is the last thing in the image and its
+; top is K_END; a loader may put a program's own block above it.
         include "m6test.inc"
         include "nextor/nextor.inc"
         include "kernel/kernel.inc"
@@ -33,6 +33,10 @@ k_api:
         jp      con_dec16               ; API_CON_DEC16
         jp      nx_rw                   ; API_NX_RW
         jp      k_enaslt                ; API_K_ENASLT
+        jp      mem_alloc               ; API_MEM_ALLOC
+        jp      mem_free                ; API_MEM_FREE
+        jp      mem_free_all            ; API_MEM_FREE_ALL
+        jp      mem_info                ; API_MEM_INFO
 k_rec:  ds      KREC_SIZE
         ASSERT  k_ticks == K_TICKS
         ASSERT  k_probe == K_PROBE
@@ -50,10 +54,12 @@ nx_ramslot1     equ K_REC+KR_RAMAD+1
         include "kernel/irq.asm"
         include "kernel/con.asm"
         include "nextor/abi2.asm"
+        include "kernel/mem.asm"
         include "kernel/main.asm"
 
+; The stack: mapper detection saves 256 bytes on it under its own frames.
 k_stack:
-        ds      256
+        ds      512
 k_end:
 
 ; Exported for programs that assemble a block to run at K_END.

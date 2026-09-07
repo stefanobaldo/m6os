@@ -15,18 +15,20 @@ K_END           equ K_BASE+8    ; dw: first address after the image; also
                                 ;     where a loader puts a program's block
 K_STUB          equ K_BASE+10   ; dw: address of the subslot stub image,
                                 ;     K_SSLOT_LEN bytes, to copy to K_SSLOT
-K_PROBE         equ K_BASE+12   ; db: reserved for memory detection — the
-                                ;     byte it writes when the segment under
-                                ;     test is the one in page 3
-K_PROBE_SLOT    equ K_BASE+13   ; db: reserved — the slot being probed
+K_PROBE         equ K_BASE+12   ; db: the byte mapper detection writes when
+                                ;     the segment under test is the one in
+                                ;     page 3 (mem.asm); its page offset is
+                                ;     the probe address in every segment
+K_PROBE_SLOT    equ K_BASE+13   ; db: the slot being probed, for a harness
+                                ;     to read if the scan never returns
 K_API           equ K_BASE+16   ; K_API_N entries of JP, 3 bytes each: what
                                 ;     a program calls in the resident; the
                                 ;     order is fixed and only grows
-K_API_N         equ 8
+K_API_N         equ 12
 K_REC           equ K_API+3*K_API_N     ; the capture record, KREC_SIZE bytes
 
 ; The jump table's entries. Contracts are the routines' own (con.asm,
-; abi2.asm, slot.asm).
+; abi2.asm, slot.asm, mem.asm).
 API_CON_PUTS    equ 0           ; HL -> 0-terminated string
 API_CON_PUTC    equ 1           ; A = character; 10 is a newline
 API_CON_NEWLINE equ 2
@@ -35,6 +37,10 @@ API_CON_HEX16   equ 4           ; HL
 API_CON_DEC16   equ 5           ; HL, no leading zeros
 API_NX_RW       equ 6           ; IX -> descriptor, Cy, B, HL, DE -> sector
 API_K_ENASLT    equ 7           ; A = slot, HL = address; DI on return
+API_MEM_ALLOC   equ 8           ; B = owner -> A = segment; CF if none
+API_MEM_FREE    equ 9           ; A = segment, B = owner; CF if refused
+API_MEM_FREE_ALL equ 10         ; B = owner
+API_MEM_INFO    equ 11          ; -> HL, BC, DE, A
 
 ; k_call n — call the resident through the jump table.
     macro k_call n
@@ -73,6 +79,18 @@ KR_TEST         equ 54          ; 2: where k_main jumps after boot; 0 = halt
 KR_MEMCAP       equ 56          ; usable segments of the primary mapper;
                                 ; 0 = no cap (256 is therefore written as 0)
 KREC_SIZE       equ 57
+
+; Memory (mem.asm). Owners in the segment table; the mapper table's layout.
+MEM_FREE        equ 0           ; owner: nobody
+MEM_KERNEL      equ 0FEh        ; owner: the kernel; 01h-FDh are processes
+MEM_RESERVED    equ 0FFh        ; absent, above the cap, or in use at boot:
+                                ; never on the free stack, never freed
+MEM_MAPS_MAX    equ 4           ; mappers the table holds; more are counted
+MM_SLOT         equ 0           ; slot id, E000SSPP
+MM_SEGS         equ 1           ; 2: segments, 1-256
+MM_FLAGS        equ 3           ; MMF_*
+MM_SIZE         equ 4
+MMF_PRIMARY     equ 1           ; the mapper page 3 lives in
 
 ; Page 0. Every page 0 the kernel runs with carries these two things and
 ; nothing else is required of it: the interrupt entry, and the secondary
