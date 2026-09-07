@@ -39,11 +39,13 @@ version anyone else is meant to install.
   the resident.
 - Test `mapper`: checks the detected count against what Nextor saw,
   allocates every free segment, writes each one at both ends and reads
-  them all back distinct, exercises the allocator's refusals, checks the
-  cap, and measures a 16K page copy by `LDIR` and by unrolled `LDI`. Runs
-  on the 128K machine and on a new 4 MB machine definition, each with and
-  without `mem=128`; on the 4 MB machine the allocation walks segments 128
-  to 255, which no machine on the bench can reach.
+  them all back distinct, frees them as a whole and allocates them again to
+  prove the same segment never comes back twice, exercises the allocator's
+  refusals, checks the cap, and measures a 16K page copy by `LDIR` and by
+  unrolled `LDI`. Runs on the 128K machine and on a new 4 MB machine
+  definition, each with and without `mem=128`; on the 4 MB machine the
+  allocation walks segments 128 to 255, which no machine on the bench can
+  reach.
 - Test harness: a test may list command lines to run with
   (`tests/<name>/args`, one run per line); on a run that never reports, the
   harness prints which slot the memory scan was in.
