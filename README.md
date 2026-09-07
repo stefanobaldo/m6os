@@ -44,6 +44,14 @@ through both drivers, a sector is read and written with the Nextor kernel
 overwritten, and Nextor reads that sector back from the file on the next boot.
 One driver call takes 4.75 ms through the Sunrise IDE and 5.30 ms through the
 FBLabs SDXC on the MSX2+ at 3.58 MHz, measured by difference over 600 reads.
+Mapper detection reports 32 segments on the MSX2+, and 64 with a Carnivore2
+inserted —
+the cartridge's own mapper, with the machine's 32 segments detected beside it
+and left alone — and 128 and 256 segments on the One Chip MSX at 2 MB and 4 MB,
+where Nextor reports 255. A second mapper is detected wherever it sits: an
+MSX-Pico+ holding 432K answers 27 segments, a count that is not a power of two.
+A 16K page copy by `LDIR` takes 105.48 ms on the MSX2+ at 3.58 MHz, 94.02 ms by
+unrolled `LDI`.
 
 ## Documents
 
