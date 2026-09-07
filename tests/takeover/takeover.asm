@@ -500,6 +500,10 @@ start:
         ld      (REC+KR_TEST),hl
         xor     a
         ld      (REC+KR_MEMCAP),a       ; no cap
+        ld      hl,ksimage              ; the switched part of the kernel
+        ld      (REC+KR_KSEG_SRC),hl
+        ld      hl,ksimage_end-ksimage
+        ld      (REC+KR_KSEG_LEN),hl
         call    ld_takeover
         jp      fail                    ; it returns only with A = F3h
 
@@ -859,6 +863,10 @@ ld_block_len equ tblock_end-tblock
 kimage:
         incbin  "build/kernel.bin"
 kimage_end:
+ksimage:
+        incbin  "build/kseg.bin"
+ksimage_end:
+        ASSERT  ksimage_end < 8000h     ; the resident copies it from pages 0-1
 
 ; The second half: assembled for K_IMAGE_END (build/kernel.exp), where the
 ; loader copies it, above the image in page 3. It runs once the kernel has
