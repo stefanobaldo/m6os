@@ -28,10 +28,14 @@ through `make check`. There is no scheduler and no filesystem yet; see
 [`CONTRIBUTING.md`](CONTRIBUTING.md) for how to build and test.
 
 **Hardware.** The emulator holds the baseline — an MSX2 with a 128K mapper, the
-smallest machine m6 targets — and real hardware holds the rest. The driver call
-is verified on an MSX2+ at 3.58 MHz and on a One Chip MSX, against two Nextor 2
-drivers written by different authors: the SD Mapper V2 driver through an
-MSX-Pico+, and the Sunrise IDE driver through a Carnivore2.
+smallest machine m6 targets — and real hardware holds the rest. Taking the
+machine is verified on an MSX2+ at 3.58 MHz and on a One Chip MSX, against two
+Nextor 2 drivers written by different authors: Sunrise IDE 0.1.7 through a
+Carnivore2, and FBLabs SDXC 1.1.0 through an MSX-Pico+. On both machines, and
+through both drivers, a sector is read and written with the Nextor kernel
+overwritten, and Nextor reads that sector back from the file on the next boot.
+One driver call takes 4.75 ms through the Sunrise IDE and 5.30 ms through the
+FBLabs SDXC on the MSX2+ at 3.58 MHz, measured by difference over 600 reads.
 
 ## Documents
 
