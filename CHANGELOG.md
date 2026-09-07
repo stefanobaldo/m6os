@@ -41,7 +41,11 @@ version anyone else is meant to install.
   its stack in page 2; a refused creation when no segment is free, with
   nothing leaked; and the round trip of a null syscall on each path, by
   difference over 524 288 calls — 17.35 µs resident and 78.61 µs switched
-  in the emulator. Runs on the 128K and the 4 MB machines.
+  in the emulator. Runs on the 128K and the 4 MB machines. Also run on an
+  MSX2+ at 3.58 MHz and on a One Chip MSX, through the FBLabs SDXC 1.1.0
+  driver, where a null system call goes round in 17.29 µs resident and
+  78.55 µs switched on the 3.58 MHz machine; the emulator's figures above
+  are hints and land within two ticks of it.
 - The build reports the switched image's size beside the resident's.
 - Memory (`src/kernel/mem.asm`): the resident detects every memory mapper in
   the machine by writing and reading back through page 2 — mirroring
