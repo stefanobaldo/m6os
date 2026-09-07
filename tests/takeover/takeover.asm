@@ -1,13 +1,15 @@
 ; takeover — take the machine from Nextor and call the cartridge's driver
 ; with the Nextor kernel gone. Under Nextor: find the driver, capture what
 ; the resident needs, create a file to write into, time a reference loop.
-; Then: hooks restored, the resident image copied to page 3, the interrupt
-; vector and the subslot stub written to page 0, jump. The resident
-; (src/kernel/main.asm) does the rest and halts. Runs in openMSX and on real
-; hardware alike; the report is on screen, the verdict in the mailbox.
+; Then the loader module hands the machine to the resident, which boots and
+; jumps to this program's second half — a block the loader copied above the
+; image, calling the resident through its jump table — which does the rest
+; and halts. Runs in openMSX and on real hardware alike; the report is on
+; screen, the verdict in the mailbox.
         include "m6test.inc"
         include "nextor/nextor.inc"
         include "kernel/kernel.inc"
+        include "build/kernel.exp"
 
 ; MSX-DOS 2 function calls used here (DOS2-FCS.TXT, Nextor Programmers
 ; Reference). Strings for _STROUT end in '$'.
@@ -53,33 +55,17 @@ start:
         ld      (step),a
         ld      de,s_version
         call    puts
-        ld      c,_DOSVER
-        ld      b,5Ah
-        ld      hl,1234h
-        ld      de,0ABCDh
-        ld      ix,0
-        call    BDOS
-        or      a
-        jp      nz,fail
-        ld      a,b
-        cp      2
-        ld      a,0F0h                  ; not MSX-DOS 2 or later
-        jp      c,fail
-        ld      a,ixh
-        cp      1
-        jr      z,.nextor
+        call    ld_nextor2
+        jr      z,.nextor2
+        cp      0F1h
+        jr      nz,.not1
         ld      de,s_notnextor
         call    puts
-        ld      a,0F1h                  ; MSX-DOS 2, not Nextor
-        jp      fail
-.nextor:
-        ld      a,ixl
-        cp      2
-        jr      z,.nextor2
+.not1:  cp      0F2h
+        jr      nz,.not2
         ld      de,s_nextor3
         call    puts
-        ld      a,0F2h                  ; Nextor, but not a 2.x kernel
-        jp      fail
+.not2:  jp      fail
 .nextor2:
         ld      a,ixl
         call    putdec
@@ -510,53 +496,12 @@ start:
 ; --- the takeover -----------------------------------------------------
         ld      de,s_takeover
         call    puts
-        ld      a,(B_CSRY)              ; where the screen output stands now
-        ld      (REC+KR_CSRY),a
-        di
-        ld      hl,REC+KR_TIMISAVE      ; the hooks as they were before Nextor
-        ld      de,B_HTIMI
-        ld      bc,5
-        ldir
-        ld      hl,REC+KR_FCALSAVE
-        ld      de,B_FCALL
-        ld      bc,5
-        ldir
-        ld      hl,kimage               ; the resident, then the record into it
-        ld      de,K_BASE
-        ld      bc,kimage_end-kimage
-        ldir
-        ld      hl,REC
-        ld      de,K_REC
-        ld      bc,KREC_SIZE
-        ldir
-        ld      hl,(K_END)              ; 55h from the image's end to the wall
-        ld      de,(REC+KR_WALL)
-        ex      de,hl
-        or      a
-        sbc     hl,de
-        ld      b,h
-        ld      c,l
-        ex      de,hl
-        ld      (hl),55h
-        ld      d,h
-        ld      e,l
-        inc     de
-        dec     bc
-        ld      a,b
-        or      c
-        jr      z,.filled
-        ldir
-.filled:
-        ld      hl,(K_STUB)             ; the subslot stub into page 0
-        ld      de,K_SSLOT
-        ld      bc,K_SSLOT_LEN
-        ldir
-        ld      a,0C3h                  ; the interrupt vector
-        ld      (K_INTRPT),a
-        ld      hl,K_ISR
-        ld      (K_INTRPT+1),hl
-        ld      sp,(K_END)
-        jp      K_ENTRY
+        ld      hl,t_entry              ; the block's entry, once booted
+        ld      (REC+KR_TEST),hl
+        xor     a
+        ld      (REC+KR_MEMCAP),a       ; no cap
+        call    ld_takeover
+        jp      fail                    ; it returns only with A = F3h
 
 ; fail — A = error code, (step) = the step that failed.
 fail:
@@ -903,9 +848,414 @@ nx_ramslot1 equ RAMAD1
         include "nextor/abi2.asm"
         include "nextor/capture.asm"
 
+; The loader module's four: the image, the record, the block and its length.
+ld_image    equ kimage
+ld_rec      equ REC
+ld_block    equ tblock
+ld_block_len equ tblock_end-tblock
+        include "loader/takeover.asm"
+
 ; The resident image, copied to K_BASE by the takeover.
 kimage:
         incbin  "build/kernel.bin"
 kimage_end:
+
+; The second half: assembled for K_IMAGE_END (build/kernel.exp), where the
+; loader copies it, above the image in page 3. It runs once the kernel has
+; booted, with pages 1 and 2 free, and reaches the resident through the
+; jump table. Step numbers continue the loader's.
+tblock:
+        DISP    K_IMAGE_END
+t_entry:
+; --- step 8: destroy the Nextor kernel's RAM segments ------------------
+        ld      a,8
+        ld      (t_step),a
+        ld      a,(K_REC+KR_CODESEG)
+        out     (0FEh),a                ; page 2 shows the kernel code segment
+        call    t_fill_p2
+        ld      a,(K_REC+KR_DATASEG)
+        out     (0FEh),a
+        call    t_fill_p2
+        ld      a,(K_REC+KR_SEG64K+2)
+        out     (0FEh),a                ; page 2 is the test's again
+        ld      hl,t_k8
+        k_call  API_CON_PUTS
+        ld      a,(K_REC+KR_CODESEG)
+        call    k_dec8
+        ld      hl,t_and
+        k_call  API_CON_PUTS
+        ld      a,(K_REC+KR_DATASEG)
+        call    k_dec8
+        ld      hl,t_k8b
+        k_call  API_CON_PUTS
+
+; --- step 9: where m6 is ----------------------------------------------
+        ld      a,9
+        ld      (t_step),a
+        ld      hl,t_k9
+        k_call  API_CON_PUTS
+        ld      hl,(K_REC+KR_WALL)
+        k_call  API_CON_HEX16
+        ld      hl,t_resident
+        k_call  API_CON_PUTS
+        ld      hl,(K_END)
+        ld      de,K_BASE
+        or      a
+        sbc     hl,de
+        k_call  API_CON_DEC16
+        ld      hl,t_room
+        k_call  API_CON_PUTS
+        ld      hl,(K_REC+KR_WALL)
+        ld      de,(K_END)
+        or      a
+        sbc     hl,de
+        k_call  API_CON_DEC16
+        k_call  API_CON_NEWLINE
+
+; --- step 10: read with the kernel gone -------------------------------
+        ld      a,10
+        ld      (t_step),a
+        ld      hl,t_k10
+        k_call  API_CON_PUTS
+        call    t_sec_first
+        call    t_rw_read
+        jp      nz,t_fail
+        ld      hl,KT_BUF_A
+        ld      de,KT_BUF_B
+        call    k_cmp512
+        jp      nz,t_fail_cmp
+        ld      hl,t_ok
+        k_call  API_CON_PUTS
+
+; --- step 11: write with the kernel gone ------------------------------
+        ld      a,11
+        ld      (t_step),a
+        ld      hl,t_k11
+        k_call  API_CON_PUTS
+        ld      a,0A5h                  ; pattern P2
+        call    k_fill_c
+        ld      hl,K_REC+KR_TARGET
+        ld      de,t_secnum
+        ld      bc,4
+        ldir
+        ld      ix,K_REC+KR_DRV
+        scf                             ; write
+        ld      b,1
+        ld      hl,KT_BUF_C
+        ld      de,t_secnum
+        k_call  API_NX_RW
+        or      a
+        jp      nz,t_fail
+        call    t_rw_read               ; t_secnum is still the target
+        jp      nz,t_fail
+        ld      hl,KT_BUF_C
+        ld      de,KT_BUF_B
+        call    k_cmp512
+        jp      nz,t_fail_cmp
+        ld      hl,t_ok
+        k_call  API_CON_PUTS
+
+; --- step 12: the same 600 reads, counted by m6, checked against the RTC --
+; Ticks count real time, so this loop takes fewer of them than it did under
+; Nextor by whatever the BIOS and Nextor interrupt handlers used to cost —
+; which is also what a lost tick would look like, so the two counts cannot
+; be compared. The real-time clock is the independent reference: the loop
+; watches its seconds digit, and between the first and the last change it
+; sees, n whole seconds pass; k_ticks must have advanced by 60 n, within
+; T_TICK_TOL, while the driver was being called.
+        ld      a,12
+        ld      (t_step),a
+        ld      hl,t_k12
+        k_call  API_CON_PUTS
+        ld      hl,t_rw_read
+        ld      (t_loop_fn),hl
+        call    t_loop600
+        ld      (t_tpost),hl
+        k_call  API_CON_DEC16
+        ld      hl,t_nextor
+        k_call  API_CON_PUTS
+        ld      hl,(K_REC+KR_TPRE)
+        k_call  API_CON_DEC16
+        ld      hl,t_close
+        k_call  API_CON_PUTS
+        ld      hl,t_rtc
+        k_call  API_CON_PUTS
+        ld      a,(t_rtc_n)
+        dec     a                       ; changes seen - 1 = whole seconds
+        ld      a,0F7h                  ; the clock did not advance twice
+        jp      m,t_fail
+        jp      z,t_fail
+        ld      a,(t_rtc_n)
+        dec     a
+        ld      (t_rtc_n),a
+        call    k_dec8
+        ld      hl,t_rtcb
+        k_call  API_CON_PUTS
+        ld      hl,(t_rtc_last)
+        ld      de,(t_rtc_first)
+        or      a
+        sbc     hl,de                   ; ticks over those seconds
+        push    hl
+        k_call  API_CON_DEC16
+        pop     hl
+        ld      a,(t_rtc_n)
+        ld      d,0
+        ld      e,a
+        ld      b,60
+.x60:   or      a
+        sbc     hl,de                   ; hl -= n, sixty times: hl - 60 n
+        djnz    .x60
+        jr      nc,.abs
+        ex      de,hl
+        ld      hl,0
+        or      a
+        sbc     hl,de                   ; |ticks - 60 n|
+.abs:   ld      de,T_TICK_TOL+1
+        or      a
+        sbc     hl,de
+        ld      a,0F6h                  ; ticks were lost
+        jp      nc,t_fail
+        ld      hl,t_tickok
+        k_call  API_CON_PUTS
+
+; --- step 13: the loop without the call, and the call isolated ----------
+        ld      a,13
+        ld      (t_step),a
+        ld      hl,t_k13
+        k_call  API_CON_PUTS
+        ld      hl,t_rw_none
+        ld      (t_loop_fn),hl
+        call    t_loop600
+        ld      (t_tcmp),hl
+        k_call  API_CON_DEC16
+        ld      hl,t_nextor
+        k_call  API_CON_PUTS
+        ld      hl,(K_REC+KR_TPRECMP)
+        k_call  API_CON_DEC16
+        ld      hl,t_close
+        k_call  API_CON_PUTS
+        ld      hl,t_call
+        k_call  API_CON_PUTS
+        ld      hl,(t_tpost)
+        ld      de,(t_tcmp)
+        or      a
+        sbc     hl,de                   ; the call's ticks over 600 iterations
+        push    hl
+        k_call  API_CON_DEC16
+        ld      hl,t_callb
+        k_call  API_CON_PUTS
+        pop     hl
+        ld      de,1667                 ; hundredths of a millisecond per tick
+        ld      bc,600
+        call    k_muldiv
+        call    k_hundredths
+        ld      hl,t_callc
+        k_call  API_CON_PUTS
+
+; --- step 14: verdict -------------------------------------------------
+        ld      hl,t_pass
+        k_call  API_CON_PUTS
+        m6_verdict M6_PASS
+        jr      t_halt
+
+; t_fail — A = error code, (t_step) = the step.
+t_fail:
+        push    af
+        k_call  API_CON_NEWLINE
+        ld      hl,t_sfail
+        k_call  API_CON_PUTS
+        ld      a,(t_step)
+        call    k_dec8
+        ld      hl,t_code
+        k_call  API_CON_PUTS
+        pop     af
+        k_call  API_CON_HEX8
+        k_call  API_CON_NEWLINE
+        m6_verdict M6_FAIL
+        jr      t_halt
+
+; t_fail_cmp — HL = offset of the first difference, B = expected, C = found.
+t_fail_cmp:
+        push    hl
+        push    bc
+        k_call  API_CON_NEWLINE
+        ld      hl,t_sfail
+        k_call  API_CON_PUTS
+        ld      a,(t_step)
+        call    k_dec8
+        ld      hl,t_diff
+        k_call  API_CON_PUTS
+        pop     bc
+        pop     hl
+        push    bc
+        k_call  API_CON_HEX16
+        ld      a,' '
+        k_call  API_CON_PUTC
+        pop     bc
+        ld      a,b
+        k_call  API_CON_HEX8
+        ld      a,' '
+        k_call  API_CON_PUTC
+        ld      a,c
+        k_call  API_CON_HEX8
+        k_call  API_CON_NEWLINE
+        m6_verdict M6_FAIL
+        jr      t_halt
+
+; t_halt — nothing left to do: halt with interrupts on, so the tick counter
+; keeps running for anyone watching it, and stay halted.
+t_halt:
+        ei
+        halt
+        jr      t_halt
+
+; t_loop600 — 600 times: t_secnum = first, call (t_loop_fn), compare
+; KT_BUF_A with KT_BUF_B; meanwhile watch the RTC's seconds digit and note
+; k_ticks at its first and last change (t_rtc_first, t_rtc_last, t_rtc_n
+; changes). Returns HL = ticks elapsed. Fails through t_fail.
+t_loop600:
+        ld      a,13                    ; RTC mode register: block 0 (time),
+        out     (0B4h),a                ; timer running
+        ld      a,08h
+        out     (0B5h),a
+        call    t_rtc_sec
+        ld      (t_rtc_prev),a
+        xor     a
+        ld      (t_rtc_n),a
+        ld      hl,(K_TICKS)
+        ld      (t_t0),hl
+        ld      hl,600
+.loop:  ld      (t_n),hl
+        call    t_rtc_watch
+        call    t_sec_first
+        ld      hl,(t_loop_fn)
+        call    k_call_hl
+        jp      nz,t_fail
+        ld      hl,KT_BUF_A
+        ld      de,KT_BUF_B
+        call    k_cmp512
+        jp      nz,t_fail_cmp
+        ld      hl,(t_n)
+        dec     hl
+        ld      a,h
+        or      l
+        jr      nz,.loop
+        ld      hl,(K_TICKS)
+        ld      de,(t_t0)
+        or      a
+        sbc     hl,de
+        ret
+
+; t_rtc_sec — A = the RTC's seconds units digit (register 0, block 0).
+t_rtc_sec:
+        xor     a
+        out     (0B4h),a
+        in      a,(0B5h)
+        and     0Fh
+        ret
+
+; t_rtc_watch — if the seconds digit has moved on by one since the last
+; look, note k_ticks. A value that is not the next digit is a read caught
+; mid-carry and is ignored.
+t_rtc_watch:
+        call    t_rtc_sec
+        ld      b,a
+        ld      a,(t_rtc_prev)
+        cp      b
+        ret     z
+        inc     a
+        cp      10
+        jr      nz,.next
+        xor     a
+.next:  cp      b
+        ret     nz
+        ld      (t_rtc_prev),a
+        ld      hl,(K_TICKS)
+        ld      (t_rtc_last),hl
+        ld      a,(t_rtc_n)
+        or      a
+        jr      nz,.count
+        ld      (t_rtc_first),hl
+.count: inc     a
+        ld      (t_rtc_n),a
+        ret
+
+; t_rw_read — one sector, t_secnum, into KT_BUF_B through the driver.
+; Z if ok, else NZ with A = the driver's error code.
+t_rw_read:
+        ld      ix,K_REC+KR_DRV
+        or      a
+        ld      b,1
+        ld      hl,KT_BUF_B
+        ld      de,t_secnum
+        k_call  API_NX_RW
+        or      a
+        ret
+
+; t_rw_none — what the loop calls instead of the driver in step 13.
+t_rw_none:
+        xor     a
+        ret
+
+; t_sec_first — t_secnum = the partition's first device sector.
+t_sec_first:
+        ld      hl,K_REC+KR_FIRST
+        ld      de,t_secnum
+        ld      bc,4
+        ldir
+        ret
+
+; t_fill_p2 — fill page 2 with AAh.
+t_fill_p2:
+        ld      hl,8000h
+        ld      (hl),0AAh
+        ld      de,8001h
+        ld      bc,3FFFh
+        ldir
+        ret
+
+        include "m6util.asm"
+
+T_TICK_TOL      equ 4           ; ticks the count over n RTC seconds may
+                                ; differ from 60 n by: 59.92 Hz over ~8 s is
+                                ; under one, plus one at each end
+
+t_k8:       db  "8 kernel segments ",0
+t_and:      db  " and ",0
+t_k8b:      db  " overwritten",10,0
+t_k9:       db  "9 m6: wall ",0
+t_resident: db  "h resident ",0
+t_room:     db  " room ",0
+t_k10:      db  "10 read with kernel out: ",0
+t_k11:      db  "11 write with kernel out: ",0
+t_k12:      db  "12 600 reads under m6: ",0
+t_nextor:   db  " ticks (Nextor: ",0
+t_close:    db  ")",10,0
+t_rtc:      db  "   rtc: ",0
+t_rtcb:     db  " s = ",0
+t_tickok:   db  " ticks: tick ok",10,0
+t_k13:      db  "13 without the call: ",0
+t_call:     db  "   call = ",0
+t_callb:    db  " ticks/600 = ",0
+t_callc:    db  " ms at 60 Hz",10,0
+t_ok:       db  "ok",10,0
+t_pass:     db  "PASS",10,0
+t_sfail:    db  "FAIL step ",0
+t_code:     db  " code ",0
+t_diff:     db  " differ at ",0
+
+t_step:     db  0
+t_n:        dw  0
+t_t0:       dw  0
+t_tpost:    dw  0
+t_tcmp:     dw  0
+t_rtc_prev: db  0
+t_rtc_n:    db  0
+t_rtc_first: dw 0
+t_rtc_last: dw  0
+t_loop_fn:  dw  0
+t_secnum:   ds  4
+        ENT
+tblock_end:
 
         ASSERT $ < 4000h
