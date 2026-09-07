@@ -51,7 +51,11 @@ proc finish {code msg} {
     exit $code
 }
 
+# On no verdict, the resident's probe-slot byte says which slot the memory
+# scan was in, if the machine wedged there (src/kernel/kernel.inc).
+set PROBE_SLOT 0xC00D
 after realtime $DEADLINE {
+    puts stderr "harness: $::test: probe slot [format %02X [peek $::PROBE_SLOT]]"
     finish 2 "no verdict within $::DEADLINE s of real time"
 }
 
