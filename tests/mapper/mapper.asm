@@ -572,6 +572,62 @@ t_entry:
         sbc     hl,bc
         ld      a,0E3h
         jp      nz,t_fail               ; not back to the start
+        ; The count coming back is not enough: the stack must hold the same
+        ; segments it was given. Allocate them all again — no segment twice,
+        ; as many as before, and every one of them one that was handed out.
+        ld      hl,t_seen
+        ld      (hl),0
+        ld      de,t_seen+1
+        ld      bc,255
+        ldir
+        ld      hl,0
+        ld      (t_count2),hl
+.again: ld      b,1
+        k_call  API_MEM_ALLOC
+        jr      c,.reallocated
+        ld      e,a
+        ld      d,0
+        ld      hl,t_seen
+        add     hl,de
+        ld      a,(hl)
+        or      a
+        ld      a,0E5h
+        jp      nz,t_fail               ; the same segment handed out twice
+        ld      (hl),1
+        ld      hl,(t_count2)
+        inc     hl
+        ld      (t_count2),hl
+        jr      .again
+.reallocated:
+        ld      hl,(t_count2)
+        ld      de,(t_count)
+        or      a
+        sbc     hl,de
+        ld      a,0E5h
+        jp      nz,t_fail               ; fewer, or more, than went in
+        ld      hl,t_segs
+        ld      bc,(t_count)
+.wasgiven:
+        ld      a,b
+        or      c
+        jr      z,.allback
+        ld      a,(hl)
+        push    hl
+        ld      e,a
+        ld      d,0
+        ld      hl,t_seen
+        add     hl,de
+        ld      a,(hl)
+        pop     hl
+        or      a
+        ld      a,0E5h
+        jp      z,t_fail                ; one that went in never came back
+        inc     hl
+        dec     bc
+        jr      .wasgiven
+.allback:
+        ld      b,1
+        k_call  API_MEM_FREE_ALL        ; leave it as this step found it
         ld      hl,t_ok
         k_call  API_CON_PUTS
 
@@ -806,7 +862,9 @@ t_highest:  db  0
 t_src:      db  0
 t_dst:      db  0
 t_t0:       dw  0
+t_count2:   dw  0
 t_segs:     ds  256
+t_seen:     ds  256
         ENT
 tblock_end:
 

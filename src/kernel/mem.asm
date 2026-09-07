@@ -342,8 +342,10 @@ mem_free_all:
         jr      nz,.next
         ld      (hl),MEM_FREE
         push    hl
+        push    de                      ; mem_push corrupts DE; E is the segment
         ld      a,e
         call    mem_push
+        pop     de
         pop     hl
         inc     c
 .next:  inc     hl
