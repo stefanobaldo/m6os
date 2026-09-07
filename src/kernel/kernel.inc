@@ -21,11 +21,20 @@ K_PROBE         equ K_BASE+12   ; db: the byte mapper detection writes when
                                 ;     the probe address in every segment
 K_PROBE_SLOT    equ K_BASE+13   ; db: the slot being probed, for a harness
                                 ;     to read if the scan never returns
+K_KSEG          equ K_BASE+14   ; db: the segment holding the switched part
+                                ;     of the kernel (kwin.asm); 0 until it
+                                ;     is loaded, or when there is none
 K_API           equ K_BASE+16   ; K_API_N entries of JP, 3 bytes each: what
-                                ;     a program calls in the resident; the
-                                ;     order is fixed and only grows
-K_API_N         equ 12
-K_REC           equ K_API+3*K_API_N     ; the capture record, KREC_SIZE bytes
+                                ;     a kernel-side program calls in the
+                                ;     resident; the order is fixed and only
+                                ;     grows
+K_API_N         equ 14
+K_SYS           equ K_BASE+64   ; K_SYS_N entries of JP, 3 bytes each: the
+                                ;     syscall table, what a process calls
+                                ;     (sys.asm); an entry not yet given a
+                                ;     syscall returns ENOSYS
+K_SYS_N         equ 64
+K_REC           equ K_BASE+256  ; the capture record, KREC_SIZE bytes
 
 ; The jump table's entries. Contracts are the routines' own (con.asm,
 ; abi2.asm, slot.asm, mem.asm).
@@ -41,11 +50,81 @@ API_MEM_ALLOC   equ 8           ; B = owner -> A = segment; CF if none
 API_MEM_FREE    equ 9           ; A = segment, B = owner; CF if refused
 API_MEM_FREE_ALL equ 10         ; B = owner
 API_MEM_INFO    equ 11          ; -> HL, BC, DE, A
+API_PROC_CREATE equ 12          ; HL image, BC length, A pages -> A pid; CF
+API_PROC_RUN    equ 13          ; runs the process; -> A = its exit status
 
 ; k_call n — call the resident through the jump table.
     macro k_call n
         call    K_API+3*n
     endm
+
+; The syscalls (sys.asm, proc.asm, kseg.asm) and their table indices. A
+; process calls K_SYS+3*n. Arguments in A, HL, DE, BC as each syscall says;
+; the result in HL (and A when it fits a byte); CF set on error with the
+; errno in A. Nothing the syscall does not return is preserved: BC, DE, IX,
+; IY and the alternate set are undefined afterwards.
+SYS_EXIT        equ 0           ; A = status; does not return
+SYS_WRITE       equ 1           ; A = fd (1, 2), HL = buffer, BC = length
+                                ; -> HL = bytes written; EBADF
+SYS_GETPID      equ 2           ; -> HL = pid
+SYS_SYSCONF     equ 3           ; HL = SC_* -> HL = value; EINVAL
+SYS_N           equ 4           ; entries given a syscall so far
+
+    macro sys n
+        call    K_SYS+3*n
+    endm
+
+SC_PAGESIZE     equ 0           ; 16384
+SC_SEGMENTS     equ 1           ; segments in the primary mapper
+SC_SEGMENTS_USABLE equ 2        ; the count, or the mem= cap
+SC_SEGMENTS_FREE equ 3          ; free now
+
+; Errnos: Seventh Edition's, with its numbers; ENOSYS with Linux's.
+E_PERM          equ 1
+E_NOENT         equ 2
+E_SRCH          equ 3
+E_INTR          equ 4
+E_IO            equ 5
+E_NXIO          equ 6
+E_2BIG          equ 7
+E_NOEXEC        equ 8
+E_BADF          equ 9
+E_CHILD         equ 10
+E_AGAIN         equ 11
+E_NOMEM         equ 12
+E_ACCES         equ 13
+E_FAULT         equ 14
+E_BUSY          equ 16
+E_EXIST         equ 17
+E_NODEV         equ 19
+E_NOTDIR        equ 20
+E_ISDIR         equ 21
+E_INVAL         equ 22
+E_NFILE         equ 23
+E_MFILE         equ 24
+E_NOSPC         equ 28
+E_ROFS          equ 30
+E_PIPE          equ 32
+E_NOSYS         equ 38
+
+; The switched part of the kernel (kseg.asm): assembled at KS_BASE, the
+; kernel window, and entered through its own jump table. Code and constants
+; only — it may be a ROM bank.
+KS_BASE         equ 8000h
+KS_SYSCONF      equ KS_BASE+0   ; the body of SYS_SYSCONF
+KS_SUMMARY      equ KS_BASE+3   ; the boot summary of the memory
+
+; A process (proc.asm): what it sees in page 0, and its record.
+P0_EXIT         equ 0060h       ; xor a; jp K_SYS+3*SYS_EXIT — where a
+                                ; program's final ret lands, and jp 0's
+P0_PROG         equ 0100h       ; where the program starts
+P_PID           equ 0           ; 2: the pid; its low byte is the owner in
+                                ;    the allocator
+P_NPAGES        equ 2           ; pages, 1-3
+P_SEG           equ 3           ; 3: the segment in each of pages 0-2
+P_SP            equ 6           ; 2: the initial stack pointer
+P_STATUS        equ 8           ; the exit status
+P_SIZE          equ 9
 
 ; The capture record: what the resident needs to know about the machine,
 ; gathered by the loader while the previous system is still there. Every
@@ -78,7 +157,11 @@ KR_KSLOTS       equ 50          ; 4: the Nextor kernel slots found (report only)
 KR_TEST         equ 54          ; 2: where k_main jumps after boot; 0 = halt
 KR_MEMCAP       equ 56          ; usable segments of the primary mapper;
                                 ; 0 = no cap (256 is therefore written as 0)
-KREC_SIZE       equ 57
+KR_KSEG_SRC     equ 57          ; 2: where the switched kernel image is, in
+                                ;    pages 0-1 of the loader's memory; 0 =
+                                ;    there is none
+KR_KSEG_LEN     equ 59          ; 2: its length, 1 to 4000h
+KREC_SIZE       equ 61
 
 ; Memory (mem.asm). Owners in the segment table; the mapper table's layout.
 MEM_FREE        equ 0           ; owner: nobody

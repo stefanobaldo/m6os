@@ -16,11 +16,13 @@ OPENMSX   := $(if $(wildcard .tools/openmsx/bin/openmsx),.tools/openmsx/bin/open
 # modules from src/ (the build passes -Isrc); every src/ file is a prerequisite
 # of every test binary, so a module edit rebuilds the tests that include it.
 # The resident kernel image, src/kernel/kernel.asm, builds to build/kernel.bin
-# at its own address; a test that loads it includes the binary and the
-# exported labels.
+# at its own address, and the switched part, src/kernel/kseg.asm, to
+# build/kseg.bin; a test that loads them includes both binaries and the
+# resident's exported labels.
 TESTS     := $(notdir $(patsubst %/,%,$(dir $(wildcard tests/*/*.asm))))
 TEST_BINS := $(foreach t,$(TESTS),build/$(t).com)
 KERNEL    := build/kernel.bin
+KSEG      := build/kseg.bin
 SRC_FILES := $(wildcard src/*/*.asm src/*/*.inc)
 # sjasmplus rejects an include path that does not exist, so -Isrc is passed
 # only once there is a src/ to point at.
@@ -28,7 +30,7 @@ INCLUDES  := -Itests $(if $(wildcard src),-Isrc)
 
 .PHONY: all check check-sjasmplus check-openmsx check-tools fetch sizes clean distclean
 
-all: check-sjasmplus $(KERNEL) $(TEST_BINS) sizes
+all: check-sjasmplus $(KERNEL) $(KSEG) $(TEST_BINS) sizes
 
 build:
 	mkdir -p build
@@ -38,19 +40,25 @@ build:
 $(KERNEL): src/kernel/kernel.asm tests/m6test.inc $(SRC_FILES) | build
 	$(SJASMPLUS) --nologo --msg=war $(INCLUDES) --raw=$@ --lst=build/kernel.lst --exp=build/kernel.exp $<
 
+# The switched part of the kernel, src/kernel/kseg.asm, at its own address:
+# a loader carries it and the resident copies it into a segment at boot.
+$(KSEG): src/kernel/kseg.asm $(SRC_FILES) | build
+	$(SJASMPLUS) --nologo --msg=war $(INCLUDES) --raw=$@ --lst=build/kseg.lst $<
+
 # A pattern rule cannot say tests/%/%.asm (only the first % is the stem), so
 # one explicit rule is generated per test.
 define test_rule
-build/$(1).com: tests/$(1)/$(1).asm tests/m6test.inc $$(SRC_FILES) $$(KERNEL) | build
+build/$(1).com: tests/$(1)/$(1).asm tests/m6test.inc $$(SRC_FILES) $$(KERNEL) $$(KSEG) | build
 	$$(SJASMPLUS) --nologo --msg=war $$(INCLUDES) --raw=$$@ --lst=build/$(1).lst $$<
 endef
 $(foreach t,$(TESTS),$(eval $(call test_rule,$(t))))
 
 # One line per binary, "SIZE <name> <bytes>": what the build reports today
 # and what size limits are later checked against. kernel.bin is the resident
-# image, the number the 16K target is measured against.
-sizes: $(KERNEL) $(TEST_BINS)
-	@for f in $(KERNEL) $(TEST_BINS); do \
+# image, the number the 16K target is measured against; kseg.bin the
+# switched part, against the window's 16K.
+sizes: $(KERNEL) $(KSEG) $(TEST_BINS)
+	@for f in $(KERNEL) $(KSEG) $(TEST_BINS); do \
 	    printf 'SIZE %s %s\n' "$$(basename $$f)" "$$(wc -c < $$f | tr -d ' ')"; \
 	done
 
