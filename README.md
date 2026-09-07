@@ -57,7 +57,10 @@ and left alone — and 128 and 256 segments on the One Chip MSX at 2 MB and 4 MB
 where Nextor reports 255. A second mapper is detected wherever it sits: an
 MSX-Pico+ holding 432K answers 27 segments, a count that is not a power of two.
 A 16K page copy by `LDIR` takes 105.48 ms on the MSX2+ at 3.58 MHz, 94.02 ms by
-unrolled `LDI`.
+unrolled `LDI`. A null system call goes round in 17.29 µs when its body is in
+the resident page and 78.55 µs when it is in the switched image, on the MSX2+ at
+3.58 MHz, measured by difference over 524 288 calls; a process of three pages
+calls through the window with its stack in the page the window takes.
 
 ## Documents
 
