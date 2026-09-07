@@ -211,6 +211,17 @@ con_setrd:
         pop     bc
         ret
 
+; con_newline — a newline. Preserves BC, DE, HL.
+con_newline:
+        ld      a,10
+        jp      con_putc
+
+; con_dec8 — A in decimal. Corrupts AF, DE, HL.
+con_dec8:
+        ld      l,a
+        ld      h,0
+        jp      con_dec16
+
 ; con_hex16 / con_hex8 — HL / A in hexadecimal. Preserve BC, DE, HL.
 con_hex16:
         ld      a,h
@@ -262,37 +273,6 @@ con_dec16:
         ret
 .zero:  pop     af
 .emit:  ld      (con_lead),a            ; any non-zero value: digits have begun
-        jp      con_putc
-
-; con_hundredths — HL = a value in hundredths, printed as N.NN.
-; Corrupts AF, BC, DE, HL.
-con_hundredths:
-        ld      de,100
-        ld      bc,0
-.div:   or      a
-        sbc     hl,de
-        jr      c,.rem
-        inc     bc
-        jr      .div
-.rem:   add     hl,de                   ; hl = remainder, bc = quotient
-        push    hl
-        ld      h,b
-        ld      l,c
-        call    con_dec16
-        ld      a,'.'
-        call    con_putc
-        pop     hl
-        ld      a,l
-        ld      b,'0'-1
-.tens:  inc     b
-        sub     10
-        jr      nc,.tens
-        add     a,10
-        ld      c,a
-        ld      a,b
-        call    con_putc
-        ld      a,c
-        add     a,'0'
         jp      con_putc
 
 con_ctl:        db 0
