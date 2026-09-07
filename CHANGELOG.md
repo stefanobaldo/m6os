@@ -15,6 +15,34 @@ version anyone else is meant to install.
 
 ### Added
 
+- Processes (`src/kernel/proc.asm`): the kernel creates a process of one to
+  three 16K pages from a program image, gives it pages 0–2 with the
+  interrupt vector, the slot-switching stub and an exit stub in the first
+  256 bytes of page 0, starts it at `0100h` with its stack at the top of its
+  highest page, and takes its exit status back; the process's segments are
+  freed when it exits. A program that ends in `ret`, or jumps to 0, exits
+  with status 0.
+- System calls (`src/kernel/sys.asm`, `docs/syscalls.md`): a fixed table of
+  64 entries at `C040h` that a process calls directly, three bytes per
+  entry; `exit`, `write` to the console, `getpid` and `sysconf` (page size,
+  segment counts); every other entry returns `ENOSYS`. Arguments in `A`,
+  `HL`, `DE`, `BC`; result in `HL`; an error is the carry flag with a
+  Seventh Edition error number in `A`; nothing else is preserved.
+- The kernel window (`src/kernel/kwin.asm`, `src/kernel/kseg.asm`): the
+  cold part of the kernel is a second image, code and constants only,
+  loaded at boot into a segment of the kernel's and switched into page 2 for
+  the length of a call — the boot summary of the memory and `sysconf` live
+  there. A syscall on that path runs on a kernel stack, because a three-page
+  process may keep its own stack in page 2. The switch in and out is two
+  macros, the one place a kernel started from a cartridge ROM would change.
+- Test `process`: the window kernel-side; a process that exercises every
+  syscall and every error and exits with a status the kernel checks; `ret`
+  and `jp 0` as exits; a three-page process calling through the window with
+  its stack in page 2; a refused creation when no segment is free, with
+  nothing leaked; and the round trip of a null syscall on each path, by
+  difference over 524 288 calls — 17.35 µs resident and 78.61 µs switched
+  in the emulator. Runs on the 128K and the 4 MB machines.
+- The build reports the switched image's size beside the resident's.
 - Memory (`src/kernel/mem.asm`): the resident detects every memory mapper in
   the machine by writing and reading back through page 2 — mirroring
   handled, the count kept as a word so that a 4 MB mapper reports 256
@@ -97,6 +125,12 @@ version anyone else is meant to install.
 
 ### Changed
 
+- The boot summary of the memory is printed from the switched part of the
+  kernel, and the resident is the smaller for it; the capture record names
+  where the switched image is and how long it is, and every program that
+  loads the kernel carries it.
+- On a 128K machine three segments are free after boot, not four: one holds
+  the switched part of the kernel.
 - The resident image no longer carries any test's code: the `takeover`
   test's second half runs from a block the loader copies above the image
   and calls the resident through the jump table. The build exports the
