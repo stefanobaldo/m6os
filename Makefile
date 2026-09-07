@@ -16,7 +16,8 @@ OPENMSX   := $(if $(wildcard .tools/openmsx/bin/openmsx),.tools/openmsx/bin/open
 # modules from src/ (the build passes -Isrc); every src/ file is a prerequisite
 # of every test binary, so a module edit rebuilds the tests that include it.
 # The resident kernel image, src/kernel/kernel.asm, builds to build/kernel.bin
-# at its own address; a test that loads it includes the binary.
+# at its own address; a test that loads it includes the binary and the
+# exported labels.
 TESTS     := $(notdir $(patsubst %/,%,$(dir $(wildcard tests/*/*.asm))))
 TEST_BINS := $(foreach t,$(TESTS),build/$(t).com)
 KERNEL    := build/kernel.bin
@@ -32,8 +33,10 @@ all: check-sjasmplus $(KERNEL) $(TEST_BINS) sizes
 build:
 	mkdir -p build
 
+# The image also exports the labels a program needs to assemble a block for
+# the address above it (build/kernel.exp, included by such a program).
 $(KERNEL): src/kernel/kernel.asm tests/m6test.inc $(SRC_FILES) | build
-	$(SJASMPLUS) --nologo --msg=war $(INCLUDES) --raw=$@ --lst=build/kernel.lst $<
+	$(SJASMPLUS) --nologo --msg=war $(INCLUDES) --raw=$@ --lst=build/kernel.lst --exp=build/kernel.exp $<
 
 # A pattern rule cannot say tests/%/%.asm (only the first % is the stem), so
 # one explicit rule is generated per test.
