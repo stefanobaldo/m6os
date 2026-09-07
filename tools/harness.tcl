@@ -15,7 +15,11 @@
 # holds <name>.tcl, that file is sourced before polling starts), M6_DEADLINE
 # (optional, seconds of real time; default 60). A test's .tcl may
 # `set show_screen 1` to have the text screen printed on a pass as well as
-# on a failure, for a test whose report is worth keeping in the log.
+# on a failure, for a test whose report is worth keeping in the log; and it
+# may define a `post_verdict` proc, called after a pass and before exit,
+# returning an empty string or the reason the pass is a failure after all —
+# for what the program cannot check itself, such as the disk image's
+# contents seen from outside the machine.
 set MAILBOX  0x8000
 set PASS     0xA5
 set FAIL     0x5A
@@ -35,6 +39,13 @@ proc screen {} {
 
 # openMSX's Tcl exit does not unwind the script; callers return after it.
 proc finish {code msg} {
+    if {$code == 0 && [llength [info procs post_verdict]]} {
+        set why [post_verdict]
+        if {$why ne ""} {
+            set code 1
+            set msg "FAIL after the verdict: $why"
+        }
+    }
     puts stderr "harness: $::test: $msg"
     if {$code != 0 || $::show_screen} { puts stderr [screen] }
     exit $code

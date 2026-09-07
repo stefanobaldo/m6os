@@ -41,3 +41,17 @@ NX_GDLI         equ 79h         ; _GDLI: drive letter information
 NX_E_IDRVR      equ 0B6h        ; .IDRVR: no such driver
 ENASLT          equ 0024h       ; BIOS: A = slot, HL = address; DI on return
 RAMAD1          equ 0F342h      ; MSX-DOS: RAM slot for page 1
+
+; Nextor kernel RAM variables a loader reads before leaving the kernel
+; (source/kernel/data.mac; verified against a running 2.1.4). Meaningful
+; only while the kernel is resident.
+NX_TIMI_SAVE    equ 0F2C0h      ; 5 bytes: H.TIMI before the kernel hooked it
+NX_MAP_TAB      equ 0F2C5h      ; -> mapper records: slot, total, free, ...
+NX_DATA_SEG     equ 0F2CFh      ; segment holding the kernel's data
+NX_CODE_SEG     equ 0F2D0h      ; segment holding the kernel's code
+NX_FCALSAV      equ 0F2D5h      ; 5 bytes: FCALL before the kernel hooked it
+NX_P0_64K       equ 0F314h      ; 4 bytes: the basic 64K's segments, pages 0-3
+NX_KER250       equ 0F31Ah      ; 4 bytes: slot of each kernel, 0 = none;
+                                ; bits 5 and 6 are flags
+NX_RAMAD0       equ 0F341h      ; 4 bytes: RAM slot of each page (RAMAD0-3)
+NX_DOSHIM       equ 0F34Bh      ; top of the kernel's resident code in page 3
