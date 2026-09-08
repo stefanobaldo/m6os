@@ -9,8 +9,9 @@
 ; The subslot register lives at FFFFh of the expanded slot, so to write it
 ; page 3 must show that slot for a few instructions. During those, page 3's
 ; RAM — this code and the stack — is not there. The write is therefore done
-; by k_sslot_stub, copied by the loader to K_SSLOT in page 0, which uses no
-; stack and returns only after page 3 is RAM again.
+; by k_sslot_stub (sslot.asm), present at K_SSLOT in every page 0 the
+; kernel runs with, which uses no stack and returns only after page 3 is
+; RAM again.
 
 ; k_enaslt — A = slot id (E000SSPP), HL = an address in page 1 or 2.
 ; Returns with interrupts disabled. Corrupts AF, BC, DE, HL.
@@ -77,22 +78,5 @@ k_enaslt:
         out     (0A8h),a
         ret
 
-; k_sslot_stub — the image of the routine at K_SSLOT. Position independent.
-; In:  E = primary register value showing the target slot in page 3,
-;      B = primary register value to restore, D = complemented mask for the
-;      page, H = subslot bits for the page. Uses no stack.
-; Out: L = the subslot register value written. Corrupts AF.
-k_sslot_stub:
-        ld      a,e
-        out     (0A8h),a                ; page 3 shows the expanded slot
-        ld      a,(0FFFFh)
-        cpl                             ; the register reads back inverted
-        and     d
-        or      h
-        ld      (0FFFFh),a
-        ld      l,a
-        ld      a,b
-        out     (0A8h),a                ; page 3 is RAM again
-        ret
-k_sslot_stub_end:
-        ASSERT k_sslot_stub_end - k_sslot_stub == K_SSLOT_LEN
+; k_sslot_stub — the image of the routine at K_SSLOT (sslot.asm, included
+; by kernel.asm after this file and by the switched image on its own).
