@@ -97,7 +97,9 @@ its pages, restore — takes 205.26 µs on the MSX2+ at 3.58 MHz, measured by
 difference over 524 288 `yield`s between two processes; two processes alternate
 on the tick there, and creating processes stops with the memory out after five
 on that machine and with the process table full after fifteen on the One Chip
-MSX.
+MSX. A two-page `fork` takes 219.31 ms on the MSX2+ at 3.58 MHz, measured over 32
+forks against 210.96 ms calculated from the page copy; what is typed on that
+machine's keyboard reaches a process as the test expects.
 
 ## Documents
 
