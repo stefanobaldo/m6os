@@ -42,7 +42,13 @@ version anyone else is meant to install.
   with everything back afterwards; a three-page process spawning, yielding
   and waiting from a stack in page 2; and the context switch measured by
   difference over 524 288 `yield`s between two processes — 205.26 µs in
-  the emulator. Runs on the 128K and the 4 MB machines.
+  the emulator. Runs on the 128K and the 4 MB machines. Also run on an
+  MSX2+ at 3.58 MHz with a 128K mapper and on a One Chip MSX, through the
+  FBLabs SDXC 1.1.0 driver, where a context switch takes 205.26 µs on the
+  3.58 MHz machine; creating processes stops there with the memory out
+  after five, and on the One Chip MSX with the process table full after
+  fifteen. The emulator's figure above is a hint, and on this test it
+  lands on the same number.
 - Processes (`src/kernel/proc.asm`): the kernel creates a process of one to
   three 16K pages from a program image, gives it pages 0–2 with the
   interrupt vector, the slot-switching stub and an exit stub in the first
@@ -73,8 +79,9 @@ version anyone else is meant to install.
   MSX2+ at 3.58 MHz and on a One Chip MSX, through the FBLabs SDXC 1.1.0
   driver, where a null system call goes round in 17.29 µs resident and
   78.55 µs switched on the 3.58 MHz machine, and 17.35 µs and 78.61 µs on
-  that machine reduced to 128K, where three of the eight segments are free
-  after boot — what a process of up to three pages has to fit in; the
+  that machine reduced to 128K, where three of the eight segments were free
+  after boot — what a process of up to three pages had to fit in, before the
+  scheduler gave it the two the loader had held; the
   emulator's figures above are hints and land within two ticks of it.
 - The build reports the switched image's size beside the resident's.
 - Memory (`src/kernel/mem.asm`): the resident detects every memory mapper in
