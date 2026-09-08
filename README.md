@@ -41,26 +41,36 @@ pages, runs them, checks every syscall and every error, and times a null
 syscall on each path. There is no scheduler and no filesystem yet; see
 [`CONTRIBUTING.md`](CONTRIBUTING.md) for how to build and test.
 
-**Hardware.** The emulator holds the baseline — an MSX2 with a 128K mapper, the
-smallest machine m6 targets — and real hardware holds the rest. Taking the
-machine is verified on an MSX2+ at 3.58 MHz and on a One Chip MSX, against two
-Nextor 2 drivers written by different authors: Sunrise IDE 0.1.7 through a
-Carnivore2, and FBLabs SDXC 1.1.0 through an MSX-Pico+. On both machines, and
-through both drivers, a sector is read and written with the Nextor kernel
-overwritten, and Nextor reads that sector back from the file on the next boot.
-One driver call takes 4.75 ms through the Sunrise IDE and 5.30 ms through the
-FBLabs SDXC on the MSX2+ at 3.58 MHz, measured by difference over 600 reads.
-Mapper detection reports 32 segments on the MSX2+, and 64 with a Carnivore2
-inserted —
-the cartridge's own mapper, with the machine's 32 segments detected beside it
-and left alone — and 128 and 256 segments on the One Chip MSX at 2 MB and 4 MB,
-where Nextor reports 255. A second mapper is detected wherever it sits: an
-MSX-Pico+ holding 432K answers 27 segments, a count that is not a power of two.
-A 16K page copy by `LDIR` takes 105.48 ms on the MSX2+ at 3.58 MHz, 94.02 ms by
-unrolled `LDI`. A null system call goes round in 17.29 µs when its body is in
-the resident page and 78.55 µs when it is in the switched image, on the MSX2+ at
-3.58 MHz, measured by difference over 524 288 calls; a process of three pages
-calls through the window with its stack in the page the window takes.
+**Hardware.** The smallest machine m6 targets — 128K of mapper memory — is
+checked on every change in the emulator and on real hardware too, on an MSX2+ at
+3.58 MHz whose memory mapper is reduced to 128K. Every test that runs on real
+hardware runs there, and no timing moves by more than two 60 Hz ticks against
+the same machine with its full 512K: the memory size decides what fits, not what
+things cost. After boot, three of that machine's eight segments are free, which
+is what a process of up to three pages has to fit in. Taking the machine is
+verified on an MSX2+ at 3.58 MHz and on a One Chip MSX, against two Nextor 2
+drivers written by different authors: Sunrise IDE 0.1.7 through a Carnivore2,
+and FBLabs SDXC 1.1.0 through an MSX-Pico+. On both machines, and through both
+drivers, a sector is read and written with the Nextor kernel overwritten, and
+Nextor reads that sector back from the file on the next boot. One driver call
+takes 4.75 ms through the Sunrise IDE and 5.30 ms through the FBLabs SDXC on the
+MSX2+ at 3.58 MHz, measured by difference over 600 reads. Mapper detection
+reports 8 segments on the MSX2+ reduced to 128K, 32 on the same machine with its
+own 512K, and 64 with a Carnivore2 inserted — the cartridge's own mapper, with
+the machine's 32 segments detected beside it and left alone — and 128 and 256
+segments on the One Chip MSX at 2 MB and 4 MB, where Nextor reports 255, so
+detection is verified across the whole range an 8-bit segment number can hold,
+on machines that exist. The boot-time `mem=` cap has been exercised on hardware
+too: capping the One Chip MSX at 2 MB down to 128K leaves the allocator refusing
+every segment from 8 to 127, while detection still reports the machine as it is.
+A second mapper is detected wherever it sits: an MSX-Pico+ holding 432K answers
+27 segments, a count that is not a power of two. A 16K page copy by `LDIR` takes
+105.48 ms on the MSX2+ at 3.58 MHz, 94.02 ms by unrolled `LDI`. A null system
+call goes round in 17.29 µs when its body is in the resident page and 78.55 µs
+when it is in the switched image, on the MSX2+ at 3.58 MHz — 17.35 and 78.61 µs
+on the same machine reduced to 128K — measured by difference over 524 288 calls;
+a process of three pages calls through the window with its stack in the page the
+window takes.
 
 ## Documents
 
