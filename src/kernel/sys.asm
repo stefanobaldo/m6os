@@ -1,5 +1,5 @@
 ; The resident syscalls: the ones on the hot path, whose K_SYS entry jumps
-; straight to the body. exit is in proc.asm; sysconf is in the switched
+; straight to the body. exit, spawn, wait and yield are in proc.asm; sysconf is in the switched
 ; part (kseg.asm). Convention as kernel.inc states it: arguments in A, HL,
 ; DE, BC; result in HL; CF set with the errno in A; nothing else preserved.
 
@@ -28,7 +28,7 @@ sys_write:
 
 ; sys_getpid — SYS_GETPID. Out: HL = pid.
 sys_getpid:
-        ld      hl,(proc_cur+P_PID)
+        ld      hl,(k_pid)
         or      a
         ret
 
