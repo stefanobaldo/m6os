@@ -189,7 +189,13 @@ KR_KSEG_SRC     equ 57          ; 2: where the switched kernel image is, in
                                 ;    pages 0-1 of the loader's memory; 0 =
                                 ;    there is none
 KR_KSEG_LEN     equ 59          ; 2: its length, 1 to 4000h
-KREC_SIZE       equ 61
+KR_VDPREG       equ 61          ; 10: VDP registers 0-9 as the previous
+                                ;     system's shadows had them; the
+                                ;     console keeps R#7-R#9 and finds the
+                                ;     font through R#4
+KR_KBDTYPE      equ 71          ; the ROM's keyboard type byte (002Ch),
+                                ; report only
+KREC_SIZE       equ 72
 
 ; Memory (mem.asm). Owners in the segment table; the mapper table's layout.
 MEM_FREE        equ 0           ; owner: nobody
@@ -230,6 +236,18 @@ B_SLTTBL        equ 0FCC5h      ; per primary slot: its subslot register
 B_SLTWRK        equ 0FD09h      ; 8 bytes per slot: work-area pointer or data
 B_HTIMI         equ 0FD9Fh      ; timer interrupt hook, 5 bytes
 B_FCALL         equ 0FFCAh      ; extended BIOS hook, 5 bytes
+B_RG0SAV        equ 0F3DFh      ; 8: the BIOS's copy of VDP R#0-R#7
+B_RG8SAV        equ 0FFE7h      ; 16: the same for R#8-R#23
+
+; The console (con.asm, vdp_t2.asm): TEXT2, 80 x 24, on the kernel's own
+; VRAM layout. The name table is where the BIOS keeps SCREEN 0's, so the
+; lines the loader printed survive the takeover.
+CON_COLS        equ 80
+CON_ROWS        equ 24
+V_NAME          equ 0000h       ; name table, 80 x 24 = 1920 bytes
+V_BLINK         equ 0800h       ; blink table, 10 x 24 = 240 bytes: the
+                                ; cursor's bit and nothing else
+V_PAT           equ 1000h       ; pattern table, the font, 2048 bytes
 
 ; Scaffolding shared by the tests and the resident: the tests' buffers, in
 ; page 2 as DEV_RW demands (page 1 is switched away during a call).

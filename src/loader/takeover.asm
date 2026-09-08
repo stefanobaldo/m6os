@@ -16,6 +16,17 @@
 
 LD_DOSVER       equ 6Fh         ; MSX-DOS 2 _DOSVER
 
+; ld_screen80 — SCREEN 0 at 80 columns, through the BIOS, before the
+; capture: the name table is then where the resident's console keeps it,
+; 80 bytes per row, and the lines printed from here on stay on screen when
+; the resident reprograms the VDP. Corrupts everything.
+ld_screen80:
+        ld      a,80
+        ld      (B_LINL40),a
+        ld      ix,B_INITXT
+        ld      iy,(B_EXPTBL-1)
+        jp      B_CALSLT
+
 ; ld_nextor2 — is this a Nextor 2 kernel? Out: A = 0 and IX/IY as _DOSVER
 ; returns them (IYh.IYl the version) if so; else A = 0F0h (not MSX-DOS 2),
 ; 0F1h (MSX-DOS 2, not Nextor) or 0F2h (Nextor, not a 2.x kernel), NZ.

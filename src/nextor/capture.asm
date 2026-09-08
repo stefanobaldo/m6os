@@ -137,4 +137,23 @@ nx_capture:
         ld      (ix+KR_ROWS),a
         ld      a,(B_CSRY)
         ld      (ix+KR_CSRY),a
+        ; The VDP registers as the BIOS's shadows have them: R#0-R#7 from
+        ; RG0SAV, R#8 and R#9 from RG8SAV.
+        push    ix
+        pop     de
+        ld      hl,KR_VDPREG
+        add     hl,de
+        ex      de,hl
+        ld      hl,B_RG0SAV
+        ld      bc,8
+        ldir
+        ld      hl,B_RG8SAV
+        ld      bc,2
+        ldir
+        ; The keyboard type, from the main ROM.
+        ld      a,(B_EXPTBL)
+        ld      hl,002Ch
+        call    B_RDSLT
+        ei
+        ld      (ix+KR_KBDTYPE),a
         ret

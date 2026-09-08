@@ -1,214 +1,341 @@
-; The console: text output straight into VRAM.
+; The console: a terminal of 80 columns and 24 rows over the VDP backend
+; (vdp_t2.asm), which is the only thing here that knows the chip.
 ;
-; The screen is the text mode the previous system left — SCREEN 0, TEXT1
-; (40 columns) or TEXT2 (80) — described by the capture record: name table
-; base, bytes per row, columns and rows in use. Output resumes on the row
-; that system's cursor was on. A character is one VRAM write at the cursor's
-; address; a newline moves to the next row and scrolls the screen up by one
-; row when it runs out, and the new row is cleared first, so what the
-; previous system left there does not show through. No cursor is drawn and
-; no control code but 10 is understood; programming the VDP, the cursor and the keyboard come with the
-; full console driver.
+; What it understands: printable bytes (20h and above), which go to the
+; cell under the cursor and advance it, wrapping at column 80; and the C0
+; controls BS (8), TAB (9, stops every 8), LF (10, next row and column 0),
+; FF (12, clear and home), CR (13, column 0). Every other byte below 20h
+; is ignored. No escape sequences.
 ;
-; VDP access: the two-byte address write to the control port is wrapped in
-; DI/EI because reading the status register — which the interrupt handler
-; does — resets the VDP's first/second byte latch. Consecutive data-port
-; accesses in the scroll loops are 30 T-states apart or more, above what the
-; V9938 needs in text modes with the display on.
+; A write is done in two passes. The first walks the bytes without
+; touching the screen, only to learn where the cursor ends up — and so
+; how many rows, k, the whole write scrolls — echoing every byte to the
+; debug device on the way. The screen then scrolls once, by k, and the
+; second pass writes the bytes: those that land on rows scrolled off the
+; top only move the cursor; the rest go to VRAM a run at a time, one
+; address set per run. Output that arrives many lines at once — a listing,
+; a file — thus pays one scroll instead of one per line, which is the
+; difference between a screen that keeps up and one that does not.
 ;
-; Every byte written to the screen is also written to the debug device
-; (ports 2Eh/2Fh, tests/m6test.inc), which openMSX turns into a transcript
-; and real hardware ignores.
+; The cursor is drawn only while a process is blocked in read (kbd.asm),
+; and erased by the first write after it: output never pays for it.
 
-; con_init — take the screen geometry from the record, set the cursor under
-; the previous system's last line. Corrupts AF, BC, DE, HL.
+; con_init — the backend up, the cursor under the loader's last line if
+; the record says the screen is already 80 columns at the kernel's name
+; table, else a cleared screen. Corrupts everything.
 con_init:
-        ld      a,(K_REC+KR_VDPWR)
-        ld      (con_dat),a
-        inc     a
-        ld      (con_ctl),a
-        ld      c,a
-        xor     a
-        out     (c),a                   ; R#14 = 0: VRAM addresses below 16K
-        ld      a,80h+14
-        out     (c),a
+        call    vdp_init
         ld      a,DBG_ASCII
         out     (DBG_MODE),a
-        ld      a,(K_REC+KR_CSRY)
-        dec     a                       ; 1-based to 0-based
-        ld      b,a
-        ld      a,(K_REC+KR_ROWS)
-        dec     a
-        cp      b
-        jr      nc,.row
-        ld      b,a                     ; never below the last row
-.row:   ld      a,b
-        ld      (con_row),a
         xor     a
         ld      (con_col),a
-        ld      hl,(K_REC+KR_NAMBAS)
+        ld      (con_shown),a
         ld      a,(K_REC+KR_STRIDE)
-        ld      e,a
-        ld      d,0
-        ld      a,b
+        cp      CON_COLS
+        jr      nz,.clear
+        ld      hl,(K_REC+KR_NAMBAS)
+        ld      de,V_NAME
         or      a
-        jr      z,.at
-.mul:   add     hl,de
-        dec     a
-        jr      nz,.mul
-.at:    ld      (con_line),hl
-        ld      (con_addr),hl
+        sbc     hl,de
+        jr      nz,.clear
+        ld      a,(K_REC+KR_CSRY)
+        dec     a                       ; 1-based to 0-based
+        cp      CON_ROWS
+        jr      c,.row
+        ld      a,CON_ROWS-1            ; never below the last row
+.row:   ld      (con_row),a
+        ret
+.clear: xor     a
+        ld      b,CON_ROWS
+        call    vdp_clear_rows
+        xor     a
+        ld      (con_row),a
         ret
 
-; con_puts — HL -> 0-terminated string. Corrupts AF; preserves HL's string
-; end in HL.
-con_puts:
+; con_write — HL -> bytes, BC = count. Corrupts everything.
+con_write:
+        ld      a,b
+        or      c
+        ret     z
+        ld      (cw_ptr),hl
+        ld      (cw_rem),bc
+        ld      a,(con_shown)           ; the cursor off, at its old place
+        or      a
+        jr      z,.pass1
+        xor     a
+        ld      (con_shown),a
+        ld      a,(con_row)
+        ld      hl,con_col
+        ld      c,(hl)
+        call    vdp_cursor_off
+.pass1: ; Pass 1: simulate, echo, find the end row and the last FF.
+        xor     a
+        ld      (cw_cut+1),a
+        ld      (cw_cut),a              ; no cut
+        ld      a,(con_row)
+        ld      (cw_row0),a
+        ld      l,a
+        ld      h,0
+        ld      (cw_row),hl
+        ld      a,(con_col)
+        ld      (cw_col),a
+        ld      hl,(cw_ptr)
+        ld      bc,(cw_rem)
+.s1:    ld      a,(hl)
+        out     (DBG_DATA),a
+        cp      20h
+        jr      c,.ctl1
+        call    cw_advance
+.n1:    inc     hl
+        dec     bc
+        ld      a,b
+        or      c
+        jr      nz,.s1
+        jr      .scroll
+.ctl1:  cp      12
+        jr      nz,.notff
+        inc     hl                      ; the cut: pass 2 starts here
+        ld      (cw_cut),hl
+        dec     hl
+        push    hl
+        ld      hl,0
+        ld      (cw_row),hl
+        ld      a,l
+        ld      (cw_col),a
+        ld      (cw_row0),a
+        pop     hl
+        jr      .n1
+.notff: call    cw_control
+        jr      .n1
+.scroll:
+        ; k = end row - 23, or 0; then the scroll, or the clear.
+        ld      hl,(cw_row)
+        ld      de,CON_ROWS-1
+        or      a
+        sbc     hl,de                   ; hl = k, signed
+        jp      m,.zero
+        ld      a,h
+        or      l
+        jr      nz,.k
+.zero:  ld      hl,0
+.k:     ld      (cw_k),hl
+        ld      de,(cw_cut)
+        ld      a,d
+        or      e
+        jr      nz,.all                 ; a cut: the screen is cleared, once
+        ld      a,h
+        or      a
+        jr      nz,.all                 ; k >= 256: everything goes
+        ld      a,l
+        or      a
+        jr      z,.start                ; k = 0: nothing moves
+        cp      CON_ROWS
+        jr      nc,.all
+        push    af
+        call    vdp_scroll
+        pop     af
+        ld      b,a
+        ld      a,CON_ROWS
+        sub     b
+        call    vdp_clear_rows          ; rows 24-k..23
+        jr      .start
+.all:   xor     a
+        ld      b,CON_ROWS
+        call    vdp_clear_rows
+.start:
+        ; The start row: row0 - k, possibly negative; the start pointer.
+        ld      a,(cw_row0)
+        ld      l,a
+        ld      h,0
+        ld      de,(cw_k)
+        or      a
+        sbc     hl,de
+        ld      (cw_row),hl
+        ld      hl,(cw_cut)
+        ld      a,h
+        or      l
+        jr      z,.from0
+        ; From the cut: the bytes after it.
+        ld      de,(cw_ptr)
+        or      a
+        sbc     hl,de                   ; hl = bytes before the cut
+        ex      de,hl
+        ld      hl,(cw_rem)
+        or      a
+        sbc     hl,de
+        ld      (cw_rem),hl             ; bytes from the cut
+        ld      hl,(cw_cut)
+        ld      (cw_ptr),hl
+        xor     a
+        ld      (cw_col),a
+        jr      .pass2
+.from0: ld      a,(con_col)
+        ld      (cw_col),a
+.pass2: ; Pass 2: write. A run of printable bytes on a visible row is one
+        ; vdp_row_write.
+        ld      hl,(cw_rem)
+        ld      a,h
+        or      l
+        jr      z,.done
+.s2:    ld      hl,(cw_ptr)
         ld      a,(hl)
+        cp      20h
+        jr      c,.ctl2
+        ld      a,(cw_row+1)
+        or      a
+        jp      m,.hidden               ; a row above the screen: move only
+        ; The run: from cw_ptr, while printable, while the row lasts,
+        ; while bytes last.
+        ld      a,(cw_col)
+        ld      c,a                     ; c = the column it starts at
+        ld      b,0                     ; b = its length
+        ld      de,(cw_rem)
+.run:   ld      a,(hl)
+        cp      20h
+        jr      c,.runend
+        inc     b
+        inc     hl
+        dec     de
+        ld      a,c
+        add     a,b
+        cp      CON_COLS
+        jr      z,.runend               ; the row is full
+        ld      a,d
+        or      e
+        jr      nz,.run
+.runend:
+        push    bc
+        push    de
+        push    hl
+        ld      a,(cw_row)
+        ld      hl,(cw_ptr)
+        call    vdp_row_write           ; a = row, c = column, b = count
+        pop     hl
+        ld      (cw_ptr),hl
+        pop     de
+        ld      (cw_rem),de
+        pop     bc
+        ld      a,c
+        add     a,b
+        ld      (cw_col),a
+        cp      CON_COLS
+        jr      nz,.more
+        xor     a                       ; wrap
+        ld      (cw_col),a
+        ld      hl,(cw_row)
+        inc     hl
+        ld      (cw_row),hl
+.more:  ld      hl,(cw_rem)
+        ld      a,h
+        or      l
+        jr      nz,.s2
+        jr      .done
+.hidden:
+        call    cw_advance
+        jr      .next2
+.ctl2:  cp      12
+        jr      z,.next2                ; the FF was done in pass 1
+        call    cw_control
+.next2: ld      hl,(cw_ptr)
+        inc     hl
+        ld      (cw_ptr),hl
+        ld      hl,(cw_rem)
+        dec     hl
+        ld      (cw_rem),hl
+        ld      a,h
+        or      l
+        jr      nz,.s2
+.done:  ld      a,(cw_row)
+        ld      (con_row),a
+        ld      a,(cw_col)
+        ld      (con_col),a
+        ret
+
+; cw_advance — one printable byte: the column on, wrapping to the next
+; row. Preserves BC, HL; corrupts AF, DE.
+cw_advance:
+        ld      a,(cw_col)
+        inc     a
+        cp      CON_COLS
+        jr      nz,.col
+        ex      de,hl
+        ld      hl,(cw_row)
+        inc     hl
+        ld      (cw_row),hl
+        ex      de,hl
+        xor     a
+.col:   ld      (cw_col),a
+        ret
+
+; cw_control — A = a control byte other than FF: the cursor as it says.
+; Preserves BC, HL; corrupts AF, DE.
+cw_control:
+        cp      10
+        jr      z,.lf
+        cp      13
+        jr      z,.cr
+        cp      8
+        jr      z,.bs
+        cp      9
+        ret     nz                      ; ignored
+        ld      a,(cw_col)              ; TAB: the next stop
+        or      7
+        inc     a
+        cp      CON_COLS
+        jr      c,.col
+.lf:    ex      de,hl
+        ld      hl,(cw_row)
+        inc     hl
+        ld      (cw_row),hl
+        ex      de,hl
+.cr:    xor     a
+.col:   ld      (cw_col),a
+        ret
+.bs:    ld      a,(cw_col)
         or      a
         ret     z
-        call    con_putc
-        inc     hl
-        jr      con_puts
+        dec     a
+        ld      (cw_col),a
+        ret
 
-; con_putc — A = character; 10 is a newline. Preserves BC, DE, HL.
-con_putc:
-        cp      10
-        jr      nz,.char
-        out     (DBG_DATA),a
-        jr      con_nl
-.char:  push    hl
+; con_puts — HL -> 0-terminated string. Corrupts AF; returns HL at the
+; string's end; preserves BC, DE.
+con_puts:
         push    bc
-        push    af
-        out     (DBG_DATA),a
-        ld      hl,(con_addr)
-        call    con_setwrt
-        ld      a,(con_dat)
-        ld      c,a
-        pop     af
-        out     (c),a
+        push    de
+        push    hl
+        ld      bc,0
+.len:   ld      a,(hl)
+        or      a
+        jr      z,.write
         inc     hl
-        ld      (con_addr),hl
-        ld      hl,con_col
-        inc     (hl)
-        ld      a,(K_REC+KR_COLS)
-        cp      (hl)
-        pop     bc
+        inc     bc
+        jr      .len
+.write: pop     hl
+        push    hl
+        call    con_write
         pop     hl
-        ret     nz
-        ; The line is full: wrap. Not echoed to the debug device, whose
-        ; transcript has no line width.
-con_nl:
+        pop     de
+        pop     bc
+        ; HL to the end: the length again, cheaply.
+        xor     a
+.end:   cp      (hl)
+        ret     z
+        inc     hl
+        jr      .end
+
+; con_putc — A = character. Preserves BC, DE, HL.
+con_putc:
         push    hl
         push    de
         push    bc
-        push    af
-        xor     a
-        ld      (con_col),a
-        ld      a,(K_REC+KR_ROWS)
-        dec     a
-        ld      b,a
-        ld      a,(con_row)
-        cp      b
-        jr      c,.down
-        call    con_scroll              ; on the last row already
-        jr      .set
-.down:  inc     a
-        ld      (con_row),a
-        ld      hl,(con_line)
-        ld      a,(K_REC+KR_STRIDE)
-        ld      e,a
-        ld      d,0
-        add     hl,de
-        ld      (con_line),hl
-.set:   ld      hl,(con_line)
-        ld      (con_addr),hl
-        call    con_clear_row           ; whatever was on this row is gone
-        pop     af
+        ld      (con_chbuf),a
+        ld      hl,con_chbuf
+        ld      bc,1
+        call    con_write
         pop     bc
         pop     de
         pop     hl
-        ret
-
-; con_clear_row — HL = a row's name-table address: fill it with spaces.
-; Preserves HL; corrupts AF, BC.
-con_clear_row:
-        call    con_setwrt
-        ld      a,(con_dat)
-        ld      c,a
-        ld      a,(K_REC+KR_STRIDE)
-        ld      b,a
-        ld      a,' '
-.clr:   out     (c),a
-        nop
-        djnz    .clr
-        ret
-
-; con_scroll — move rows 1..rows-1 up by one, clear the last row.
-; Corrupts AF, BC, DE, HL.
-con_scroll:
-        ld      hl,(K_REC+KR_NAMBAS)    ; hl = destination row
-        ld      a,(K_REC+KR_ROWS)
-        dec     a
-        ld      b,a
-.row:   push    bc
-        push    hl
-        ld      a,(K_REC+KR_STRIDE)
-        ld      e,a
-        ld      d,0
-        add     hl,de                   ; source: the row below
-        call    con_setrd
-        ld      a,(con_dat)
-        ld      c,a
-        ld      a,(K_REC+KR_STRIDE)
-        ld      b,a
-        ld      hl,con_linebuf
-.rd:    ini
-        jr      nz,.rd
-        pop     hl
-        push    hl
-        call    con_setwrt
-        ld      a,(con_dat)
-        ld      c,a
-        ld      a,(K_REC+KR_STRIDE)
-        ld      b,a
-        ld      hl,con_linebuf
-.wr:    outi
-        jr      nz,.wr
-        pop     hl
-        ld      a,(K_REC+KR_STRIDE)
-        ld      e,a
-        ld      d,0
-        add     hl,de
-        pop     bc
-        djnz    .row
-        jp      con_clear_row           ; hl = the last row
-
-; con_setwrt / con_setrd — HL = VRAM address; the next data-port access
-; goes there. Corrupts AF; preserves BC, DE, HL.
-con_setwrt:
-        push    bc
-        ld      a,(con_ctl)
-        ld      c,a
-        di
-        out     (c),l
-        ld      a,h
-        and     3Fh
-        or      40h
-        out     (c),a
-        ei
-        pop     bc
-        ret
-con_setrd:
-        push    bc
-        ld      a,(con_ctl)
-        ld      c,a
-        di
-        out     (c),l
-        ld      a,h
-        and     3Fh
-        out     (c),a
-        ei
-        pop     bc
         ret
 
 ; con_newline — a newline. Preserves BC, DE, HL.
@@ -275,11 +402,16 @@ con_dec16:
 .emit:  ld      (con_lead),a            ; any non-zero value: digits have begun
         jp      con_putc
 
-con_ctl:        db 0
-con_dat:        db 0
-con_row:        db 0
+con_row:        db 0            ; the cursor, 0-based
 con_col:        db 0
+con_shown:      db 0            ; the cursor is drawn (a read is blocked)
 con_lead:       db 0
-con_addr:       dw 0
-con_line:       dw 0
+con_chbuf:      db 0
+cw_ptr:         dw 0            ; con_write: the next byte
+cw_rem:         dw 0            ;   bytes left
+cw_row:         dw 0            ;   the simulated row, signed
+cw_col:         db 0            ;   the simulated column
+cw_row0:        db 0            ;   the row the write started on
+cw_k:           dw 0            ;   rows scrolled
+cw_cut:         dw 0            ;   the byte after the last FF, or 0
 con_linebuf:    ds 80

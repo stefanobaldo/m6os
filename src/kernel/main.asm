@@ -1,5 +1,6 @@
 ; k_main — the boot sequence, once the loader has jumped here with the
-; record filled: the interrupt vector, the console, memory, the switched
+; record filled: the interrupt vector, the console — the VDP programmed
+; for 80 columns — memory, the switched
 ; part of the kernel, the process table with the kernel as process 0, the
 ; loader's memory released, the summary of the memory printed from the
 ; switched part. Then, if the record names an address, jump there — a
