@@ -14,15 +14,8 @@ sys_write:
         scf
         ret
 .con:   push    bc
-.next:  ld      a,b
-        or      c
-        jr      z,.done
-        ld      a,(hl)
-        call    con_putc                ; preserves BC, DE, HL
-        inc     hl
-        dec     bc
-        jr      .next
-.done:  pop     hl                      ; the length, all of it written
+        call    con_write               ; the whole buffer, scrolled once
+        pop     hl                      ; the length, all of it written
         or      a                       ; CF clear
         ret
 

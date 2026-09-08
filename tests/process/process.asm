@@ -33,14 +33,8 @@ start:
         ld      a,DBG_ASCII
         out     (DBG_MODE),a
 
-; --- step 0: SCREEN 0, while the BIOS can still be asked ----------------
-        ld      a,(B_SCRMOD)
-        or      a
-        jr      z,.screen0
-        ld      ix,B_INITXT
-        ld      iy,(B_EXPTBL-1)
-        call    CALSLT
-.screen0:
+; --- step 0: SCREEN 0 at 80 columns, while the BIOS can still be asked --
+        call    ld_screen80
         ld      de,banner
         call    puts
 
