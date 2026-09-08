@@ -2,11 +2,12 @@
 ; the machine. Assembled at K_BASE into build/kernel.bin; a loader copies it
 ; there after filling the capture record, then jumps to K_ENTRY.
 ;
-; What is here: slot switching, the interrupt entry, the console, the
-; Nextor driver call, memory — mapper detection and the segment allocator —
-; the kernel window and the syscall gate, the scheduler and its process
-; table, the process, the resident syscalls, and k_main, the boot sequence, which ends by jumping wherever
-; the record says. The cold part of the kernel is a second image, kseg.asm,
+; What is here: slot switching, the interrupt entry, the console and its
+; VDP backend, the Nextor driver call, memory — mapper detection and the
+; segment allocator — the kernel window and the syscall gate, the
+; scheduler and its process table, the process, the resident syscalls, and
+; k_main, the boot sequence, which ends by jumping wherever the record
+; says. The cold part of the kernel is a second image, kseg.asm,
 ; switched into page 2 on demand. The image includes the tests' shared
 ; definitions for the mailbox and the debug device. The stack is the last
 ; thing in the image and its top is K_END; a loader may put a program's own
@@ -78,6 +79,7 @@ nx_ramslot1     equ K_REC+KR_RAMAD+1
         include "kernel/slot.asm"
         include "kernel/sslot.asm"
         include "kernel/irq.asm"
+        include "kernel/vdp_t2.asm"
         include "kernel/con.asm"
         include "nextor/abi2.asm"
         include "kernel/mem.asm"
