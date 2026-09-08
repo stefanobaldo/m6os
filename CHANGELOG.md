@@ -41,13 +41,14 @@ version anyone else is meant to install.
   CTRL, CAPS LOCK, the keypad and a cursor key; keys typed before a reader
   exists; a key held down; twenty keys at once; two readers; the cursor's
   bit in video memory while a reader waits; the kernel's own thread reading
-  with nothing else to run. Runs on the 128K and the 4 MB machines.
+  with nothing else to run. Runs on the 128K and the 4 MB machines, and on an
+  MSX2+ at 3.58 MHz with a person at the keyboard.
 - Test `fork`: the double return, the copy, a three-page process forking
   from a stack in page 2, `vfork` sharing memory with the parent asleep,
   `wait` reaping both kinds, `EPERM`, `ENOMEM` and `EAGAIN` with nothing
-  leaked, and 32 two-page forks timed — 219.31 ms per fork in the emulator,
-  against 210.96 calculated from the measured page copy. Runs on the 128K
-  and the 4 MB machines.
+  leaked, and 32 two-page forks timed — 219.31 ms per fork on an MSX2+ at
+  3.58 MHz, and the same figure in the emulator, against 210.96 calculated
+  from the measured page copy. Runs on the 128K and the 4 MB machines.
 - The scheduler (`src/kernel/sched.asm`): the kernel runs up to fifteen
   processes at once, round-robin, switching at every 60 Hz tick from a
   process in user space to the next runnable one, with every register —
