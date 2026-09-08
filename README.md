@@ -30,15 +30,23 @@ memory, the driver call, the process, the syscall table — and the cold path
 lives in a second image switched into page 2 for the length of a call, the
 seam a kernel in a cartridge ROM would use unchanged. A process owns pages
 0–2, 48K, starts at `0100h` and calls the kernel through a fixed jump table:
-`exit`, `write` to the console, `getpid` and `sysconf` exist, every other
-entry answers `ENOSYS`, and the kernel preserves nothing it does not return
-(see [`docs/syscalls.md`](docs/syscalls.md)). Three tests prove all of this
-on every change in a headless openMSX against the Sunrise IDE driver, on an
-MSX2 with a 128K memory mapper — with the cartridge in a plain and in an
-expanded slot — and on an MSX2 with a 4 MB mapper, where segments 128 to 255
-exist, through `make check`; the third creates processes of one and three
-pages, runs them, checks every syscall and every error, and times a null
-syscall on each path. There is no scheduler and no filesystem yet; see
+`exit`, `write` to the console, `getpid`, `sysconf`, `spawn`, `wait` and
+`yield` exist, every other entry answers `ENOSYS`, and the kernel preserves
+nothing it does not return (see [`docs/syscalls.md`](docs/syscalls.md)).
+Processes run at once: the kernel keeps a table of up to fifteen, switches
+between them round-robin on the 60 Hz tick — every register saved on the
+process's own stack — and blocks a parent in `wait` until a child exits;
+the kernel's own thread is process 0, and the memory the program that
+started m6 occupied goes to the processes, so five 16K segments are free on
+a 128K machine. Four tests prove all of this on every change in a headless
+openMSX against the Sunrise IDE driver, on an MSX2 with a 128K memory mapper
+— with the cartridge in a plain and in an expanded slot — and on an MSX2
+with a 4 MB mapper, where segments 128 to 255 exist, through `make check`;
+the third creates processes of one and three pages and times a null syscall
+on each path, the fourth runs two processes that alternate on the tick, one
+that never calls the kernel and still does not stop another, a zombie, an
+orphan, the table and the memory running out, and times the context switch.
+There is no keyboard and no filesystem yet; see
 [`CONTRIBUTING.md`](CONTRIBUTING.md) for how to build and test.
 
 **Hardware.** The smallest machine m6 targets — 128K of mapper memory — is
