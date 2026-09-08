@@ -57,6 +57,8 @@ k_sys:
         jp      sys_wait                ; SYS_WAIT
         jp      sys_yield               ; SYS_YIELD
         jp      sys_read                ; SYS_READ
+        jp      sys_fork                ; SYS_FORK
+        jp      sys_vfork               ; SYS_VFORK
         DUP     K_SYS_N-SYS_N
         jp      sys_enosys
         EDUP
