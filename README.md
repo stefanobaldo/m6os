@@ -54,8 +54,9 @@ checked on every change in the emulator and on real hardware too, on an MSX2+ at
 3.58 MHz whose memory mapper is reduced to 128K. Every test that runs on real
 hardware runs there, and no timing moves by more than two 60 Hz ticks against
 the same machine with its full 512K: the memory size decides what fits, not what
-things cost. After boot, three of that machine's eight segments are free, which
-is what a process of up to three pages has to fit in. Taking the machine is
+things cost. After boot, five of that machine's eight segments are free — the
+kernel gives the processes the memory the program that started m6 occupied —
+which is what a process of up to three pages has to fit in. Taking the machine is
 verified on an MSX2+ at 3.58 MHz and on a One Chip MSX, against two Nextor 2
 drivers written by different authors: Sunrise IDE 0.1.7 through a Carnivore2,
 and FBLabs SDXC 1.1.0 through an MSX-Pico+. On both machines, and through both
@@ -78,7 +79,12 @@ call goes round in 17.29 µs when its body is in the resident page and 78.55 µs
 when it is in the switched image, on the MSX2+ at 3.58 MHz — 17.35 and 78.61 µs
 on the same machine reduced to 128K — measured by difference over 524 288 calls;
 a process of three pages calls through the window with its stack in the page the
-window takes.
+window takes. A context switch — save every register, pick the next process, map
+its pages, restore — takes 205.26 µs on the MSX2+ at 3.58 MHz, measured by
+difference over 524 288 `yield`s between two processes; two processes alternate
+on the tick there, and creating processes stops with the memory out after five
+on that machine and with the process table full after fifteen on the One Chip
+MSX.
 
 ## Documents
 
