@@ -4,7 +4,9 @@
 ; and k_irq_init point at k_isr. The VDP is the only interrupt source on the
 ; base machine; it raises INT at every vertical retrace (60 Hz) and holds it
 ; until status register 0 is read, so reading S#0 is the acknowledgement.
-; Then the tick is counted, and the CPU changes hands when it may: another
+; Then the tick is counted and the keyboard scanned when it is due — a
+; reader woken by a key counts as runnable for the decision that follows —
+; and the CPU changes hands when it may: another
 ; process is runnable, and the one interrupted was in user space — its PC
 ; and its stack pointer both below page 3. A PC in page 3 is the resident,
 ; a syscall body or a stub; a stack pointer in page 3 is the switched image
@@ -43,6 +45,8 @@ k_isr_in:
         ld      hl,(K_TICKS)
         inc     hl
         ld      (K_TICKS),hl
+        call    kbd_tick                ; the keyboard: a scan when due,
+                                        ; readers woken into the ring
         ld      a,(k_nrun)
         cp      2
         jr      c,.ret                  ; nobody else to run

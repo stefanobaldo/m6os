@@ -1,6 +1,6 @@
 ; k_main — the boot sequence, once the loader has jumped here with the
 ; record filled: the interrupt vector, the console — the VDP programmed
-; for 80 columns — memory, the switched
+; for 80 columns — the keyboard, memory, the switched
 ; part of the kernel, the process table with the kernel as process 0, the
 ; loader's memory released, the summary of the memory printed from the
 ; switched part. Then, if the record names an address, jump there — a
@@ -12,6 +12,7 @@ k_main:
         call    k_irq_init
         ei
         call    con_init
+        call    kbd_init
         ld      hl,K_REC+KR_SEG64K      ; what is in each page now
         ld      de,k_map
         ld      bc,4

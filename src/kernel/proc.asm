@@ -12,6 +12,11 @@
 ; one, exit turns it into a zombie or frees it, wait reaps it. Nothing
 ; here returns to a caller when a process ends: exit hands the CPU to the
 ; scheduler and the parent learns the status from wait.
+;
+; Every change to the ring of runnable rows outside the interrupt handler
+; is made with interrupts disabled, because the handler makes its own — a
+; key wakes a reader (kbd.asm) — and a ring half-relinked when a tick
+; lands is a ring with a row lost.
 
 ; spawn — HL = the program image, anywhere but page 2 (pages 0-1 of the
 ; caller, or page 3 for process 0); BC = its length; A = pages, 1-3. Out:
@@ -187,7 +192,9 @@ sp_create:
         ld      (hl),0
         ld      hl,(sp_row)
         ld      (hl),PS_RUN             ; P_STATE, then into the ring
+        di
         call    sched_link
+        ei
         ld      a,(sp_pid)
         ld      l,a
         ld      h,0
@@ -293,15 +300,19 @@ sys_exit:
         cp      PS_WAIT
         jr      nz,.zombie
         ld      (hl),PS_RUN             ; the parent wakes: into the ring
+        di
         call    sched_link
+        ei
 .zombie:
         ld      hl,(k_cur)
         ld      (hl),PS_ZOMBIE
         jr      .gone
 .free:  ld      hl,(k_cur)
         ld      (hl),PS_FREE
-.gone:  call    sched_unlink            ; out of the ring; my P_NEXT still
-        ld      hl,(k_cur)              ; says who runs next
+.gone:  di
+        call    sched_unlink            ; out of the ring; my P_NEXT still
+        ei                              ; says who runs next
+        ld      hl,(k_cur)
         jp      sched_next_idle
 
 ; sys_wait — SYS_WAIT. Out: H = the pid of a child that has exited, L = A
@@ -338,7 +349,9 @@ sys_wait:
         jr      z,.nochild
         ld      hl,(k_cur)
         ld      (hl),PS_WAIT
+        di
         call    sched_unlink
+        ei
         ld      hl,.again               ; resume at the top of the loop
         push    hl
         push    af
