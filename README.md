@@ -30,24 +30,37 @@ memory, the driver call, the process, the syscall table — and the cold path
 lives in a second image switched into page 2 for the length of a call, the
 seam a kernel in a cartridge ROM would use unchanged. A process owns pages
 0–2, 48K, starts at `0100h` and calls the kernel through a fixed jump table:
-`exit`, `write` to the console, `getpid`, `sysconf`, `spawn`, `wait` and
-`yield` exist, every other entry answers `ENOSYS`, and the kernel preserves
-nothing it does not return (see [`docs/syscalls.md`](docs/syscalls.md)).
+`exit`, `write` to the screen, `read` from the keyboard, `getpid`, `sysconf`,
+`spawn`, `wait`, `yield`, `fork` and `vfork` exist, every other entry
+answers `ENOSYS`, and the kernel preserves nothing it does not return (see
+[`docs/syscalls.md`](docs/syscalls.md)).
 Processes run at once: the kernel keeps a table of up to fifteen, switches
 between them round-robin on the 60 Hz tick — every register saved on the
 process's own stack — and blocks a parent in `wait` until a child exits;
 the kernel's own thread is process 0, and the memory the program that
 started m6 occupied goes to the processes, so five 16K segments are free on
-a 128K machine. Four tests prove all of this on every change in a headless
-openMSX against the Sunrise IDE driver, on an MSX2 with a 128K memory mapper
-— with the cartridge in a plain and in an expanded slot — and on an MSX2
-with a 4 MB mapper, where segments 128 to 255 exist, through `make check`;
-the third creates processes of one and three pages and times a null syscall
-on each path, the fourth runs two processes that alternate on the tick, one
-that never calls the kernel and still does not stop another, a zombie, an
-orphan, the table and the memory running out, and times the context switch.
-There is no keyboard and no filesystem yet; see
-[`CONTRIBUTING.md`](CONTRIBUTING.md) for how to build and test.
+a 128K machine. The kernel programs the screen itself — 80 columns by 24
+rows, with the machine's own font — understands the basic control codes,
+scrolls a write of many lines once rather than line by line, and shows a
+cursor while a process waits for a key; it scans the keyboard from the
+interrupt handler, keeps what is typed before anyone reads it, repeats a
+key held down, and delivers keys raw through `read`, one byte per key with
+SHIFT, CTRL and CAPS LOCK applied. `fork` copies a process page by page
+and `vfork` shares its memory with the child while the parent waits — the
+two compatibility paths beside `spawn`. Six tests prove all of this on
+every change in a headless openMSX against the Sunrise IDE driver, on an
+MSX2 with a 128K memory mapper — with the cartridge in a plain and in an
+expanded slot — and on an MSX2 with a 4 MB mapper, where segments 128 to
+255 exist, through `make check`; the third creates processes of one and
+three pages and times a null syscall on each path, the fourth runs two
+processes that alternate on the tick, one that never calls the kernel and
+still does not stop another, a zombie, an orphan, the table and the memory
+running out, and times the context switch; the fifth checks the screen row
+by row and presses keys on the emulated matrix — typed ahead, held down,
+too many at once, with two readers waiting — and the sixth forks with and
+without a copy, exercises every refusal, and times a two-page `fork`.
+There is no filesystem yet; see [`CONTRIBUTING.md`](CONTRIBUTING.md) for
+how to build and test.
 
 **Hardware.** The smallest machine m6 targets — 128K of mapper memory — is
 checked on every change in the emulator and on real hardware too, on an MSX2+ at
