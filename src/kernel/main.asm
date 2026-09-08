@@ -1,9 +1,11 @@
 ; k_main — the boot sequence, once the loader has jumped here with the
 ; record filled: the interrupt vector, the console, memory, the switched
-; part of the kernel, the summary of the memory printed from it. Then, if
-; the record names an address, jump there — a program the loader put above
-; the image — else halt with interrupts on, so the tick keeps counting for
-; anyone watching it.
+; part of the kernel, the process table with the kernel as process 0, the
+; loader's memory released, the summary of the memory printed from the
+; switched part. Then, if the record names an address, jump there — a
+; program the loader put above the image, which runs as process 0 — else
+; halt with interrupts on, so the tick keeps counting for anyone watching
+; it.
 
 k_main:
         call    k_irq_init
@@ -17,6 +19,8 @@ k_main:
         jr      nz,k_boot_fail
         call    kwin_load
         jr      nz,k_boot_fail
+        call    sched_init
+        call    sched_release_boot
         ld      a,(K_KSEG)
         or      a
         jr      z,.nosummary            ; no switched part: no summary

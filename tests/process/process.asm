@@ -257,180 +257,10 @@ ksimage:
         incbin  "build/kseg.bin"
 ksimage_end:
 
-; The user programs, each assembled for P0_PROG and copied there by
-; proc_create. They call the kernel through K_SYS and nothing else.
-
-; u_hello — every syscall and every error, then exit(42). A check that
-; fails exits with its own status, 1 to 4.
-u_hello:
-        DISP    P0_PROG
-        ld      a,1
-        ld      hl,.msg
-        ld      bc,.msglen
-        sys     SYS_WRITE
-        sys     SYS_GETPID
-        ld      a,h
-        or      a
-        jr      nz,.s1
-        ld      a,l
-        cp      1
-        jr      nz,.s1
-        add     a,'0'
-        ld      (.digit),a
-        ld      a,1
-        ld      hl,.digit
-        ld      bc,2
-        sys     SYS_WRITE
-        ld      hl,SC_PAGESIZE
-        sys     SYS_SYSCONF
-        jr      c,.s2
-        ld      de,4000h
-        or      a
-        sbc     hl,de
-        jr      nz,.s2
-        ld      a,7                     ; not a file descriptor
-        ld      hl,.msg
-        ld      bc,1
-        sys     SYS_WRITE
-        jr      nc,.s3
-        cp      E_BADF
-        jr      nz,.s3
-        call    K_SYS+3*(K_SYS_N-1)     ; the last entry: nothing there
-        jr      nc,.s4
-        cp      E_NOSYS
-        jr      nz,.s4
-        ld      a,42
-        sys     SYS_EXIT
-.s1:    ld      a,1
-        sys     SYS_EXIT
-.s2:    ld      a,2
-        sys     SYS_EXIT
-.s3:    ld      a,3
-        sys     SYS_EXIT
-.s4:    ld      a,4
-        sys     SYS_EXIT
-.msg:   db      "hello from pid "
-.msglen equ     $-.msg
-.digit: db      "?",10
-        ENT
-u_hello_end:
-
-; u_ret — a program that simply returns: status 0 through P0_EXIT.
-u_ret:
-        DISP    P0_PROG
-        ret
-        ENT
-u_ret_end:
-
-; u_jp0 — a program that jumps to 0: the same.
-u_jp0:
-        DISP    P0_PROG
-        jp      0
-        ENT
-u_jp0_end:
-
-; u_stack3 — three pages: the stack starts at BFFEh, in the page the window
-; takes. A switched syscall from there, then a write of a buffer it puts in
-; page 2, then exit(7). Status 1: the stack is not where it should be;
-; 2: sysconf failed.
-u_stack3:
-        DISP    P0_PROG
-        ld      hl,0
-        add     hl,sp
-        ld      a,h
-        cp      0BFh
-        jr      nz,.s1
-        ld      hl,SC_PAGESIZE
-        sys     SYS_SYSCONF
-        jr      c,.s2
-        ld      de,4000h
-        or      a
-        sbc     hl,de
-        jr      nz,.s2
-        ld      hl,.msg
-        ld      de,0A000h
-        ld      bc,.msglen
-        ldir
-        ld      a,1
-        ld      hl,0A000h
-        ld      bc,.msglen
-        sys     SYS_WRITE
-        ld      a,7
-        sys     SYS_EXIT
-.s1:    ld      a,1
-        sys     SYS_EXIT
-.s2:    ld      a,2
-        sys     SYS_EXIT
-.msg:   db      "  stack in page 2, buffer at A000h",10
-.msglen equ     $-.msg
-        ENT
-u_stack3_end:
-
-; The three timing loops: T_ITER iterations of push bc, sixteen argument
-; loads, sixteen calls or none, pop bc. The push and pop are there because
-; the ABI preserves nothing; the loads are in all three so that the
-; difference is the call, the body and the return alone.
-    macro t_arg
-        ld      hl,SC_PAGESIZE
-    endm
-
-u_ctl:
-        DISP    P0_PROG
-        ld      bc,T_ITER
-.loop:  push    bc
-        DUP     16
-        t_arg
-        EDUP
-        pop     bc
-        dec     bc
-        ld      a,b
-        or      c
-        jr      nz,.loop
-        xor     a
-        sys     SYS_EXIT
-        ENT
-u_ctl_end:
-
-u_res:
-        DISP    P0_PROG
-        ld      bc,T_ITER
-.loop:  push    bc
-        DUP     16
-        t_arg
-        sys     SYS_GETPID
-        EDUP
-        pop     bc
-        dec     bc
-        ld      a,b
-        or      c
-        jr      nz,.loop
-        xor     a
-        sys     SYS_EXIT
-        ENT
-u_res_end:
-
-u_sw:
-        DISP    P0_PROG
-        ld      bc,T_ITER
-.loop:  push    bc
-        DUP     16
-        t_arg
-        sys     SYS_SYSCONF
-        EDUP
-        pop     bc
-        dec     bc
-        ld      a,b
-        or      c
-        jr      nz,.loop
-        xor     a
-        sys     SYS_EXIT
-        ENT
-u_sw_end:
-
-        ASSERT  $ < 8000h               ; proc_create reads from pages 0-1
 
 ; The second half, assembled for K_IMAGE_END (build/kernel.exp), where the
-; loader copies it. The test's own data lives in this block, in page 3.
+; loader copies it: the test's code and data, and the user images after
+; them. It runs as process 0.
 tblock:
         DISP    K_IMAGE_END
 t_entry:
@@ -450,8 +280,8 @@ t_entry:
         ld      hl,t_k5c
         k_call  API_CON_PUTS
         k_call  API_MEM_INFO
-        ld      (t_free0),bc            ; free now: usable - 4 live - 1
-        ld      hl,-5
+        ld      (t_free0),bc            ; free now: usable - page 3 - the
+        ld      hl,-3                   ; switched image - the scratch page
         add     hl,de
         or      a
         sbc     hl,bc
@@ -550,7 +380,7 @@ t_entry:
         ld      hl,u_ret
         ld      bc,u_ret_end-u_ret
         ld      a,1
-        k_call  API_PROC_CREATE
+        k_call  API_SPAWN
         ld      c,a
         ld      a,0E5h
         jp      nc,t_fail               ; it created one out of nothing
@@ -622,30 +452,32 @@ t_entry:
         m6_verdict M6_PASS
         jp      t_halt
 
-; t_run — HL = image, BC = length, A = pages: create and run. Out: A = the
-; exit status. A refused create fails the step with code E0 and the errno
-; printed.
+; t_run — HL = image, BC = length, A = pages: spawn it and wait for it.
+; Out: A = the exit status. A refused spawn fails the step with code E0 and
+; the errno printed.
 t_run:
-        k_call  API_PROC_CREATE
+        k_call  API_SPAWN
         jr      nc,.run
         ld      c,a
         ld      a,0E0h
         jp      t_fail_status
-.run:   k_call  API_PROC_RUN
+.run:   k_call  API_WAIT
+        ld      a,l
         ret
 
 ; t_time — HL = image, BC = length, one page: run it and return the ticks
 ; it took in HL. A status other than 0 fails the step (E6).
 t_time:
         ld      a,1
-        k_call  API_PROC_CREATE
+        k_call  API_SPAWN
         jr      nc,.run
         ld      c,a
         ld      a,0E0h
         jp      t_fail_status
 .run:   ld      hl,(K_TICKS)
         ld      (t_t0),hl
-        k_call  API_PROC_RUN
+        k_call  API_WAIT
+        ld      a,l
         ld      c,a
         or      a
         ld      a,0E6h
@@ -748,6 +580,193 @@ t_ctl:      dw  0
 t_res:      dw  0
 t_sw:       dw  0
         ENT
+
+; The user programs, each assembled for P0_PROG and copied there by spawn.
+; They call the kernel through K_SYS and nothing else. They live in the
+; block, in page 3 once the loader has copied it, where process 0 reads
+; them: u_x is where an image is after the copy, u_x_k where it is here.
+
+; u_hello — every syscall and every error, then exit(42). A check that
+; fails exits with its own status, 1 to 4.
+u_hello_k:
+        DISP    P0_PROG
+        ld      a,1
+        ld      hl,.msg
+        ld      bc,.msglen
+        sys     SYS_WRITE
+        sys     SYS_GETPID
+        ld      a,h
+        or      a
+        jr      nz,.s1
+        ld      a,l
+        cp      1
+        jr      nz,.s1
+        add     a,'0'
+        ld      (.digit),a
+        ld      a,1
+        ld      hl,.digit
+        ld      bc,2
+        sys     SYS_WRITE
+        ld      hl,SC_PAGESIZE
+        sys     SYS_SYSCONF
+        jr      c,.s2
+        ld      de,4000h
+        or      a
+        sbc     hl,de
+        jr      nz,.s2
+        ld      a,7                     ; not a file descriptor
+        ld      hl,.msg
+        ld      bc,1
+        sys     SYS_WRITE
+        jr      nc,.s3
+        cp      E_BADF
+        jr      nz,.s3
+        call    K_SYS+3*(K_SYS_N-1)     ; the last entry: nothing there
+        jr      nc,.s4
+        cp      E_NOSYS
+        jr      nz,.s4
+        ld      a,42
+        sys     SYS_EXIT
+.s1:    ld      a,1
+        sys     SYS_EXIT
+.s2:    ld      a,2
+        sys     SYS_EXIT
+.s3:    ld      a,3
+        sys     SYS_EXIT
+.s4:    ld      a,4
+        sys     SYS_EXIT
+.msg:   db      "hello from pid "
+.msglen equ     $-.msg
+.digit: db      "?",10
+        ENT
+u_hello_k_end:
+u_hello      equ K_IMAGE_END+(u_hello_k-tblock)
+u_hello_end  equ u_hello+(u_hello_k_end-u_hello_k)
+
+; u_ret — a program that simply returns: status 0 through P0_EXIT.
+u_ret_k:
+        DISP    P0_PROG
+        ret
+        ENT
+u_ret_k_end:
+u_ret      equ K_IMAGE_END+(u_ret_k-tblock)
+u_ret_end  equ u_ret+(u_ret_k_end-u_ret_k)
+
+; u_jp0 — a program that jumps to 0: the same.
+u_jp0_k:
+        DISP    P0_PROG
+        jp      0
+        ENT
+u_jp0_k_end:
+u_jp0      equ K_IMAGE_END+(u_jp0_k-tblock)
+u_jp0_end  equ u_jp0+(u_jp0_k_end-u_jp0_k)
+
+; u_stack3 — three pages: the stack starts at BFFEh, in the page the window
+; takes. A switched syscall from there, then a write of a buffer it puts in
+; page 2, then exit(7). Status 1: the stack is not where it should be;
+; 2: sysconf failed.
+u_stack3_k:
+        DISP    P0_PROG
+        ld      hl,0
+        add     hl,sp
+        ld      a,h
+        cp      0BFh
+        jr      nz,.s1
+        ld      hl,SC_PAGESIZE
+        sys     SYS_SYSCONF
+        jr      c,.s2
+        ld      de,4000h
+        or      a
+        sbc     hl,de
+        jr      nz,.s2
+        ld      hl,.msg
+        ld      de,0A000h
+        ld      bc,.msglen
+        ldir
+        ld      a,1
+        ld      hl,0A000h
+        ld      bc,.msglen
+        sys     SYS_WRITE
+        ld      a,7
+        sys     SYS_EXIT
+.s1:    ld      a,1
+        sys     SYS_EXIT
+.s2:    ld      a,2
+        sys     SYS_EXIT
+.msg:   db      "  stack in page 2, buffer at A000h",10
+.msglen equ     $-.msg
+        ENT
+u_stack3_k_end:
+u_stack3      equ K_IMAGE_END+(u_stack3_k-tblock)
+u_stack3_end  equ u_stack3+(u_stack3_k_end-u_stack3_k)
+
+; The three timing loops: T_ITER iterations of push bc, sixteen argument
+; loads, sixteen calls or none, pop bc. The push and pop are there because
+; the ABI preserves nothing; the loads are in all three so that the
+; difference is the call, the body and the return alone.
+    macro t_arg
+        ld      hl,SC_PAGESIZE
+    endm
+
+u_ctl_k:
+        DISP    P0_PROG
+        ld      bc,T_ITER
+.loop:  push    bc
+        DUP     16
+        t_arg
+        EDUP
+        pop     bc
+        dec     bc
+        ld      a,b
+        or      c
+        jr      nz,.loop
+        xor     a
+        sys     SYS_EXIT
+        ENT
+u_ctl_k_end:
+u_ctl      equ K_IMAGE_END+(u_ctl_k-tblock)
+u_ctl_end  equ u_ctl+(u_ctl_k_end-u_ctl_k)
+
+u_res_k:
+        DISP    P0_PROG
+        ld      bc,T_ITER
+.loop:  push    bc
+        DUP     16
+        t_arg
+        sys     SYS_GETPID
+        EDUP
+        pop     bc
+        dec     bc
+        ld      a,b
+        or      c
+        jr      nz,.loop
+        xor     a
+        sys     SYS_EXIT
+        ENT
+u_res_k_end:
+u_res      equ K_IMAGE_END+(u_res_k-tblock)
+u_res_end  equ u_res+(u_res_k_end-u_res_k)
+
+u_sw_k:
+        DISP    P0_PROG
+        ld      bc,T_ITER
+.loop:  push    bc
+        DUP     16
+        t_arg
+        sys     SYS_SYSCONF
+        EDUP
+        pop     bc
+        dec     bc
+        ld      a,b
+        or      c
+        jr      nz,.loop
+        xor     a
+        sys     SYS_EXIT
+        ENT
+u_sw_k_end:
+u_sw      equ K_IMAGE_END+(u_sw_k-tblock)
+u_sw_end  equ u_sw+(u_sw_k_end-u_sw_k)
+
 tblock_end:
 
         ASSERT  $ < 4000h

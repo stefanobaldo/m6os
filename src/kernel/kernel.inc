@@ -28,13 +28,16 @@ K_API           equ K_BASE+16   ; K_API_N entries of JP, 3 bytes each: what
                                 ;     a kernel-side program calls in the
                                 ;     resident; the order is fixed and only
                                 ;     grows
-K_API_N         equ 14
+K_API_N         equ 15
 K_SYS           equ K_BASE+64   ; K_SYS_N entries of JP, 3 bytes each: the
                                 ;     syscall table, what a process calls
                                 ;     (sys.asm); an entry not yet given a
                                 ;     syscall returns ENOSYS
 K_SYS_N         equ 64
 K_REC           equ K_BASE+256  ; the capture record, KREC_SIZE bytes
+K_PROC          equ K_BASE+512  ; the process table (sched.asm): NPROC rows
+                                ;     of P_SIZE bytes, one 256-byte page,
+                                ;     so a row is K_PROC + (pid << 4)
 
 ; The jump table's entries. Contracts are the routines' own (con.asm,
 ; abi2.asm, slot.asm, mem.asm).
@@ -50,8 +53,11 @@ API_MEM_ALLOC   equ 8           ; B = owner -> A = segment; CF if none
 API_MEM_FREE    equ 9           ; A = segment, B = owner; CF if refused
 API_MEM_FREE_ALL equ 10         ; B = owner
 API_MEM_INFO    equ 11          ; -> HL, BC, DE, A
-API_PROC_CREATE equ 12          ; HL image, BC length, A pages -> A pid; CF
-API_PROC_RUN    equ 13          ; runs the process; -> A = its exit status
+API_SPAWN       equ 12          ; HL image, BC length, A pages -> HL = A =
+                                ; the child's pid; CF with the errno in A
+API_WAIT        equ 13          ; blocks until a child exits -> H = its pid,
+                                ; L = A = its status; CF, E_CHILD
+API_YIELD       equ 14          ; the CPU to the next runnable process
 
 ; k_call n — call the resident through the jump table.
     macro k_call n
@@ -68,7 +74,12 @@ SYS_WRITE       equ 1           ; A = fd (1, 2), HL = buffer, BC = length
                                 ; -> HL = bytes written; EBADF
 SYS_GETPID      equ 2           ; -> HL = pid
 SYS_SYSCONF     equ 3           ; HL = SC_* -> HL = value; EINVAL
-SYS_N           equ 4           ; entries given a syscall so far
+SYS_SPAWN       equ 4           ; HL = image (not in page 2), BC = length,
+                                ; A = pages 1-3 -> HL = A = the child's pid;
+                                ; EINVAL, EAGAIN, ENOMEM
+SYS_WAIT        equ 5           ; -> H = pid, L = A = status; ECHILD
+SYS_YIELD       equ 6           ; -> nothing
+SYS_N           equ 7           ; entries given a syscall so far
 
     macro sys n
         call    K_SYS+3*n
@@ -78,6 +89,7 @@ SC_PAGESIZE     equ 0           ; 16384
 SC_SEGMENTS     equ 1           ; segments in the primary mapper
 SC_SEGMENTS_USABLE equ 2        ; the count, or the mem= cap
 SC_SEGMENTS_FREE equ 3          ; free now
+SC_CHILD_MAX    equ 4           ; processes at once, the kernel's excluded
 
 ; Errnos: Seventh Edition's, with its numbers; ENOSYS with Linux's.
 E_PERM          equ 1
@@ -114,17 +126,33 @@ KS_BASE         equ 8000h
 KS_SYSCONF      equ KS_BASE+0   ; the body of SYS_SYSCONF
 KS_SUMMARY      equ KS_BASE+3   ; the boot summary of the memory
 
-; A process (proc.asm): what it sees in page 0, and its record.
+; A process (proc.asm, sched.asm): what it sees in page 0, and its row in
+; the process table. Process 0 is the kernel's own thread; pids 1 to
+; NPROC-1 are processes, and a pid is the index of its row.
 P0_EXIT         equ 0060h       ; xor a; jp K_SYS+3*SYS_EXIT — where a
                                 ; program's final ret lands, and jp 0's
 P0_PROG         equ 0100h       ; where the program starts
-P_PID           equ 0           ; 2: the pid; its low byte is the owner in
-                                ;    the allocator
-P_NPAGES        equ 2           ; pages, 1-3
-P_SEG           equ 3           ; 3: the segment in each of pages 0-2
-P_SP            equ 6           ; 2: the initial stack pointer
-P_STATUS        equ 8           ; the exit status
-P_SIZE          equ 9
+P0_FRAME        equ 24          ; bytes the kernel may use on a process's
+                                ; stack at any instant: an interrupt's
+                                ; return address and the saved context
+NPROC           equ 16
+P_STATE         equ 0           ; PS_*
+P_SP            equ 1           ; 2: the stack pointer while not running;
+                                ;    the saved context is on that stack
+P_PID           equ 3           ; the row's index; the owner in the allocator
+P_PPID          equ 4           ; the parent's pid, or PP_NONE
+P_NPAGES        equ 5           ; pages, 1-3; 0 for process 0
+P_SEG           equ 6           ; 3: the segment in each of pages 0-2
+P_STATUS        equ 9           ; the exit status
+P_NEXT          equ 10          ; low byte of the next row in the ring of
+                                ; runnable rows (sched.asm); meaningful
+                                ; only while the row is PS_RUN
+P_SIZE          equ 16
+PS_FREE         equ 0           ; the row is nobody's
+PS_RUN          equ 1           ; runnable, or running
+PS_WAIT         equ 2           ; blocked in wait
+PS_ZOMBIE       equ 3           ; exited; the status waits for the parent
+PP_NONE         equ 0FFh        ; a parent that will never wait
 
 ; The capture record: what the resident needs to know about the machine,
 ; gathered by the loader while the previous system is still there. Every

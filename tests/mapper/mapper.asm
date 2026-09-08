@@ -756,9 +756,9 @@ t_entry:
         or      a
         sbc     hl,de
         call    t_percopy
-        ld      a,(K_REC+KR_SEG64K+1)
+        ld      a,(K_PROC+P_SEG+1)      ; process 0's own pages back
         out     (0FDh),a
-        ld      a,(K_REC+KR_SEG64K+2)
+        ld      a,(K_PROC+P_SEG+2)
         out     (0FEh),a
         ld      b,1
         k_call  API_MEM_FREE_ALL
