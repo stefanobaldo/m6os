@@ -4,8 +4,8 @@
 ;
 ; What is here: slot switching, the interrupt entry, the console, the
 ; Nextor driver call, memory — mapper detection and the segment allocator —
-; the kernel window and the syscall gate, the process, the resident
-; syscalls, and k_main, the boot sequence, which ends by jumping wherever
+; the kernel window and the syscall gate, the scheduler and its process
+; table, the process, the resident syscalls, and k_main, the boot sequence, which ends by jumping wherever
 ; the record says. The cold part of the kernel is a second image, kseg.asm,
 ; switched into page 2 on demand. The image includes the tests' shared
 ; definitions for the mailbox and the debug device. The stack is the last
@@ -42,18 +42,24 @@ k_api:
         jp      mem_free                ; API_MEM_FREE
         jp      mem_free_all            ; API_MEM_FREE_ALL
         jp      mem_info                ; API_MEM_INFO
-        jp      proc_create             ; API_PROC_CREATE
-        jp      proc_run                ; API_PROC_RUN
+        jp      spawn                   ; API_SPAWN
+        jp      sys_wait                ; API_WAIT
+        jp      sys_yield               ; API_YIELD
         block   K_SYS-$
 k_sys:
         jp      sys_exit                ; SYS_EXIT
         jp      sys_write               ; SYS_WRITE
         jp      sys_getpid              ; SYS_GETPID
         jp      k_sw_sysconf            ; SYS_SYSCONF, in the switched part
+        jp      spawn                   ; SYS_SPAWN
+        jp      sys_wait                ; SYS_WAIT
+        jp      sys_yield               ; SYS_YIELD
         DUP     K_SYS_N-SYS_N
         jp      sys_enosys
         EDUP
 k_rec:  ds      KREC_SIZE
+        block   K_PROC-$                ; where the record grows
+k_proc: ds      NPROC*P_SIZE            ; the process table, one aligned page
         ASSERT  k_ticks == K_TICKS
         ASSERT  k_probe == K_PROBE
         ASSERT  k_probe_slot == K_PROBE_SLOT
@@ -61,6 +67,7 @@ k_rec:  ds      KREC_SIZE
         ASSERT  k_api == K_API
         ASSERT  k_sys == K_SYS
         ASSERT  k_rec == K_REC
+        ASSERT  k_proc == K_PROC
 
 ; The driver module's two external needs, supplied by this image: its own
 ; slot switch, and the RAM slot for page 1 as captured.
@@ -75,6 +82,7 @@ nx_ramslot1     equ K_REC+KR_RAMAD+1
         include "nextor/abi2.asm"
         include "kernel/mem.asm"
         include "kernel/kwin.asm"
+        include "kernel/sched.asm"
         include "kernel/proc.asm"
         include "kernel/sys.asm"
         include "kernel/main.asm"

@@ -357,6 +357,38 @@ mem_free_all:
         pop     hl
         ret
 
+; mem_own — A = segment, B = the new owner: a change of owner with no
+; change to the free stack, for a segment that is not on it (the boot-time
+; reserved ones the kernel keeps). Preserves BC, DE, HL.
+mem_own:
+        push    hl
+        push    de
+        ld      e,a
+        ld      d,0
+        ld      hl,mem_owner
+        add     hl,de
+        ld      (hl),b
+        pop     de
+        pop     hl
+        ret
+
+; mem_release — A = a segment reserved at boot: it becomes free and enters
+; the stack. Preserves BC, DE, HL.
+mem_release:
+        push    hl
+        push    de
+        push    bc
+        ld      e,a
+        ld      d,0
+        ld      hl,mem_owner
+        add     hl,de
+        ld      (hl),MEM_FREE
+        call    mem_push
+        pop     bc
+        pop     de
+        pop     hl
+        ret
+
 ; mem_info — HL -> the mapper table (count, then MM_SIZE bytes per mapper),
 ; BC = free segments, DE = usable segments (the count or the cap),
 ; A = mappers found beyond the table.
