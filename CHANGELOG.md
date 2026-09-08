@@ -15,6 +15,34 @@ version anyone else is meant to install.
 
 ### Added
 
+- The scheduler (`src/kernel/sched.asm`): the kernel runs up to fifteen
+  processes at once, round-robin, switching at every 60 Hz tick from a
+  process in user space to the next runnable one, with every register —
+  the alternate set and the index registers included — saved on the
+  process's own stack; a process that yields, or blocks, switches the same
+  way. The kernel is never preempted: a tick inside a syscall leaves the
+  switch to the next tick. The kernel's own thread is process 0.
+- System calls `spawn`, `wait` and `yield` (`docs/syscalls.md`): `spawn`
+  creates a runnable child from a program image in the caller's memory and
+  returns its pid; `wait` blocks until a child exits and returns its pid
+  and status, reaping it; `yield` gives the CPU up early. A child that
+  exits before its parent waits is a zombie until the `wait`; a child whose
+  parent has exited reaps itself. `sysconf` names the process limit
+  (`SC_CHILD_MAX`).
+- The memory the program that started m6 occupied in pages 0 and 1 goes to
+  the processes once the kernel is up: five segments are free on a 128K
+  machine, where three were. Page 2's boot segment stays the kernel's, as
+  its scratch page.
+- Test `sched`: process 0 and the released memory; `spawn`, `wait` and
+  `ECHILD`; two processes spinning for 60 ticks and writing a letter every
+  six, finishing together in about 60 ticks with every register intact
+  across every tick; a process that never calls the kernel, preempted so
+  that another finishes first; a zombie reaped and an orphan reaping
+  itself; `spawn` until the memory (128K) or the table (4 MB) runs out,
+  with everything back afterwards; a three-page process spawning, yielding
+  and waiting from a stack in page 2; and the context switch measured by
+  difference over 524 288 `yield`s between two processes — 205.26 µs in
+  the emulator. Runs on the 128K and the 4 MB machines.
 - Processes (`src/kernel/proc.asm`): the kernel creates a process of one to
   three 16K pages from a program image, gives it pages 0–2 with the
   interrupt vector, the slot-switching stub and an exit stub in the first
@@ -141,6 +169,17 @@ version anyone else is meant to install.
 
 ### Changed
 
+- A process exits into the scheduler, not back into whoever ran it: the
+  kernel-side entry that ran a process and returned its status is now
+  `wait`, and the one that created a process is `spawn`; the entry after
+  them is `yield`.
+- The switched part of the kernel carries the interrupt vector and the
+  slot-switching stub at `0038h` and `0040h` of its image, so that its
+  segment serves as process 0's page 0; the stub's source moved to
+  `src/kernel/sslot.asm`, included by both images.
+- The interrupt handler tests, on every tick, whether the code it
+  interrupted may be switched away from; a tick costs about 160 T-states
+  with one process runnable and about 875 when it switches.
 - The boot summary of the memory is printed from the switched part of the
   kernel, and the resident is the smaller for it; the capture record names
   where the switched image is and how long it is, and every program that
