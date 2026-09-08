@@ -19,7 +19,10 @@ on a stub that switches the kernel's cold code in for the length of the call.
 - **Nothing else is preserved.** `BC`, `DE`, `IX`, `IY` and the alternate
   register set are undefined after a call; save what you need before it.
 
-Interrupts stay enabled inside a syscall.
+Interrupts stay enabled inside a syscall. A syscall that blocks — `read`
+with nothing typed, `wait` with no child exited, `vfork` until the child
+exits — gives the CPU to other processes and returns when what it waited
+for has happened.
 
 **A process may lose the CPU at any instruction and get it back later with
 every register as it left it** — the kernel switches between processes on
@@ -51,14 +54,47 @@ status 0. The size of a program decides its pages: one page holds a program
 of up to 16 104 bytes (the last 24 are the kernel's, see above).
 
 A process is created by `spawn` from a program image in the memory of the
-process that creates it, and has a process id from 1 to 15 — its parent
-learns it from `spawn` and gets it back from `wait`. The kernel runs at
+process that creates it, or by `fork` or `vfork` as a second copy of the
+one that calls it, and has a process id from 1 to 15 — its parent learns
+it from `spawn`, `fork` or `vfork` and gets it back from `wait`. The kernel runs at
 most 15 processes at once (`sysconf` says so); a process id is reused
 once its process has exited and its parent has waited for it. A process
 that has exited but not been waited for is a zombie: its memory is free,
 its id and status are held until the parent's `wait`. When a parent exits
 first, its living children are on their own — nobody will wait for them,
 and they disappear entirely when they exit.
+
+## The console
+
+File descriptors 1 and 2 are the screen: 80 columns by 24 rows of text,
+which the kernel programs itself. A byte of 20h or above is a character
+at the cursor, which moves right and wraps to the next row at column 80;
+a row past the bottom scrolls the screen up. Five control bytes are
+understood: BS (8) moves the cursor back one column, TAB (9) to the next
+multiple of 8, LF (10) to the start of the next row, FF (12) clears the
+screen and puts the cursor at the top, CR (13) to the start of the row.
+Every other byte below 20h does nothing. There are no escape sequences.
+A write of many lines scrolls once, by all of them, not once per line.
+
+File descriptor 0 is the keyboard. `read` returns bytes as keys go down,
+one byte per key with the modifiers in effect at that moment — nothing is
+echoed, nothing waits for RET, and a key that means nothing on its own
+(SHIFT, F1) produces nothing. Keys typed before any process reads are kept
+— sixteen of them at most — and a key held down repeats after half a
+second, twelve times a second. Letters follow SHIFT and CAPS LOCK; CTRL
+with a letter gives 1 to 26; the keypad gives its digits and operators.
+The special keys give one byte each:
+
+| Key | Byte | Key | Byte | Key | Byte |
+|---|---|---|---|---|---|
+| BS | 8 | ESC | 27 | LEFT | 29 |
+| TAB | 9 | RIGHT | 28 | UP | 30 |
+| RET | 13 | HOME | 11 | DOWN | 31 |
+| INS | 18 | SHIFT+HOME | 12 | DEL | 127 |
+| SELECT | 24 | STOP | 3 | | |
+
+A cursor is shown on the screen while a process is waiting in `read` and
+hidden the rest of the time.
 
 ## The table
 
@@ -71,10 +107,15 @@ and they disappear entirely when they exit.
 | 4 | `spawn` | `HL` = image, `BC` = length, `A` = pages | `HL` = `A` = the child's pid | `EINVAL`: pages not 1–3, length 0, image in page 2, or too long for the pages; `EAGAIN`: 15 processes exist; `ENOMEM`: not enough free segments |
 | 5 | `wait` | — | `H` = pid, `L` = `A` = status | `ECHILD`: no child alive or waiting to be reaped |
 | 6 | `yield` | — | — | — |
-| 7–63 | — | — | — | `ENOSYS` |
+| 7 | `read` | `A` = fd (0), `HL` = buffer, `BC` = length | `HL` = bytes read, 1 to `BC` | `EBADF`: fd is not 0; `EINVAL`: length 0 |
+| 8 | `fork` | — | `HL` = `A` = the child's pid, 0 in the child | `EPERM`: called by process 0; `EAGAIN`: 15 processes exist; `ENOMEM`: not enough free segments |
+| 9 | `vfork` | — | `HL` = `A` = the child's pid, 0 in the child | `EPERM`: called by process 0; `EAGAIN`: 15 processes exist |
+| 10–63 | — | — | — | `ENOSYS` |
 
-`write` to file descriptor 1 or 2 goes to the console; a byte of value 10 is
-a newline. There is no standard input yet. `sysconf` names: 0 `SC_PAGESIZE`
+`write` to file descriptor 1 or 2 goes to the screen and `read` from file
+descriptor 0 takes from the keyboard, as *The console* says; `read` blocks
+until at least one byte is there and returns what is there, up to `BC`.
+`sysconf` names: 0 `SC_PAGESIZE`
 (16384), 1 `SC_SEGMENTS` (16K segments in the memory mapper the kernel runs
 in), 2 `SC_SEGMENTS_USABLE` (the same, or the `mem=` cap), 3
 `SC_SEGMENTS_FREE` (free right now), 4 `SC_CHILD_MAX` (processes the kernel
@@ -88,6 +129,21 @@ caller's children exits — or returns at once with a child that already
 has — and reaps it: `H` is its pid, `L` its exit status. `yield` hands the
 CPU to the next runnable process and returns when the caller's turn comes
 round again; with no other process runnable it returns at once.
+
+`fork` makes a second process that is a copy of the caller — every page,
+the stack included — and returns twice: in the caller with the child's
+pid, in the child with 0. The copy costs about 105 ms per 16K page on an
+MSX at 3.58 MHz, and during it nothing else runs; `spawn` is how the
+system creates processes, `fork` is there for programs written around it.
+`vfork` makes a child that shares the caller's memory and stack instead
+of copying them, and suspends the caller until the child exits (later:
+or replaces itself with `exec`), so it costs no copy. The child of a
+`vfork` may do nothing but call `exit` — in particular it must not return
+from the function that called `vfork`, or write above the stack pointer
+it was born with, because the parent resumes on that same stack. Both
+children are waited for with `wait` like any other. Process 0, the
+kernel's own thread, has no memory of its own to copy or share and gets
+`EPERM` from both.
 
 ## Errors
 
