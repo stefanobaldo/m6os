@@ -44,8 +44,10 @@ version anyone else is meant to install.
   in the emulator. Runs on the 128K and the 4 MB machines. Also run on an
   MSX2+ at 3.58 MHz and on a One Chip MSX, through the FBLabs SDXC 1.1.0
   driver, where a null system call goes round in 17.29 µs resident and
-  78.55 µs switched on the 3.58 MHz machine; the emulator's figures above
-  are hints and land within two ticks of it.
+  78.55 µs switched on the 3.58 MHz machine, and 17.35 µs and 78.61 µs on
+  that machine reduced to 128K, where three of the eight segments are free
+  after boot — what a process of up to three pages has to fit in; the
+  emulator's figures above are hints and land within two ticks of it.
 - The build reports the switched image's size beside the resident's.
 - Memory (`src/kernel/mem.asm`): the resident detects every memory mapper in
   the machine by writing and reading back through page 2 — mirroring
@@ -81,7 +83,15 @@ version anyone else is meant to install.
   inserted, and 128 and 256 at 2 MB and 4 MB — 256 where Nextor reports 255 —
   and a second mapper of 432K answers 27 segments, a count that is not a power
   of two; a 16K page copy takes 105.48 ms by `LDIR` and 94.02 ms by unrolled
-  `LDI` on the 3.58 MHz machine.
+  `LDI` on the 3.58 MHz machine. On that machine with its mapper reduced to
+  128K — the smallest configuration m6 targets — detection reports 8 segments
+  and Nextor agrees, the three segments left free after boot are allocated and
+  read back distinct with every refusal exercised, and the page copy comes back
+  at the same tick, so the counts are verified on real hardware from 8 segments
+  up to 256. The cap ran on hardware as well, on a One Chip MSX at 2 MB:
+  capped to 128K it leaves 8 segments usable and refuses every one from 8 to
+  127, while detection still reports all 128 and the machine's second mapper
+  is left alone.
 - Test harness: a test may list command lines to run with
   (`tests/<name>/args`, one run per line); on a run that never reports, the
   harness prints which slot the memory scan was in.
@@ -103,7 +113,9 @@ version anyone else is meant to install.
   the written file from outside the machine. Also run on an MSX2+ at 3.58 MHz
   and on a One Chip MSX against two Nextor 2 drivers written by different
   authors — Sunrise IDE 0.1.7 and FBLabs SDXC 1.1.0 — where one driver call
-  takes 4.75 ms and 5.30 ms respectively on the 3.58 MHz machine.
+  takes 4.75 ms and 5.30 ms respectively on the 3.58 MHz machine, and on that
+  machine reduced to 128K, where one call takes 5.25 ms through the FBLabs
+  SDXC and what page 3 has to keep is identical.
 - Test harness: a test may name the machines it runs on
   (`tests/<name>/machines`) and define a check of the disk image after the
   verdict; a second machine definition with both cartridge slots expanded.
