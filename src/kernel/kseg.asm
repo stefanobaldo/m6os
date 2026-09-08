@@ -5,12 +5,18 @@
 ; lives in the resident. It calls the resident through the jump table and
 ; nothing else, so it depends on the contract, not on the resident's
 ; layout. Its own jump table is the first thing in it; the order is fixed
-; and only grows.
+; and only grows. At K_INTRPT and K_SSLOT it carries the interrupt vector
+; and the subslot stub, so that its segment serves as process 0's page 0
+; (sched.asm); the code starts after them.
         include "kernel/kernel.inc"
 
         org     KS_BASE
         jp      ks_sysconf              ; KS_SYSCONF
         jp      ks_summary              ; KS_SUMMARY
+        block   KS_BASE+K_INTRPT-$
+        jp      K_ISR                   ; 0038h of process 0's page 0
+        block   KS_BASE+K_SSLOT-$
+        include "kernel/sslot.asm"      ; 0040h: the stub, in place
 
 ; ks_sysconf — SYS_SYSCONF: HL = a SC_* name. Out: HL = its value; CF and
 ; E_INVAL for a name that is not one.

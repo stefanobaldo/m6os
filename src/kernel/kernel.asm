@@ -69,6 +69,7 @@ nx_ramslot1     equ K_REC+KR_RAMAD+1
         define  NX_RW_ONLY              ; nx_find needs the BDOS; not here
 
         include "kernel/slot.asm"
+        include "kernel/sslot.asm"
         include "kernel/irq.asm"
         include "kernel/con.asm"
         include "nextor/abi2.asm"
