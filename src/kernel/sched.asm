@@ -139,6 +139,44 @@ sched_unlink:
 .pred:  ld      (hl),b                  ; pred.next = current.next
         ret
 
+; sched_save — AF and HL are on the stack already: push the rest and save
+; the stack pointer in the current row. A macro, because the frame is
+; built by whoever jumps here and a call would put its return address in
+; it. Leaves HL = the current row.
+    macro sched_save
+        push    bc
+        push    de
+        push    ix
+        push    iy
+        exx
+        push    bc
+        push    de
+        push    hl
+        exx
+        ex      af,af'
+        push    af
+        ex      af,af'
+        ld      hl,0
+        add     hl,sp
+        ex      de,hl
+        ld      hl,(k_cur)
+        inc     hl
+        ld      (hl),e                  ; P_SP
+        inc     hl
+        ld      (hl),d
+        dec     hl
+        dec     hl
+    endm
+
+; sched_save_block — the current row has left the ring, possibly leaving
+; it empty: save the context, move to the syscall stack — the process's
+; own has its 24 bytes spoken for — and go through the idle loop. read
+; comes here. Entered by a jump; never returns.
+sched_save_block:
+        sched_save
+        ld      sp,k_sstack
+        jp      sched_next_idle
+
 ; sched_save_switch — AF and HL are on the stack already: push the rest,
 ; save the stack pointer in the current row, and switch to the next
 ; runnable process. Entered by a jump; never returns to its caller.
@@ -179,6 +217,7 @@ sched_next_idle:
         or      a
         jr      nz,sched_next
         ei                              ; idle: nothing to run until a tick
+sched_idle_halt:
         halt                            ; wakes a process
         ld      hl,(k_cur)
         jr      sched_next_idle

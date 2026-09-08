@@ -28,7 +28,7 @@ K_API           equ K_BASE+16   ; K_API_N entries of JP, 3 bytes each: what
                                 ;     a kernel-side program calls in the
                                 ;     resident; the order is fixed and only
                                 ;     grows
-K_API_N         equ 15
+K_API_N         equ 16
 K_SYS           equ K_BASE+64   ; K_SYS_N entries of JP, 3 bytes each: the
                                 ;     syscall table, what a process calls
                                 ;     (sys.asm); an entry not yet given a
@@ -58,6 +58,8 @@ API_SPAWN       equ 12          ; HL image, BC length, A pages -> HL = A =
 API_WAIT        equ 13          ; blocks until a child exits -> H = its pid,
                                 ; L = A = its status; CF, E_CHILD
 API_YIELD       equ 14          ; the CPU to the next runnable process
+API_READ        equ 15          ; A = fd (0), HL = buffer, BC = length ->
+                                ; HL = bytes read; blocks until one
 
 ; k_call n — call the resident through the jump table.
     macro k_call n
@@ -79,7 +81,10 @@ SYS_SPAWN       equ 4           ; HL = image (not in page 2), BC = length,
                                 ; EINVAL, EAGAIN, ENOMEM
 SYS_WAIT        equ 5           ; -> H = pid, L = A = status; ECHILD
 SYS_YIELD       equ 6           ; -> nothing
-SYS_N           equ 7           ; entries given a syscall so far
+SYS_READ        equ 7           ; A = fd (0), HL = buffer, BC = length ->
+                                ; HL = bytes read, 1 to BC; blocks until
+                                ; there is one; EBADF, EINVAL
+SYS_N           equ 8           ; entries given a syscall so far
 
     macro sys n
         call    K_SYS+3*n
@@ -152,6 +157,7 @@ PS_FREE         equ 0           ; the row is nobody's
 PS_RUN          equ 1           ; runnable, or running
 PS_WAIT         equ 2           ; blocked in wait
 PS_ZOMBIE       equ 3           ; exited; the status waits for the parent
+PS_KBD          equ 4           ; blocked in read, waiting for a key
 PP_NONE         equ 0FFh        ; a parent that will never wait
 
 ; The capture record: what the resident needs to know about the machine,
@@ -248,6 +254,14 @@ V_NAME          equ 0000h       ; name table, 80 x 24 = 1920 bytes
 V_BLINK         equ 0800h       ; blink table, 10 x 24 = 240 bytes: the
                                 ; cursor's bit and nothing else
 V_PAT           equ 1000h       ; pattern table, the font, 2048 bytes
+
+; The keyboard (kbd.asm): the PPI, and the queue of events between the
+; interrupt handler and read.
+PPI_A           equ 0A8h        ; the primary slot register
+PPI_B           equ 0A9h        ; the selected row's eight columns, 0 = down
+PPI_C           equ 0AAh        ; bits 0-3 the row, bit 6 the CAPS LED (0 = lit)
+KBD_ROWS        equ 11
+KBD_RING_N      equ 16          ; events the queue holds, two bytes each
 
 ; Scaffolding shared by the tests and the resident: the tests' buffers, in
 ; page 2 as DEV_RW demands (page 1 is switched away during a call).
