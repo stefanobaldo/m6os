@@ -84,7 +84,13 @@ SYS_YIELD       equ 6           ; -> nothing
 SYS_READ        equ 7           ; A = fd (0), HL = buffer, BC = length ->
                                 ; HL = bytes read, 1 to BC; blocks until
                                 ; there is one; EBADF, EINVAL
-SYS_N           equ 8           ; entries given a syscall so far
+SYS_FORK        equ 8           ; -> HL = A = the child's pid in the parent,
+                                ; 0 in the child, whose memory is a copy;
+                                ; EPERM, EAGAIN, ENOMEM
+SYS_VFORK       equ 9           ; -> the same; the child shares the parent's
+                                ; memory and stack and the parent sleeps
+                                ; until the child exits; EPERM, EAGAIN
+SYS_N           equ 10          ; entries given a syscall so far
 
     macro sys n
         call    K_SYS+3*n
@@ -152,12 +158,16 @@ P_STATUS        equ 9           ; the exit status
 P_NEXT          equ 10          ; low byte of the next row in the ring of
                                 ; runnable rows (sched.asm); meaningful
                                 ; only while the row is PS_RUN
+P_VPC           equ 11          ; 2: a vfork parent's return address, kept
+                                ;    here because the child's pushes
+                                ;    overwrite it on the shared stack
 P_SIZE          equ 16
 PS_FREE         equ 0           ; the row is nobody's
 PS_RUN          equ 1           ; runnable, or running
 PS_WAIT         equ 2           ; blocked in wait
 PS_ZOMBIE       equ 3           ; exited; the status waits for the parent
 PS_KBD          equ 4           ; blocked in read, waiting for a key
+PS_VFORK        equ 5           ; blocked in vfork, until the child exits
 PP_NONE         equ 0FFh        ; a parent that will never wait
 
 ; The capture record: what the resident needs to know about the machine,
