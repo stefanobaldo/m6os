@@ -15,6 +15,39 @@ version anyone else is meant to install.
 
 ### Added
 
+- The console driver (`src/kernel/con.asm`, `src/kernel/vdp_t2.asm`): the
+  kernel programs the VDP for 80 columns by 24 rows on a layout of its own
+  and with the machine's ROM font, understands BS, TAB, LF, FF and CR, wraps
+  at column 80, and scrolls a write of many lines once — by all of them —
+  instead of once per line, writing each run of characters with one address
+  set; a cursor is shown while a process waits in `read`. The chip-specific
+  half is a separate file behind a fixed set of routine names, so another
+  VDP is another file.
+- The keyboard (`src/kernel/kbd.asm`) and the `read` system call
+  (`docs/syscalls.md`): the interrupt handler scans the matrix — every tick
+  while a process waits for a key, every third tick otherwise — queues up to
+  sixteen key events, repeats a key held down, and wakes every process
+  blocked in `read`; `read` on file descriptor 0 blocks until a key is there
+  and returns bytes raw, one per key, with SHIFT, CTRL and CAPS LOCK applied
+  and the MSX's one-byte codes for the special keys. The international
+  layout; the ROM's keyboard-type byte is recorded for a later choice.
+- System calls `fork` and `vfork`: `fork` copies every page of the caller
+  and returns the child's pid to the caller and 0 to the child; `vfork`
+  shares the caller's memory and stack with the child and suspends the
+  caller until the child exits. Both are refused to process 0 with `EPERM`.
+- Test `console`: the boot into 80 columns with the loader's lines kept,
+  the control codes and the scroll checked row by row from outside the
+  machine, and keys pressed on the emulated matrix — a phrase with SHIFT,
+  CTRL, CAPS LOCK, the keypad and a cursor key; keys typed before a reader
+  exists; a key held down; twenty keys at once; two readers; the cursor's
+  bit in video memory while a reader waits; the kernel's own thread reading
+  with nothing else to run. Runs on the 128K and the 4 MB machines.
+- Test `fork`: the double return, the copy, a three-page process forking
+  from a stack in page 2, `vfork` sharing memory with the parent asleep,
+  `wait` reaping both kinds, `EPERM`, `ENOMEM` and `EAGAIN` with nothing
+  leaked, and 32 two-page forks timed — 219.31 ms per fork in the emulator,
+  against 210.96 calculated from the measured page copy. Runs on the 128K
+  and the 4 MB machines.
 - The scheduler (`src/kernel/sched.asm`): the kernel runs up to fifteen
   processes at once, round-robin, switching at every 60 Hz tick from a
   process in user space to the next runnable one, with every register —
@@ -176,6 +209,16 @@ version anyone else is meant to install.
 
 ### Changed
 
+- `write` to the screen: LF moves to the start of the next row (it used to
+  be the only control code, and did the same); the screen mode is no longer
+  inherited — the program that starts m6 sets 80 columns through the BIOS
+  before the takeover, and the kernel keeps what is on screen if the name
+  table is where it expects it, else clears.
+- The capture record carries the VDP registers as the BIOS left them (the
+  colours, the VRAM type and the 50/60 Hz setting are kept; the font is
+  found through R#4) and the ROM's keyboard-type byte.
+- `exit` runs on the kernel's syscall stack from its first instruction.
+- The resident kernel is 6363 bytes.
 - A process exits into the scheduler, not back into whoever ran it: the
   kernel-side entry that ran a process and returned its status is now
   `wait`, and the one that created a process is `spawn`; the entry after
