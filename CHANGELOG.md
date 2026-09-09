@@ -15,6 +15,39 @@ version anyone else is meant to install.
 
 ### Added
 
+- The block layer (`src/kernel/blk.asm`, `src/kernel/ks_blk.asm`,
+  `docs/storage.md`): at boot the kernel enumerates every Nextor driver
+  the program that started it recorded — up to four — and each driver's
+  devices and logical units, reads every unit's partition table the way
+  Nextor does (the four primary entries, then the chain of logical
+  partitions inside an extended one, up to nine), validates each
+  candidate's boot sector against the FAT specification, tries a unit
+  without partitions as a single volume, and lists what it will mount as
+  `/mnt/a`, `/mnt/b`, … with the driver's name, device and unit, the
+  partition, its type and its size in KB, the boot volume marked as `/`.
+  Underneath: a volume table of eight rows; `blk_rw`, which addresses a
+  sector by volume and refuses one at or past the volume's end before the
+  driver is called, moves one sector per driver call, and transfers from
+  the driver straight into any 16K segment; a write-through cache of 24
+  sectors in the kernel's storage segment, least recently used first;
+  direct transfers into a program's pages that keep the cache coherent;
+  `k_copy` between two segments; and the real-time clock read as FAT date
+  and time words, 1980-01-01 on a machine without one.
+- Test `blk`, on the three emulated machines, booting from an image with a
+  primary partition, a chain of two logical ones and a second device on
+  the same interface: the boot listing checked against both images from
+  outside the machine, a read through the volume-relative path and a
+  refused one past the end, cache hit, miss, eviction and write-through
+  with the file read back from the image, a direct read into a fresh
+  segment copied both ways, and the clock against the host's. Test
+  `blkspike`: what a driver call of 1, 2, 4 and 8 sectors costs, by
+  difference, and the ticks each loses against the real-time clock — a
+  hint in the emulator, a measurement on hardware.
+- A test names its disk image's shape in `tests/<name>/disk`: the
+  `diskmanipulator` sizes and options for the master, and for a slave
+  device on the same interface when it needs one; an extension with two
+  hard disks goes with it.
+
 - The console driver (`src/kernel/con.asm`, `src/kernel/vdp_t2.asm`): the
   kernel programs the VDP for 80 columns by 24 rows on a layout of its own
   and with the machine's ROM font, understands BS, TAB, LF, FF and CR, wraps
@@ -210,6 +243,12 @@ version anyone else is meant to install.
 
 ### Changed
 
+- The kernel's jump tables: the kernel-side table has 32 entries, the
+  syscall table 48, and the syscall table moved from `C040h` to `C070h`
+  (`docs/syscalls.md`). Nothing released depends on either address.
+- The capture record carries the drivers found — count, and slot and bank
+  of up to four — and the program that starts m6 checks each driver's
+  header where it used to check only the boot drive's.
 - `write` to the screen: LF moves to the start of the next row (it used to
   be the only control code, and did the same); the screen mode is no longer
   inherited — the program that starts m6 sets 80 columns through the BIOS
@@ -219,7 +258,7 @@ version anyone else is meant to install.
   colours, the VRAM type and the 50/60 Hz setting are kept; the font is
   found through R#4) and the ROM's keyboard-type byte.
 - `exit` runs on the kernel's syscall stack from its first instruction.
-- The resident kernel is 6363 bytes.
+- The resident kernel is 6810 bytes; the switched part 2481.
 - A process exits into the scheduler, not back into whoever ran it: the
   kernel-side entry that ran a process and returned its status is now
   `wait`, and the one that created a process is `spawn`; the entry after
