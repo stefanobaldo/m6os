@@ -2,8 +2,9 @@
 ; record filled: the interrupt vector, the console — the VDP programmed
 ; for 80 columns — the keyboard, memory, the switched
 ; part of the kernel, the process table with the kernel as process 0, the
-; loader's memory released, the summary of the memory printed from the
-; switched part. Then, if the record names an address, jump there — a
+; loader's memory released, the storage enumerated and listed and the
+; cache emptied, the summary of the memory printed from the switched
+; part. Then, if the record names an address, jump there — a
 ; program the loader put above the image, which runs as process 0 — else
 ; halt with interrupts on, so the tick keeps counting for anyone watching
 ; it.
@@ -25,7 +26,9 @@ k_main:
         call    sched_release_boot
         ld      a,(K_KSEG)
         or      a
-        jr      z,.nosummary            ; no switched part: no summary
+        jr      z,.nosummary            ; no switched part: no summary,
+        kwin_call_s KS_BLK_INIT         ; no storage
+        kwin_call_s KS_CACHE_INIT
         kwin_call KS_SUMMARY
 .nosummary:
         ld      hl,(K_REC+KR_TEST)
