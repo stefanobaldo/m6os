@@ -22,7 +22,9 @@ k_cmp512:
         ld      c,a
         pop     de
         or      a
-        sbc     hl,de
+        sbc     hl,de                   ; the offset — 0 when the first byte
+        ld      a,b                     ; differs, so Z cannot come from it:
+        cp      c                       ; the two bytes differ, hence NZ
         ret
 
 ; k_fill_c — KT_BUF_C byte i = (i and 0FFh) xor A.

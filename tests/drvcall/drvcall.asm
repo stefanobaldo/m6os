@@ -586,7 +586,9 @@ cmp512:
         ld      c,a
         pop     de                      ; start
         or      a
-        sbc     hl,de                   ; offset; NZ
+        sbc     hl,de                   ; the offset — 0 when the first byte
+        ld      a,b                     ; differs, so Z cannot come from it:
+        cp      c                       ; the two bytes differ, hence NZ
         ret
 
 ; --- console helpers, through the BDOS --------------------------------
