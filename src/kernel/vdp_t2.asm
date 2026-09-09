@@ -16,8 +16,14 @@
 ; that system wrote (its shadow, captured in the record) and moved to
 ; V_PAT if it is elsewhere, which it is after a 40-column SCREEN 0.
 ;
-; Timing: consecutive data-port accesses are 30 T-states apart or more,
-; above what the V9938 needs in text modes with the display on. The two
+; Timing: consecutive data-port accesses in the loops below are 28
+; T-states apart in nominal Z80 counts, 31 with the MSX's wait state on
+; every M1 cycle, which is what the chip sees; vdp_clear_rows is 29 and
+; 33. Measured on a V9958 in TEXT2 with the display on: writes and reads
+; at 23 T are absorbed over 65 280 accesses, at 18 T they are not, so the
+; loops run 13 T above the only interval that failed. A tighter loop is
+; available down to 23 T (20), an unrolled outi and nop; an unrolled outi
+; alone at 18 T (16) is not — it loses both writes and reads. The two
 ; bytes of an address go to the control port under di/ei, because the
 ; interrupt handler reads S#0 and that resets the port's byte latch;
 ; data-port accesses between two addresses need no such care.
