@@ -8,11 +8,21 @@
 ; and only grows. At K_INTRPT and K_SSLOT it carries the interrupt vector
 ; and the subslot stub, so that its segment serves as process 0's page 0
 ; (sched.asm); the code starts after them.
+        include "nextor/nextor.inc"
         include "kernel/kernel.inc"
 
         org     KS_BASE
         jp      ks_sysconf              ; KS_SYSCONF
         jp      ks_summary              ; KS_SUMMARY
+        jp      ks_blk_init             ; KS_BLK_INIT
+        jp      ks_cache_init           ; KS_CACHE_INIT
+        jp      ks_bget                 ; KS_BGET
+        jp      ks_bwrite               ; KS_BWRITE
+        jp      ks_bdrop                ; KS_BDROP
+        jp      ks_binval               ; KS_BINVAL
+        jp      ks_bread_direct         ; KS_BREAD_DIRECT
+        jp      ks_bwrite_direct        ; KS_BWRITE_DIRECT
+        jp      ks_rtc_read             ; KS_RTC_READ
         block   KS_BASE+K_INTRPT-$
         jp      K_ISR                   ; 0038h of process 0's page 0
         block   KS_BASE+K_SSLOT-$
@@ -180,6 +190,8 @@ s_usable3:  db  ")",0
 s_notused:  db  "not used",0
 s_more:     db  "and ",0
 s_more2:    db  " more, not scanned",10,0
+
+        include "kernel/ks_blk.asm"
 
 ks_end:
         ASSERT  ks_end <= KS_BASE+4000h
