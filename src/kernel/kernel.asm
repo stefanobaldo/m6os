@@ -29,6 +29,7 @@ k_probe_slot:
         db      0
 k_kseg:
         db      0
+k_page1:
         db      0
 k_api:
         jp      con_puts                ; API_CON_PUTS
@@ -47,6 +48,20 @@ k_api:
         jp      sys_wait                ; API_WAIT
         jp      sys_yield               ; API_YIELD
         jp      sys_read                ; API_READ
+        jp      blk_rw                  ; API_BLK_RW
+        jp      blk_dev_rw              ; API_BLK_DEV_RW
+        jp      k_copy                  ; API_K_COPY
+        jp      blk_query               ; API_BLK_QUERY
+        jp      KS_BGET                 ; API_BGET: in the switched part
+        jp      KS_BWRITE               ; API_BWRITE
+        jp      KS_BDROP                ; API_BDROP
+        jp      KS_BINVAL               ; API_BINVAL
+        jp      KS_BREAD_DIRECT         ; API_BREAD_DIRECT
+        jp      KS_BWRITE_DIRECT        ; API_BWRITE_DIRECT
+        jp      KS_RTC_READ             ; API_RTC_READ
+        DUP     K_API_N-27
+        jp      sys_enosys              ; an entry not yet given a routine
+        EDUP
         block   K_SYS-$
 k_sys:
         jp      sys_exit                ; SYS_EXIT
@@ -63,15 +78,32 @@ k_sys:
         jp      sys_enosys
         EDUP
 k_rec:  ds      KREC_SIZE
-        block   K_PROC-$                ; where the record grows
+        block   K_VOL-$                 ; where the record grows
+k_vol:  ds      VOL_N*VOL_SIZE          ; the volume table (blk.asm)
+k_nvol: db      0
+k_root: db      VOL_NONE
+k_bcalls:
+        dw      0
+k_lasterr:
+        db      0
+        block   K_MAP-$
+k_map:  ds      4                       ; the segment in each page
+        block   K_PROC-$
 k_proc: ds      NPROC*P_SIZE            ; the process table, one aligned page
         ASSERT  k_ticks == K_TICKS
         ASSERT  k_probe == K_PROBE
         ASSERT  k_probe_slot == K_PROBE_SLOT
         ASSERT  k_kseg == K_KSEG
+        ASSERT  k_page1 == K_PAGE1
         ASSERT  k_api == K_API
         ASSERT  k_sys == K_SYS
         ASSERT  k_rec == K_REC
+        ASSERT  k_vol == K_VOL
+        ASSERT  k_nvol == K_BLK_NVOL
+        ASSERT  k_root == K_BLK_ROOT
+        ASSERT  k_bcalls == K_BLK_CALLS
+        ASSERT  k_lasterr == K_BLK_LASTERR
+        ASSERT  k_map == K_MAP
         ASSERT  k_proc == K_PROC
 
 ; The driver module's two external needs, supplied by this image: its own
@@ -89,6 +121,7 @@ nx_ramslot1     equ K_REC+KR_RAMAD+1
         include "nextor/abi2.asm"
         include "kernel/mem.asm"
         include "kernel/kwin.asm"
+        include "kernel/blk.asm"
         include "kernel/sched.asm"
         include "kernel/proc.asm"
         include "kernel/sys.asm"

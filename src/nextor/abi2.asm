@@ -77,22 +77,36 @@ nx_find:
         rrca                            ; bit 0: device-based
         ld      a,NXE_NOTDEVICE
         jr      nc,.pop2
-        ; The ROM itself: read the driver's bank number, then check the
-        ; header in that bank.
-        push    ix
+        ; The ROM itself: the driver's bank number and its header.
         ld      a,(ix+NXD_SLOT)
+        push    ix
+        call    nx_header
+        pop     ix
+        ld      (ix+NXD_BANK),b
+.pop2:
+        pop     de                      ; high word
+        pop     hl                      ; low word
+.done:
+        pop     ix
+        ret
+
+; nx_header — A = a slot: is a device-based Nextor driver there? Reads
+; K_SIZE through the slot, switches that bank in and checks the signature
+; and the device-based flag. Out: A = NXE_OK with B = the bank, and Z; or
+; A = NXE_NOSIGN or NXE_NOTDEVICE, NZ. Interrupts enabled on return.
+; Corrupts AF, BC, DE, HL, IX.
+nx_header:
+        ld      (nx_hdesc+NXD_SLOT),a
         ld      hl,4000h
         call    nx_enaslt
-        pop     ix
         ei
         ld      a,(NX_K_SIZE)
-        ld      (ix+NXD_BANK),a
-        push    ix
+        ld      (nx_hdesc+NXD_BANK),a
         ld      a,(nx_ramslot1)
         ld      hl,4000h
         call    nx_enaslt
-        pop     ix
         ei
+        ld      ix,nx_hdesc
         call    nx_enter
         ld      hl,NX_DRV_SIGN
         ld      de,nx_sign
@@ -111,19 +125,18 @@ nx_find:
         jr      .leave
 .nosign:
         ld      a,NXE_NOSIGN
-.leave:
-        push    af
+.leave: push    af
         call    nx_leave
+        ld      a,(nx_hdesc+NXD_BANK)
+        ld      b,a
         pop     af
-.pop2:
-        pop     de                      ; high word
-        pop     hl                      ; low word
-.done:
-        pop     ix
+        or      a
         ret
 
 nx_sign:
         db      "NEXTOR_DRIVER",0
+nx_hdesc:
+        ds      NXD_SIZE
     ENDIF
 
 ; nx_rw — read or write device sectors through the driver's DEV_RW.

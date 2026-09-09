@@ -4,7 +4,9 @@
 ; kernel that has taken the machine reads the record and nothing else.
 ;
 ; In:  IX -> KREC_SIZE-byte record. Fills every field except KR_DRV,
-;      KR_FIRST, KR_TARGET and KR_TPRE, which the caller fills.
+;      KR_FIRST, KR_TARGET and KR_TPRE, which the caller fills. Uses
+;      KT_SCRATCH for the _GDRVR blocks, and nx_header (abi2.asm, which
+;      the including file includes first).
 ; Out: interrupts enabled. Corrupts everything but IX.
 ;
 ; The wall — the lowest page-3 address a driver still refers to — comes
@@ -156,4 +158,57 @@ nx_capture:
         call    B_RDSLT
         ei
         ld      (ix+KR_KBDTYPE),a
+        ; The drivers: _GDRVR for index 1 to 7; kept when the flags say a
+        ; device-based Nextor driver and the header is where K_SIZE says;
+        ; four stored, a fifth counted.
+        xor     a
+        ld      (ix+KR_NDRV),a
+        ld      a,1
+        ld      (nxc_index),a
+.drv:   ld      a,(nxc_index)
+        cp      8
+        jr      nc,.drvdone
+        ld      c,NX_GDRVR
+        ld      hl,KT_SCRATCH
+        push    ix
+        call    BDOS
+        pop     ix
+        or      a
+        jr      nz,.drvdone             ; .IDRVR: past the last; else stop
+        ld      a,(KT_SCRATCH+4)        ; flags
+        rlca                            ; bit 7: a Nextor driver
+        jr      nc,.drvnext
+        ld      a,(KT_SCRATCH+4)
+        rrca                            ; bit 0: device-based
+        jr      nc,.drvnext
+        ld      a,(KT_SCRATCH+0)        ; slot
+        push    ix
+        call    nx_header
+        pop     ix
+        jr      nz,.drvnext
+        ld      a,(ix+KR_NDRV)
+        cp      4
+        jr      nc,.drvfull
+        add     a,a
+        add     a,KR_DRVS
+        ld      e,a
+        ld      d,0
+        push    ix
+        pop     hl
+        add     hl,de
+        ld      a,(KT_SCRATCH+0)
+        ld      (hl),a                  ; the slot
+        inc     hl
+        ld      (hl),b                  ; the bank
+.drvfull:
+        inc     (ix+KR_NDRV)
+.drvnext:
+        ld      a,(nxc_index)
+        inc     a
+        ld      (nxc_index),a
+        jr      .drv
+.drvdone:
         ret
+
+nxc_index:
+        db      0

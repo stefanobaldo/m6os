@@ -24,17 +24,35 @@ K_PROBE_SLOT    equ K_BASE+13   ; db: the slot being probed, for a harness
 K_KSEG          equ K_BASE+14   ; db: the segment holding the switched part
                                 ;     of the kernel (kwin.asm); 0 until it
                                 ;     is loaded, or when there is none
+K_PAGE1         equ K_BASE+15   ; db: what the storage gate put in page 1
+                                ;     (k_stgate_enter below); meaningful
+                                ;     only inside a storage gate, where
+                                ;     k_copy restores page 1 from it
 K_API           equ K_BASE+16   ; K_API_N entries of JP, 3 bytes each: what
                                 ;     a kernel-side program calls in the
                                 ;     resident; the order is fixed and only
-                                ;     grows
-K_API_N         equ 16
-K_SYS           equ K_BASE+64   ; K_SYS_N entries of JP, 3 bytes each: the
+                                ;     grows. Entries from API_BLK_RW on are
+                                ;     the block layer's and are called under
+                                ;     the window and the storage gate only
+K_API_N         equ 32
+K_SYS           equ K_BASE+112  ; K_SYS_N entries of JP, 3 bytes each: the
                                 ;     syscall table, what a process calls
                                 ;     (sys.asm); an entry not yet given a
                                 ;     syscall returns ENOSYS
-K_SYS_N         equ 64
+K_SYS_N         equ 48
 K_REC           equ K_BASE+256  ; the capture record, KREC_SIZE bytes
+K_VOL           equ K_BASE+400  ; the volume table (blk.asm): VOL_N rows of
+                                ;     VOL_SIZE bytes, filled at boot by the
+                                ;     switched part, read by blk_rw
+K_BLK_NVOL      equ K_BASE+496  ; db: rows filled
+K_BLK_ROOT      equ K_BASE+497  ; db: the row that is the boot volume, /;
+                                ;     VOL_NONE when none is
+K_BLK_CALLS     equ K_BASE+498  ; dw: driver calls made by the block layer
+K_BLK_LASTERR   equ K_BASE+500  ; db: the driver's code from the last one
+K_MAP           equ K_BASE+504  ; 4: the segment in each page, as the kernel
+                                ;    believes it: from the record at boot,
+                                ;    then proc_run's and sys_exit's; the
+                                ;    mapper register is never read
 K_PROC          equ K_BASE+512  ; the process table (sched.asm): NPROC rows
                                 ;     of P_SIZE bytes, one 256-byte page,
                                 ;     so a row is K_PROC + (pid << 4)
@@ -60,6 +78,27 @@ API_WAIT        equ 13          ; blocks until a child exits -> H = its pid,
 API_YIELD       equ 14          ; the CPU to the next runnable process
 API_READ        equ 15          ; A = fd (0), HL = buffer, BC = length ->
                                 ; HL = bytes read; blocks until one
+; The block layer's entries (blk.asm, ks_blk.asm): called under the window
+; and the storage gate — kwin_enter, k_stgate_enter — by the switched part
+; of the kernel, or by a test that enters them itself. The ones whose body
+; is in the switched part are direct jumps into it.
+API_BLK_RW      equ 16          ; A = volume, CF = write, DE:HL = sector,
+                                ; B = segment, C = 512-byte slot 0-31;
+                                ; CF with the errno in A
+API_BLK_DEV_RW  equ 17          ; A = driver, B = device, C = LUN, DE:HL =
+                                ; sector -> the storage segment, BUF_SCRATCH
+API_K_COPY      equ 18          ; IXH/IXL = source/destination segment, HL/DE
+                                ; = their offsets, BC = length
+API_BLK_QUERY   equ 19          ; A = driver, B = device, C = LUN, D = BQ_*
+                                ; -> ST_INFO of the storage segment
+API_BGET        equ 20          ; A = volume, DE:HL = sector -> HL = buffer
+API_BWRITE      equ 21          ; HL = buffer
+API_BDROP       equ 22          ; A = volume, DE:HL = sector
+API_BINVAL      equ 23          ; A = volume
+API_BREAD_DIRECT equ 24         ; A = volume, DE:HL = sector, B = segment,
+                                ; C = slot
+API_BWRITE_DIRECT equ 25        ; the same, writing; bdrop first
+API_RTC_READ    equ 26          ; -> HL = FAT date, DE = FAT time
 
 ; k_call n — call the resident through the jump table.
     macro k_call n
@@ -136,6 +175,51 @@ E_NOSYS         equ 38
 KS_BASE         equ 8000h
 KS_SYSCONF      equ KS_BASE+0   ; the body of SYS_SYSCONF
 KS_SUMMARY      equ KS_BASE+3   ; the boot summary of the memory
+KS_BLK_INIT     equ KS_BASE+6   ; the enumeration and the listing (ks_blk.asm)
+KS_CACHE_INIT   equ KS_BASE+9   ; every buffer free
+KS_BGET         equ KS_BASE+12  ; the cache's entries, as API_B* say
+KS_BWRITE       equ KS_BASE+15
+KS_BDROP        equ KS_BASE+18
+KS_BINVAL       equ KS_BASE+21
+KS_BREAD_DIRECT equ KS_BASE+24
+KS_BWRITE_DIRECT equ KS_BASE+27
+KS_RTC_READ     equ KS_BASE+30
+
+; The window (kwin.asm) and the storage gate: what is in page 2 and page 1
+; while the switched part of the kernel runs. kwin_enter puts the switched
+; part into page 2, kwin_leave puts back what K_MAP says belongs there;
+; k_stgate_enter puts the storage segment into page 1 and notes it in
+; K_PAGE1, k_stgate_leave puts the process's page 1 back. All four use
+; AF', which no syscall preserves, instead of the stack. A program that
+; calls the block layer's entries enters and leaves both around the calls.
+    macro kwin_enter                    ; the switched part into page 2
+        ex      af,af'
+        ld      a,(K_KSEG)
+        out     (0FEh),a
+        ex      af,af'
+    endm
+
+    macro kwin_leave                    ; what belongs in page 2, back
+        ex      af,af'
+        ld      a,(K_MAP+2)
+        out     (0FEh),a
+        ex      af,af'
+    endm
+
+    macro k_stgate_enter                ; the storage segment into page 1
+        ex      af,af'
+        ld      a,(K_REC+KR_SEG64K+2)
+        ld      (K_PAGE1),a
+        out     (0FDh),a
+        ex      af,af'
+    endm
+
+    macro k_stgate_leave                ; the process's page 1, back
+        ex      af,af'
+        ld      a,(K_MAP+1)
+        out     (0FDh),a
+        ex      af,af'
+    endm
 
 ; A process (proc.asm, sched.asm): what it sees in page 0, and its row in
 ; the process table. Process 0 is the kernel's own thread; pids 1 to
@@ -211,7 +295,13 @@ KR_VDPREG       equ 61          ; 10: VDP registers 0-9 as the previous
                                 ;     font through R#4
 KR_KBDTYPE      equ 71          ; the ROM's keyboard type byte (002Ch),
                                 ; report only
-KREC_SIZE       equ 72
+KR_NDRV         equ 72          ; Nextor drivers found, 0-4; a fifth is
+                                ; counted and not stored
+KR_DRVS         equ 73          ; 4 x (slot, bank): the device-based Nextor
+                                ; drivers with a valid header, in _GDRVR
+                                ; order; the block layer's driver index
+                                ; 0-3 is the position here
+KREC_SIZE       equ 81
 
 ; Memory (mem.asm). Owners in the segment table; the mapper table's layout.
 MEM_FREE        equ 0           ; owner: nobody
@@ -224,6 +314,75 @@ MM_SEGS         equ 1           ; 2: segments, 1-256
 MM_FLAGS        equ 3           ; MMF_*
 MM_SIZE         equ 4
 MMF_PRIMARY     equ 1           ; the mapper page 3 lives in
+
+; The block layer (blk.asm, ks_blk.asm). Sectors are 512 bytes; a sector
+; number is 32 bits and travels in DE:HL, DE high; a transfer target is a
+; segment and a 512-byte slot in it, 0-31.
+BLK_PER_CALL    equ 1           ; sectors per driver call: one keeps the
+                                ; interrupt-disabled region inside a frame
+VOL_N           equ 8           ; volumes the table holds
+VOL_SIZE        equ 12
+V_DRV           equ 0           ; driver index 0-3; FFh = the row is free
+V_DEV           equ 1           ; device 1-7
+V_LUN           equ 2           ; LUN 1-7
+V_FLAGS         equ 3           ; VF_*, as LUN_INFO gives them
+V_FIRST         equ 4           ; 4: first device sector
+V_COUNT         equ 8           ; 4: sectors
+VF_REMOVABLE    equ 1
+VF_RO           equ 2
+VOL_NONE        equ 0FFh        ; blk_root when no volume is the boot one
+BQ_DEVINFO      equ 0           ; blk_query: DEV_INFO basic, 2 bytes
+BQ_LUNINFO      equ 1           ; LUN_INFO, 12 bytes
+BQ_DRVNAME      equ 2           ; DRV_NAME, 32 bytes
+
+; The storage segment: the boot segment of page 2 (KR_SEG64K+2), the
+; kernel's, addressed as (segment, offset) — the switched part sees it at
+; 4000h+offset under the storage gate, process 0 at 8000h+offset.
+ST_TESTS        equ 0000h       ; 2K: the mailbox and the tests' buffers,
+                                ; written by the loader under Nextor and
+                                ; read after the takeover; never cleared
+ST_HDR          equ 0800h       ; the cache headers, BUF_N x 8
+ST_INFO         equ 08C0h       ; 64: what blk_query returns; the copy of
+                                ; the primary entries during the walk
+ST_VARS         equ 0900h       ; 128: the switched part's variables (it
+                                ; keeps none of its own: it may be ROM)
+ST_RESERVED     equ 0980h       ; to 0FFFh: the open-file table, the mount
+                                ; table, the exec argument area — later
+ST_BUF          equ 1000h       ; BUF_N sector buffers of 512
+BUF_N           equ 24
+BUF_SCRATCH     equ 23          ; the enumeration's buffer at boot
+H_VOL           equ 0           ; a header: the volume; FFh = free
+H_SEC           equ 1           ; 4: the sector
+H_AGE           equ 5           ; the clock's value at the last touch
+H_SIZE          equ 8
+SV_CLOCK        equ ST_VARS+0   ; the cache's clock
+SV_TOTAL        equ ST_VARS+1   ; 4: the LUN's sectors, 0 = unknown
+SV_LFLAGS       equ ST_VARS+5   ; the LUN's flags, VF_*
+SV_EXT          equ ST_VARS+6   ; 4: the extended partition's first sector
+SV_EXTEND       equ ST_VARS+10  ; 4: its end (first + count)
+SV_EBR          equ ST_VARS+14  ; 4: the current EBR's sector
+SV_NLOG         equ ST_VARS+18  ; logical partitions seen in this chain
+SV_PRI          equ ST_VARS+19  ; the primary entry being walked, 1-4
+SV_CAND         equ ST_VARS+20  ; 4: the candidate's first sector
+SV_CCOUNT       equ ST_VARS+24  ; 4: its sectors
+SV_CTYPE        equ ST_VARS+28  ; its type byte
+SV_FOUND        equ ST_VARS+29  ; candidates found on this LUN
+SV_DRV          equ ST_VARS+30  ; the driver, device and LUN being walked
+SV_DEV          equ ST_VARS+31
+SV_LUN          equ ST_VARS+32
+SV_NDEV         equ ST_VARS+33  ; volumes found on this device
+SV_NLUN         equ ST_VARS+34  ; LUNs the device has
+SV_LINK         equ ST_VARS+35  ; 4: the next EBR, relative to SV_EXT
+SV_LTYPE        equ ST_VARS+39  ; the link entry's type
+SV_PKIND        equ ST_VARS+40  ; PK_*: how the candidate is labelled
+SV_NDRV         equ ST_VARS+41  ; drivers to walk
+SV_FULL         equ ST_VARS+42  ; the "more volumes" line was printed
+SV_NAMELEN      equ ST_VARS+43  ; the driver's name without its padding
+SV_RTC          equ ST_VARS+44  ; 13: the RTC's registers as read
+SV_NAME         equ ST_VARS+64  ; 32: the driver's name
+PK_PRIMARY      equ 0
+PK_LOGICAL      equ 1
+PK_SUPER        equ 2
 
 ; Page 0. Every page 0 the kernel runs with carries these two things and
 ; nothing else is required of it: the interrupt entry, and the secondary

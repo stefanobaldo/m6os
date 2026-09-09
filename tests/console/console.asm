@@ -268,8 +268,12 @@ step:       db  0
 leading:    db  0
 REC:        ds  KREC_SIZE
 
-; The capture module needs the BIOS RDSLT only; the loader module, the four
-; symbols below.
+; The capture module needs the driver module's loader half (nx_header)
+; and, through it, the BIOS ENASLT and the DOS RAMAD1; the loader module,
+; the four symbols below.
+nx_enaslt   equ ENASLT
+nx_ramslot1 equ RAMAD1
+        include "nextor/abi2.asm"
         include "nextor/capture.asm"
 ld_image    equ kimage
 ld_rec      equ REC
