@@ -133,7 +133,8 @@ start:
         ld      de,s_notdriver
         call    puts
         jr      .listed
-.check: call    header_check
+.check: ld      a,(KT_SCRATCH+0)
+        call    nx_header
         ld      de,s_headerok
         jr      z,.say
         ld      de,s_noheader
@@ -225,6 +226,10 @@ start:
         ld      de,s_of
         call    puts
         ld      a,(REC+KR_MAPTOTAL)
+        call    putdec
+        ld      de,s_ndrv
+        call    puts
+        ld      a,(REC+KR_NDRV)
         call    putdec
         call    newline
         ld      de,s_indent2
@@ -570,37 +575,6 @@ fail_cmp:
         ld      c,_TERM
         jp      BDOS
 
-; header_check — the _GDRVR block at KT_SCRATCH names a slot; switch that
-; slot's driver bank in and look for the signature. Z if it is there.
-header_check:
-        ld      a,(KT_SCRATCH+0)
-        ld      (tdesc+NXD_SLOT),a
-        ld      hl,4000h
-        call    ENASLT
-        ei
-        ld      a,(NX_K_SIZE)
-        ld      (tdesc+NXD_BANK),a
-        ld      a,(RAMAD1)
-        ld      hl,4000h
-        call    ENASLT
-        ei
-        ld      ix,tdesc
-        call    nx_enter
-        ld      hl,NX_DRV_SIGN
-        ld      de,nx_sign
-        ld      b,NX_SIGN_LEN
-.cmp:   ld      a,(de)
-        cp      (hl)
-        jr      nz,.leave
-        inc     hl
-        inc     de
-        djnz    .cmp
-        xor     a                       ; Z: found
-.leave: push    af
-        call    nx_leave
-        pop     af
-        ret
-
 ; sec_first — SECNUM = first device sector of the drive.
 sec_first:
         ld      hl,(REC+KR_FIRST)
@@ -810,6 +784,7 @@ s_doshim:   db  "h doshim $"
 s_segs:     db  "h segs $"
 s_kseg:     db  "kernel $"
 s_of:       db  " of $"
+s_ndrv:     db  " drivers $"
 s_room:     db  " room $"
 s_previous: db  "6 previous run wrote P2: $"
 s_nofile:   db  "no file$"
@@ -842,7 +817,6 @@ cluster:    dw  0
 n:          dw  0
 t0:         dw  0
 loop_fn:    dw  0
-tdesc:      ds  NXD_SIZE
 REC:        ds  KREC_SIZE
 
 ; The driver module's two external needs: under Nextor, the BIOS routine and
