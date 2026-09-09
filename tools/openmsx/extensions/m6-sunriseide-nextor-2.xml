@@ -1,0 +1,35 @@
+<?xml version="1.0" ?>
+<!DOCTYPE msxconfig SYSTEM 'msxconfig2.dtd'>
+<msxconfig>
+  <info>
+    <name>Sunrise ATA-IDE with Nextor 2.1.4, master and slave</name>
+    <manufacturer>Sunrise</manufacturer>
+    <code/>
+    <release_year>1995</release_year>
+    <description>The m6-sunriseide-nextor interface with two hard disks: the master given with -hda, the slave with -hdb. For a test that needs two devices on one driver; the master-only extension is the default because openMSX creates a 100 MB image for a slave nobody named.</description>
+    <type>external hard disk</type>
+  </info>
+  <devices>
+    <primary slot="any">
+      <secondary slot="any">
+        <SunriseIDE id="Sunrise IDE">
+          <mem base="0x0000" size="0x10000"/>
+          <rom>
+            <filename>Nextor-2.1.4.SunriseIDE.ROM</filename>
+            <sha1>d03ea188cb0d6cfcb07a02fcc8ec01896a3a7fb7</sha1>
+          </rom>
+          <master>
+            <type>IDEHD</type>
+            <filename>hd_master.dsk</filename>
+            <size>2</size>
+          </master>
+          <slave>
+            <type>IDEHD</type>
+            <filename>hd_slave.dsk</filename>
+            <size>2</size>
+          </slave>
+        </SunriseIDE>
+      </secondary>
+    </primary>
+  </devices>
+</msxconfig>
