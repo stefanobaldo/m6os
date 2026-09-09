@@ -7,7 +7,7 @@ the authoritative copy of every number here.
 ## The convention
 
 A program calls the kernel through a jump table at a fixed address in page 3,
-`K_SYS` = `C040h`, three bytes per entry: syscall *n* is `call C040h + 3n`.
+`K_SYS` = `C070h`, three bytes per entry: syscall *n* is `call C070h + 3n`.
 There is no trap and no dispatch; the call lands on the kernel's routine, or
 on a stub that switches the kernel's cold code in for the length of the call.
 `kernel.inc` gives every syscall a name (`SYS_WRITE` …) and a macro, `sys n`.

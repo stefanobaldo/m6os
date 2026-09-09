@@ -47,7 +47,18 @@ interrupt handler, keeps what is typed before anyone reads it, repeats a
 key held down, and delivers keys raw through `read`, one byte per key with
 SHIFT, CTRL and CAPS LOCK applied. `fork` copies a process page by page
 and `vfork` shares its memory with the child while the parent waits — the
-two compatibility paths beside `spawn`. Six tests prove all of this on
+two compatibility paths beside `spawn`. At boot the kernel asks every
+Nextor driver in the machine for its devices, reads each device's partition
+table — the four primary entries and the chain of logical partitions inside
+an extended one, in the order Nextor itself visits them — checks every
+candidate's boot sector, and lists the FAT12 and FAT16 volumes it will mount
+as `/mnt/a`, `/mnt/b`, … with sizes and the boot volume marked (see
+[`docs/storage.md`](docs/storage.md)); underneath, a block layer addresses a
+sector by volume and refuses one past the volume's end before the driver is
+touched, moves one sector per driver call so that the interrupt-disabled
+region of a call stays inside one frame, reads a sector from the driver
+straight into any 16K segment, and keeps a write-through cache of 24
+sectors; the real-time clock is read as a FAT date and time. Eight tests prove all of this on
 every change in a headless openMSX against the Sunrise IDE driver, on an
 MSX2 with a 128K memory mapper — with the cartridge in a plain and in an
 expanded slot — and on an MSX2 with a 4 MB mapper, where segments 128 to
@@ -57,10 +68,18 @@ processes that alternate on the tick, one that never calls the kernel and
 still does not stop another, a zombie, an orphan, the table and the memory
 running out, and times the context switch; the fifth checks the screen row
 by row and presses keys on the emulated matrix — typed ahead, held down,
-too many at once, with two readers waiting — and the sixth forks with and
-without a copy, exercises every refusal, and times a two-page `fork`.
-There is no filesystem yet; see [`CONTRIBUTING.md`](CONTRIBUTING.md) for
-how to build and test.
+too many at once, with two readers waiting — the sixth forks with and
+without a copy, exercises every refusal, and times a two-page `fork`; the
+seventh boots from an image with a primary partition, a chain of two
+logical ones and a second device on the same interface, checks the boot
+listing against the images from outside the machine, reads through the
+volume-relative path and past its end, hits, misses and evicts in the
+cache, writes a sector through it and reads the file back from the image,
+copies a sector between segments both ways, and compares the clock with the
+host's; and the eighth measures what a driver call of 1, 2, 4 and 8 sectors
+costs and how many ticks it loses — a hint in the emulator, a measurement
+on hardware. The block layer is in place; there is no filesystem yet. See
+[`CONTRIBUTING.md`](CONTRIBUTING.md) for how to build and test.
 
 **Hardware.** The smallest machine m6 targets — 128K of mapper memory — is
 checked on every change in the emulator and on real hardware too, on an MSX2+ at
