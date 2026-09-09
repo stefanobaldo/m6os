@@ -8,6 +8,14 @@
 # the program, an AUTOEXEC.BAT that runs it with the arguments) in two
 # openMSX runs, then boots it under the harness. Exit code is the first
 # failing harness's, else 0.
+#
+# The disk: tests/<name>/disk names the image's shape — line 1 the
+# diskmanipulator sizes and options for the master (`2M` is one
+# unpartitioned volume; `-nextor 4M 2M 2M` a Nextor partition table with a
+# primary and a chain of two), line 2, if present, the same for a slave
+# device on the same interface. Without the file: a 2M master alone, which
+# is what every test had before there was a file. The system files go on
+# the first volume either way.
 set -eu
 name=${1:?usage: tools/run-test.sh <name>}
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -20,6 +28,10 @@ else
     OPENMSX=openmsx
 fi
 export OPENMSX_USER_DATA="$ROOT/tools/openmsx"
+# The host's offset from UTC, +hhmm, for a test that reads the RTC: the
+# emulated clock keeps local time and openMSX's Tcl has no clock format.
+M6_TZ_OFFSET=$(date +%z)
+export M6_TZ_OFFSET
 
 com="build/$name.com"
 [ -f "$com" ] || { echo "run-test: $com not built; run make first" >&2; exit 2; }
@@ -49,6 +61,17 @@ openmsx_run() {
 
 machines=m6-msx2-128k
 [ -f "tests/$name/machines" ] && machines=$(cat "tests/$name/machines")
+# The image's shape, and the extension that goes with it: the one with a
+# slave device only when the test asks for one, because openMSX creates a
+# 100 MB image for a slave nobody named.
+master=2M
+slave=""
+if [ -f "tests/$name/disk" ]; then
+    master=$(sed -n 1p "tests/$name/disk")
+    slave=$(sed -n 2p "tests/$name/disk")
+fi
+ext=m6-sunriseide-nextor
+[ -n "$slave" ] && ext=m6-sunriseide-nextor-2
 # The argument lines, read with their line numbers so an empty line counts.
 if [ -f "tests/$name/args" ]; then
     runs=$(grep -c '' "tests/$name/args")
@@ -69,11 +92,18 @@ for machine in $machines; do
         printf '%s%s\r\n' "$upper" "${args:+ $args}" > "$staging/AUTOEXEC.BAT"
         export M6_IMAGE="$ROOT/build/$name.$machine.$run.dsk" M6_STAGING="$ROOT/$staging"
         export M6_EXPORT="$ROOT/build/$name.$machine.$run.export"
+        export M6_MASTER="$master" M6_SLAVE="$slave"
+        export M6_SLAVE_IMAGE="$ROOT/build/$name.$machine.$run.slave.dsk"
+        # openMSX's command line takes -hda alone; the slave's image goes
+        # in through the hdb command, which runs before the machine boots.
+        slave_cmd="set renderer none"
+        [ -n "$slave" ] && slave_cmd="hdb $M6_SLAVE_IMAGE"
         M6_STEP=create openmsx_run -script tools/mkdisk.tcl
-        M6_STEP=import openmsx_run -ext m6-sunriseide-nextor -hda "$M6_IMAGE" -script tools/mkdisk.tcl
+        M6_STEP=import openmsx_run -ext "$ext" -hda "$M6_IMAGE" -command "$slave_cmd" \
+            -script tools/mkdisk.tcl
 
         M6_TEST="$name" M6_TEST_DIR="$ROOT/tests/$name" \
-            openmsx_run -ext m6-sunriseide-nextor -ext debugdevice -hda "$M6_IMAGE" \
+            openmsx_run -ext "$ext" -ext debugdevice -hda "$M6_IMAGE" -command "$slave_cmd" \
                 -script tools/harness.tcl
     done
 done
