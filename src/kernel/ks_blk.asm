@@ -990,7 +990,11 @@ ks_rtc_read:
         jr      z,.stable
         djnz    .pass
 .stable:
-        ; Every time register a BCD digit (the weekday is not looked at).
+        ; Every time register a BCD digit (the weekday is not looked at),
+        ; and every assembled value within the range a FAT stamp allows.
+        ; A clock whose battery has gone reads digits that are each below
+        ; ten and together mean nothing -- 29:12:35, or a date of all
+        ; zeroes -- and such a stamp must not reach a directory entry.
         ld      hl,SG+SV_RTC
         ld      b,13
 .check: ld      a,(hl)
@@ -1000,11 +1004,20 @@ ks_rtc_read:
         djnz    .check
         ld      hl,SG+SV_RTC+7          ; day, month, year
         call    .pair
+        or      a                       ; day 1-31
+        jr      z,.none
+        cp      32
+        jr      nc,.none
         ld      e,a                     ; day
         call    .pair
+        or      a                       ; month 1-12
+        jr      z,.none
+        cp      13
+        jr      nc,.none
         ld      d,a                     ; month
         call    .pair
-        ld      c,a                     ; year - 1980
+        ld      c,a                     ; year - 1980: two digits never
+                                        ; leave the field's own 0-127
         ld      h,0
         ld      l,d
         add     hl,hl
@@ -1022,11 +1035,17 @@ ks_rtc_read:
         push    hl                      ; the date
         ld      hl,SG+SV_RTC+0          ; seconds, minutes, hours
         call    .pair
+        cp      60                      ; second 0-59
+        jr      nc,.none1
         srl     a
         ld      e,a                     ; second / 2
         call    .pair
+        cp      60                      ; minute 0-59
+        jr      nc,.none1
         ld      d,a                     ; minute
         call    .pair
+        cp      24                      ; hour 0-23
+        jr      nc,.none1
         ld      c,a                     ; hour
         ld      h,0
         ld      l,d
@@ -1047,6 +1066,7 @@ ks_rtc_read:
         ex      de,hl                   ; de = the time
         pop     hl                      ; hl = the date
         ret
+.none1: pop     af                      ; drop the date already computed
 .none:  ld      hl,0021h                ; 1980-01-01
         ld      de,0
         ret
