@@ -12,10 +12,11 @@
 # The disk: tests/<name>/disk names the image's shape — line 1 the
 # diskmanipulator sizes and options for the master (`2M` is one
 # unpartitioned volume; `-nextor 4M 2M 2M` a Nextor partition table with a
-# primary and a chain of two), line 2, if present, the same for a slave
-# device on the same interface. Without the file: a 2M master alone, which
-# is what every test had before there was a file. The system files go on
-# the first volume either way.
+# primary and a chain of two; `-fat16max` one FAT16 partition whose FAT is
+# 256 sectors, which no formatter produces at this size), line 2, if
+# present, the same for a slave device on the same interface. Without the
+# file: a 2M master alone, which is what every test had before there was a
+# file. The system files go on the first volume either way.
 set -eu
 name=${1:?usage: tools/run-test.sh <name>}
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
