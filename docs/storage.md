@@ -24,9 +24,11 @@ partition is a candidate when its type is FAT12 or FAT16 (`01h`, `04h`,
 `06h`, `0Eh`), its numbers are sane (a first sector and a size, inside the
 unit when the unit reports its size), and its first sector is a FAT boot
 sector: 512 bytes per sector, a power of two of sectors per cluster, one to
-seven FATs, root directory entries, sectors per FAT below 256. A partition
-that fails the last check is skipped with one line saying so, never
-mounted "nearly". A unit with no partition of ours at all is tried as a
+seven FATs, root directory entries, and a sectors-per-FAT count that is not
+zero — the whole 16-bit field counts, and a nearly full FAT16 volume fills
+256 sectors with its table, while zero is what a FAT32 volume leaves there.
+A partition that fails the last check is skipped with one line saying so,
+never mounted "nearly". A unit with no partition of ours at all is tried as a
 single FAT volume itself (a "superfloppy", the way an unpartitioned card
 is formatted). FAT32 volumes are not mounted, as they are not under
 Nextor. Extended partitions of type `0Fh`, which a PC writes, are not
@@ -87,7 +89,10 @@ every access returns an error.
 
 The real-time clock is read when a date is needed, as the FAT date and
 time words a directory entry holds; the kernel keeps no clock of its own
-and never sets the RTC. A machine without one reads 1980-01-01 00:00.
+and never sets the RTC. A machine without one reads 1980-01-01 00:00, and
+so does a reading that is not a valid date and time — an unset chip or a
+flat battery, which otherwise offers month 0 or hour 29 for a directory
+entry to keep.
 
 ## Not yet
 
