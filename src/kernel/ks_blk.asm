@@ -607,11 +607,10 @@ bi_bpb:
         jr      z,.no
         ld      hl,(SG_SCRATCH+16h)
         ld      a,h
-        or      a
-        jr      nz,.no
-        ld      a,l
-        or      a
-        jr      z,.no
+        or      l
+        jr      z,.no                   ; sectors per FAT: 0 is FAT32. A
+                                        ; nearly full FAT16 needs 256 of
+                                        ; them, so the whole 16 bits count.
         ld      hl,(SG_SCRATCH+13h)
         ld      a,h
         or      l
