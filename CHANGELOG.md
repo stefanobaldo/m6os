@@ -32,7 +32,8 @@ version anyone else is meant to install.
   sectors in the kernel's storage segment, least recently used first;
   direct transfers into a program's pages that keep the cache coherent;
   `k_copy` between two segments; and the real-time clock read as FAT date
-  and time words, 1980-01-01 on a machine without one.
+  and time words, 1980-01-01 on a machine without one and on a reading
+  that is not a valid date and time.
 - Test `blk`, on the three emulated machines, booting from an image with a
   primary partition, a chain of two logical ones and a second device on
   the same interface: the boot listing checked against both images from
@@ -258,7 +259,7 @@ version anyone else is meant to install.
   colours, the VRAM type and the 50/60 Hz setting are kept; the font is
   found through R#4) and the ROM's keyboard-type byte.
 - `exit` runs on the kernel's syscall stack from its first instruction.
-- The resident kernel is 6810 bytes; the switched part 2481.
+- The resident kernel is 6810 bytes; the switched part 2504.
 - A process exits into the scheduler, not back into whoever ran it: the
   kernel-side entry that ran a process and returned its status is now
   `wait`, and the one that created a process is `spawn`; the entry after
