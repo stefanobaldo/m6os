@@ -960,8 +960,10 @@ RTC_DATA        equ 0B5h
 ; ks_rtc_read — HL = the date as FAT keeps it ((year - 1980) << 9 |
 ; month << 5 | day), DE = the time (hour << 11 | minute << 5 | second /
 ; 2), from the RP5C01's block 0, read until the seconds agree before and
-; after; 1980-01-01 00:00 when a register is not BCD, which is what a
-; machine without an RTC reads. Corrupts everything.
+; after; 1980-01-01 00:00 when a register is not BCD -- what a machine
+; without an RTC reads -- or when what the digits assemble to is outside
+; the range a date and a time have, which is what a clock with no battery
+; left reads. Corrupts everything.
 ks_rtc_read:
         ld      a,13                    ; the mode register: block 0, timer on
         out     (RTC_ADDR),a
