@@ -118,7 +118,27 @@ on the tick there, and creating processes stops with the memory out after five
 on that machine and with the process table full after fifteen on the One Chip
 MSX. A two-page `fork` takes 219.31 ms on the MSX2+ at 3.58 MHz, measured over 32
 forks against 210.96 ms calculated from the page copy; what is typed on that
-machine's keyboard reaches a process as the test expects.
+machine's keyboard reaches a process as the test expects. The block layer's
+transfer path is measured on that machine through both drivers, by difference
+over 2400 sector reads per point: one driver call of one sector costs 4.80 ms
+through the Sunrise IDE and 5.39 ms through the FBLabs SDXC — the 4.75 and
+5.30 ms measured earlier over 600 reads, to within 2 % — two sectors 7.52 and
+9.66 ms per call, 3.76 and 4.83 ms a sector, and four sectors 13.00 ms per
+call, 3.25 ms a sector, through the Sunrise IDE. Past that point the method
+stops measuring: the figure is taken against the 60 Hz tick counter, which a
+call whose interrupt-disabled region crosses a frame starves, so four sectors
+through the FBLabs SDXC and eight through either driver read as a floor near
+one frame rather than as a cost. What those points do say is what they lose. A
+call of eight sectors loses 129 ticks of 1800 through the Sunrise IDE and 301
+of 1980 through the FBLabs SDXC; one sector per call loses 2 of about 2100 on
+both, and those two are the measurement's own boundary at each end rather than
+the call's, a 5 ms call being unable to span a frame. One sector per call is
+what the kernel issues. Every partition of both bench cards is listed with the
+size Nextor's FDISK shows — including one whose file allocation table fills 256
+sectors, the most a FAT16 volume can have — and on a One Chip MSX with both
+cartridges inserted both drivers are found and every volume of both cards
+listed. The real-time clock reads back the date and time set under Nextor on
+the same machine.
 
 ## Documents
 
