@@ -9,7 +9,11 @@
 #   M6_STEP=import   -hda <image>: import the staging directory into its
 #                    first volume (hda1 when partitioned, hda otherwise),
 #                    after sourcing M6_FILES_TCL, if set, which may write
-#                    files into M6_STAGING first
+#                    files into M6_STAGING first and, with the volume in
+#                    $target, import files itself: the staging tree is
+#                    walked in the host's directory order, so a test that
+#                    needs a file at a known cluster puts it on the volume
+#                    here, before that import, and keeps it out of the tree
 # M6_IMAGE is the image path, M6_SLAVE_IMAGE the slave's, M6_STAGING the
 # directory to import.
 set throttle off
@@ -100,13 +104,14 @@ switch $::env(M6_STEP) {
         }
     }
     import {
+        # A partitioned image has volumes hda1, hda2, ...; an unpartitioned
+        # one is hda itself. Named before the hook runs, which may import
+        # into it.
+        set target hda
+        if {[llength $::env(M6_MASTER)] > 1} { set target hda1 }
         if {[info exists ::env(M6_FILES_TCL)] && $::env(M6_FILES_TCL) ne ""} {
             source $::env(M6_FILES_TCL)
         }
-        # A partitioned image has volumes hda1, hda2, ...; an unpartitioned
-        # one is hda itself.
-        set target hda
-        if {[llength $::env(M6_MASTER)] > 1} { set target hda1 }
         if {[catch {diskmanipulator import $target $::env(M6_STAGING)} err]} {
             puts stderr "mkdisk: import into $target failed: $err"
             exit 1
