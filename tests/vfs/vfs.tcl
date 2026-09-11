@@ -167,5 +167,16 @@ proc post_verdict {} {
     if {$ticks == 0} { return "the reader took no time" }
     puts stderr [format "harness: %s: read() 64K in %d ticks: %.1f KB/s (an emulator's figure: a hint)" \
         $::test $ticks [expr {64.0 * 60 / $ticks}]]
+    # The exec's ticks: the caller's before the call, the program's on entry.
+    set t0 ""
+    set t1 ""
+    foreach r $rows {
+        if {[regexp {^exec: t0 (\d+)} $r -> v]} { scan $v %d t0 }
+        if {[regexp {^big16k: t1 (\d+)} $r -> v]} { set t1 $v }
+    }
+    if {$t0 eq "" || $t1 eq ""} { return "no exec timing lines on the screen" }
+    set dt [expr {($t1 - $t0) & 0xFFFF}]
+    puts stderr [format "harness: %s: exec of a 16K program in %d ticks, %.0f ms (an emulator's figure: a hint)" \
+        $::test $dt [expr {$dt * 1000.0 / 60}]]
     return ""
 }
