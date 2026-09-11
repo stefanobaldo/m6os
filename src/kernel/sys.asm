@@ -23,13 +23,19 @@ fd_code:
         ret
 
 ; sys_write — SYS_WRITE: A = fd, HL = buffer, BC = length. A descriptor
-; that is the console writes there. Out: HL = bytes written; CF and E_BADF
-; for any other descriptor — a file's, until the write side exists.
+; that is the console writes there, without leaving the resident; one that
+; names an open file goes to the switched part with A = the open-file
+; row's index. Out: HL = bytes written; CF and E_BADF for the keyboard or
+; a closed descriptor.
 sys_write:
         call    fd_code
         cp      FD_CON
         jr      z,.con
-        ld      a,E_BADF
+        cp      80h
+        jr      nc,.badf
+        ld      ix,KS_WRITE
+        jp      k_sw_s
+.badf:  ld      a,E_BADF
         scf
         ret
 .con:   push    bc
@@ -70,3 +76,11 @@ k_sw_exec:
         k_sw_stub KS_EXEC
 k_sw_read:
         k_sw_stub KS_READ
+k_sw_unlink:
+        k_sw_stub KS_UNLINK
+k_sw_mkdir:
+        k_sw_stub KS_MKDIR
+k_sw_rmdir:
+        k_sw_stub KS_RMDIR
+k_sw_rename:
+        k_sw_stub KS_RENAME

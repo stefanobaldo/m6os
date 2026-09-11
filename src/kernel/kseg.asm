@@ -36,6 +36,13 @@
         jp      ks_readdir              ; KS_READDIR
         jp      ks_chdir                ; KS_CHDIR
         jp      ks_exec                 ; KS_EXEC (ks_exec.asm)
+        jp      ks_write                ; KS_WRITE (ks_vfsw.asm)
+        jp      ks_unlink               ; KS_UNLINK
+        jp      ks_mkdir                ; KS_MKDIR
+        jp      ks_rmdir                ; KS_RMDIR
+        jp      ks_rename               ; KS_RENAME
+        jp      ks_bflush               ; KS_BFLUSH (ks_blk.asm)
+        jp      ks_bzero                ; KS_BZERO
 
 ; ks_enosys — an entry whose body does not exist yet.
 ks_enosys:
@@ -210,6 +217,7 @@ s_more2:    db  " more, not scanned",10,0
         include "kernel/ks_fat.asm"
         include "kernel/ks_vfs.asm"
         include "kernel/ks_exec.asm"
+        include "kernel/ks_vfsw.asm"
 
 ks_end:
         ASSERT  ks_end <= KS_BASE+4000h
