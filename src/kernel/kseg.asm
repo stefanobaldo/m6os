@@ -39,7 +39,7 @@
         jp      ks_stat                 ; KS_STAT
         jp      ks_readdir              ; KS_READDIR
         jp      ks_chdir                ; KS_CHDIR
-        jp      ks_enosys               ; KS_EXEC: given its body with exec
+        jp      ks_exec                 ; KS_EXEC (ks_exec.asm)
 
 ; ks_enosys — an entry whose body does not exist yet.
 ks_enosys:
@@ -213,6 +213,7 @@ s_more2:    db  " more, not scanned",10,0
         include "kernel/ks_blk.asm"
         include "kernel/ks_fat.asm"
         include "kernel/ks_vfs.asm"
+        include "kernel/ks_exec.asm"
 
 ks_end:
         ASSERT  ks_end <= KS_BASE+4000h
