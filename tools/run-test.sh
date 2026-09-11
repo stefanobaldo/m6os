@@ -17,6 +17,13 @@
 # present, the same for a slave device on the same interface. Without the
 # file: a 2M master alone, which is what every test had before there was a
 # file. The system files go on the first volume either way.
+#
+# Files on the volume: tests/<name>/files/, a directory tree, is copied
+# into the staging directory as it is; each program built from
+# tests/<name>/progs/<prog>.asm (build/<name>.progs/<prog>) is copied to
+# the path tests/<name>/progs/<prog>.dest names; and tests/<name>/files.tcl,
+# if present, is sourced by mkdisk.tcl before the import, with M6_STAGING
+# set, to write files too large or too regular to commit.
 set -eu
 name=${1:?usage: tools/run-test.sh <name>}
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -91,6 +98,19 @@ for machine in $machines; do
         cp .tools/nextor/NEXTOR.SYS .tools/nextor/COMMAND2.COM "$staging/"
         cp "$com" "$staging/$upper.COM"
         printf '%s%s\r\n' "$upper" "${args:+ $args}" > "$staging/AUTOEXEC.BAT"
+        if [ -d "tests/$name/files" ]; then
+            cp -R "tests/$name/files/." "$staging/"
+        fi
+        for dest in "tests/$name"/progs/*.dest; do
+            [ -f "$dest" ] || continue
+            prog=$(basename "$dest" .dest)
+            target=$(cat "$dest")
+            mkdir -p "$staging/$(dirname "$target")"
+            cp "build/$name.progs/$prog" "$staging/$target"
+        done
+        M6_FILES_TCL=""
+        [ -f "tests/$name/files.tcl" ] && M6_FILES_TCL="$ROOT/tests/$name/files.tcl"
+        export M6_FILES_TCL
         export M6_IMAGE="$ROOT/build/$name.$machine.$run.dsk" M6_STAGING="$ROOT/$staging"
         export M6_EXPORT="$ROOT/build/$name.$machine.$run.export"
         export M6_MASTER="$master" M6_SLAVE="$slave"
