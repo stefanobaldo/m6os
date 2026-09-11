@@ -58,8 +58,16 @@ sector by volume and refuses one past the volume's end before the driver is
 touched, moves one sector per driver call so that the interrupt-disabled
 region of a call stays inside one frame, reads a sector from the driver
 straight into any 16K segment, and keeps a write-through cache of 24
-sectors; the real-time clock is read as a FAT date and time. Eight tests prove all of this on
-every change in a headless openMSX against the Sunrise IDE driver, on an
+sectors; the real-time clock is read as a FAT date and time. On top of it
+the volumes are read as FAT12 and FAT16 filesystems: paths, a current
+directory per process, `open`, `read`, `lseek`, `close`, `stat`, `readdir`
+and `chdir`, eight file descriptors per process inherited by its children,
+and `exec`, which replaces a process's image with a program read from a
+file and hands it its arguments (see [`docs/programs.md`](docs/programs.md));
+a whole sector read into a 256-byte-aligned buffer goes from the driver
+straight into the program's memory, so sequential reads run at the
+driver's speed. Volumes are read only for now. Eleven tests prove all of
+this on every change in a headless openMSX against the Sunrise IDE driver, on an
 MSX2 with a 128K memory mapper — with the cartridge in a plain and in an
 expanded slot — and on an MSX2 with a 4 MB mapper, where segments 128 to
 255 exist, through `make check`; the third creates processes of one and
