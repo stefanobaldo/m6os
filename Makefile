@@ -21,6 +21,12 @@ OPENMSX   := $(if $(wildcard .tools/openmsx/bin/openmsx),.tools/openmsx/bin/open
 # resident's exported labels.
 TESTS     := $(notdir $(patsubst %/,%,$(dir $(wildcard tests/*/*.asm))))
 TEST_BINS := $(foreach t,$(TESTS),build/$(t).com)
+# A test may ship programs on its disk: tests/<name>/progs/<prog>.asm builds
+# to build/<name>.progs/<prog>, a raw image for P0_PROG with the executable
+# header (tests/m6prog.inc); tests/<name>/progs/<prog>.dest names where on
+# the volume tools/run-test.sh puts it.
+PROG_SRCS := $(wildcard tests/*/progs/*.asm)
+PROG_BINS := $(foreach p,$(PROG_SRCS),build/$(word 2,$(subst /, ,$(p))).progs/$(basename $(notdir $(p))))
 KERNEL    := build/kernel.bin
 KSEG      := build/kseg.bin
 SRC_FILES := $(wildcard src/*/*.asm src/*/*.inc)
@@ -30,7 +36,7 @@ INCLUDES  := -Itests $(if $(wildcard src),-Isrc)
 
 .PHONY: all check check-sjasmplus check-openmsx check-tools fetch sizes clean distclean
 
-all: check-sjasmplus $(KERNEL) $(KSEG) $(TEST_BINS) sizes
+all: check-sjasmplus $(KERNEL) $(KSEG) $(TEST_BINS) $(PROG_BINS) sizes
 
 build:
 	mkdir -p build
@@ -53,12 +59,20 @@ build/$(1).com: tests/$(1)/$(1).asm tests/m6test.inc $$(SRC_FILES) $$(KERNEL) $$
 endef
 $(foreach t,$(TESTS),$(eval $(call test_rule,$(t))))
 
+# One rule per program a test ships, for the same reason.
+define prog_rule
+build/$(1).progs/$(2): tests/$(1)/progs/$(2).asm tests/m6prog.inc $$(SRC_FILES) | build
+	@mkdir -p build/$(1).progs
+	$$(SJASMPLUS) --nologo --msg=war $$(INCLUDES) --raw=$$@ --lst=build/$(1).progs/$(2).lst $$<
+endef
+$(foreach p,$(PROG_SRCS),$(eval $(call prog_rule,$(word 2,$(subst /, ,$(p))),$(basename $(notdir $(p))))))
+
 # One line per binary, "SIZE <name> <bytes>": what the build reports today
 # and what size limits are later checked against. kernel.bin is the resident
 # image, the number the 16K target is measured against; kseg.bin the
 # switched part, against the window's 16K.
-sizes: $(KERNEL) $(KSEG) $(TEST_BINS)
-	@for f in $(KERNEL) $(KSEG) $(TEST_BINS); do \
+sizes: $(KERNEL) $(KSEG) $(TEST_BINS) $(PROG_BINS)
+	@for f in $(KERNEL) $(KSEG) $(TEST_BINS) $(PROG_BINS); do \
 	    printf 'SIZE %s %s\n' "$$(basename $$f)" "$$(wc -c < $$f | tr -d ' ')"; \
 	done
 

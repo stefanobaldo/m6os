@@ -845,7 +845,9 @@ s_root:       db " /",0
 ; buffers returned are valid: the newest is the most recently touched and
 ; the next miss evicts the least.
 
-; ks_cache_init — every header free, the clock at 0.
+; ks_cache_init — every header free, the clock at 0; and every row of the
+; open-file table (ks_vfs.asm) nobody's, since this is where the storage
+; segment's tables are given their first state.
 ks_cache_init:
         ld      hl,SG_HDR
         ld      b,BUF_N
@@ -855,6 +857,12 @@ ks_cache_init:
         djnz    .free
         xor     a
         ld      (SG+SV_CLOCK),a
+        ld      hl,SG+ST_OFT
+        ld      b,OFT_N
+.rows:  ld      (hl),VOL_NONE           ; OF_VOL
+        ld      de,OFT_SIZE
+        add     hl,de
+        djnz    .rows
         ret
 
 ; ks_bget — A = volume, DE:HL = sector -> HL = the buffer, in page 1; CF

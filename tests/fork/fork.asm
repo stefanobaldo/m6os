@@ -244,6 +244,11 @@ ld_block    equ tblock
 ld_block_len equ tblock_end-tblock
         include "loader/takeover.asm"
 
+; Everything above runs, or is read, while a driver call or an inter-slot
+; call may have switched page 1 away, so it stays in page 0; the two images
+; and the block below are only copied once page 1 is RAM again, and may
+; extend into it, never into page 2, where the tests' buffers are.
+        ASSERT  $ < 4000h
 kimage:
         incbin  "build/kernel.bin"
 kimage_end:
@@ -876,4 +881,4 @@ u_forks_k_end:
 
 tblock_end:
 
-        ASSERT  $ < 4000h
+        ASSERT  $ < 8000h

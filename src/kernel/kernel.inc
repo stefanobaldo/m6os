@@ -497,7 +497,8 @@ M_FAT           equ 6           ; 4: the first FAT's first sector
 M_ROOT          equ 10          ; 4: the root directory's first sector
 M_ROOTN         equ 14          ; 2: its sectors
 M_DATA          equ 16          ; 4: the sector of cluster 2
-M_NCLUS         equ 18          ; 2: data clusters, at most 65524
+M_NCLUS         equ 20          ; 2: data clusters, at most 65524
+                                ; 22-31 spare
 MF_FAT16        equ 1           ; else FAT12
 
 OFT_N           equ 24
@@ -566,19 +567,33 @@ VV_T            equ ST_VFS+236  ; 8: scratch
 VX_PAGES        equ ST_VFS+244  ; exec: pages the program wants
 VX_FRESH        equ ST_VFS+245  ;    1 = new segments (a vfork child)
 VX_SEG          equ ST_VFS+246  ; 3: the segments the image loads into
-VX_BLEN         equ ST_VFS+249  ;    the argument block's length
-VX_ARGC         equ ST_VFS+250
-VX_SIZE         equ ST_VFS+251  ; 4: the file's size
-VX_LEFT         equ ST_VFS+255  ; 4: bytes still to load
-VX_ADDR         equ ST_VFS+259  ; 2: where the next sector goes
-VX_CLUS         equ ST_VFS+261  ; 2: the chain's cursor
-VX_SIDX         equ ST_VFS+263  ;    sector index in the cluster
-VX_OLDN         equ ST_VFS+264  ;    the process's pages before
-VX_ARGV         equ ST_VFS+265  ; 2: the caller's vector
-VX_BP           equ ST_VFS+267  ; 2: the block's fill pointer
+VX_BLEN         equ ST_VFS+249  ; 2: the argument block's length
+VX_ARGC         equ ST_VFS+251
+VX_SIZE         equ ST_VFS+252  ; 2: the file's size (a program is < 64K)
+VX_LEFT         equ ST_VFS+254  ; 2: bytes still to load
+VX_ADDR         equ ST_VFS+256  ; 2: where the next sector goes
+VX_CLUS         equ ST_VFS+258  ; 2: the chain's cursor
+VX_SIDX         equ ST_VFS+260  ;    sector index in the cluster
+VX_OLDN         equ ST_VFS+261  ;    the process's pages before
+VX_ARGV         equ ST_VFS+262  ; 2: the caller's vector
+VX_BP           equ ST_VFS+264  ; 2: the block's fill pointer
+VX_NEW          equ ST_VFS+266  ;    segments allocated by this exec
+VX_SP           equ ST_VFS+267  ; 2: the new image's initial SP
+VV_PN           equ ST_VFS+270  ; 2: the lookup's cursor past the component
+VV_HASENT       equ ST_VFS+272  ; VR_ENT describes the node being walked
+VV_U            equ ST_VFS+273  ; 2: um_copy: the user address,
+VV_S            equ ST_VFS+275  ; 2: the storage offset,
+VV_N            equ ST_VFS+277  ; 2: bytes left,
+VV_DIR          equ ST_VFS+279  ;    0 in, 1 out
+VV_B            equ ST_VFS+280  ; um_peek's byte
+VV_RSEC         equ ST_VFS+281  ; 4: read: the sector OF_POS is in
+VV_RSIDX        equ ST_VFS+285  ;    its index in the cluster
+VV_RSPC         equ ST_VFS+286  ;    sectors per cluster
+VX_SEC          equ ST_VFS+287  ; 4: exec: the sector being loaded
 VK_ENTRY        equ 0           ; VR_KIND: a directory entry (VR_ENT valid)
 VK_ROOT         equ 1           ; the root directory of VR_VOL
 VK_MNT          equ 2           ; the /mnt node
+VK_NODE         equ 3           ; a directory known by its cluster alone
 
 ; Page 0. Every page 0 the kernel runs with carries these two things and
 ; nothing else is required of it: the interrupt entry, and the secondary

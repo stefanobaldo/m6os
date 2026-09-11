@@ -7,7 +7,9 @@
 #                    synthetic image below) — and, when M6_SLAVE is not
 #                    empty, a second image for a slave device the same way
 #   M6_STEP=import   -hda <image>: import the staging directory into its
-#                    first volume (hda1 when partitioned, hda otherwise)
+#                    first volume (hda1 when partitioned, hda otherwise),
+#                    after sourcing M6_FILES_TCL, if set, which may write
+#                    files into M6_STAGING first
 # M6_IMAGE is the image path, M6_SLAVE_IMAGE the slave's, M6_STAGING the
 # directory to import.
 set throttle off
@@ -98,6 +100,9 @@ switch $::env(M6_STEP) {
         }
     }
     import {
+        if {[info exists ::env(M6_FILES_TCL)] && $::env(M6_FILES_TCL) ne ""} {
+            source $::env(M6_FILES_TCL)
+        }
         # A partitioned image has volumes hda1, hda2, ...; an unpartitioned
         # one is hda itself.
         set target hda
