@@ -53,6 +53,18 @@ sched_init:
         ld      de,K_PROC+P_SEG         ; until sched_release_boot
         ld      bc,3
         ldir
+        ; Every descriptor closed, then process 0's three: the keyboard on
+        ; 0, the console on 1 and 2.
+        ld      hl,K_FD
+        ld      (hl),FD_NONE
+        ld      de,K_FD+1
+        ld      bc,NPROC*NOFILE-1
+        ldir
+        ld      a,FD_KBD
+        ld      (K_FD+0),a
+        ld      a,FD_CON
+        ld      (K_FD+1),a
+        ld      (K_FD+2),a
         ret
 
 ; sched_release_boot — once the switched image is loaded: the boot
@@ -275,6 +287,6 @@ sched_resume:
         ei
         reti
 
-k_cur:          dw K_PROC       ; the current row
-k_pid:          dw 0            ; the current pid; the high byte stays 0
+; k_cur and k_pid are in the header (K_CUR, K_PID), where the switched
+; part reads them.
 k_nrun:         db 0            ; rows in PS_RUN, the current one included

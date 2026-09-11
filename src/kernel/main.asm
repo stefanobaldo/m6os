@@ -29,6 +29,8 @@ k_main:
         jr      z,.nosummary            ; no switched part: no summary,
         kwin_call_s KS_BLK_INIT         ; no storage
         kwin_call_s KS_CACHE_INIT
+        ld      a,(K_BLK_ROOT)          ; process 0 starts in /
+        ld      (K_PROC+P_CWD),a
         kwin_call KS_SUMMARY
 .nosummary:
         ld      hl,(K_REC+KR_TEST)

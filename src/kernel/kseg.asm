@@ -27,6 +27,21 @@
         jp      K_ISR                   ; 0038h of process 0's page 0
         block   KS_BASE+K_SSLOT-$
         include "kernel/sslot.asm"      ; 0040h: the stub, in place
+        ASSERT  $ == KS_TABLE2
+        jp      ks_enosys               ; KS_READ: the filesystem's, given
+        jp      ks_enosys               ; KS_OPEN  their bodies with the
+        jp      ks_enosys               ; KS_CLOSE filesystem
+        jp      ks_enosys               ; KS_LSEEK
+        jp      ks_enosys               ; KS_STAT
+        jp      ks_enosys               ; KS_READDIR
+        jp      ks_enosys               ; KS_CHDIR
+        jp      ks_enosys               ; KS_EXEC
+
+; ks_enosys — an entry whose body does not exist yet.
+ks_enosys:
+        ld      a,E_NOSYS
+        scf
+        ret
 
 ; ks_sysconf — SYS_SYSCONF: HL = a SC_* name. Out: HL = its value; CF and
 ; E_INVAL for a name that is not one.
