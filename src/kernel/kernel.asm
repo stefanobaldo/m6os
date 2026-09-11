@@ -74,6 +74,13 @@ k_sys:
         jp      sys_read                ; SYS_READ
         jp      sys_fork                ; SYS_FORK
         jp      sys_vfork               ; SYS_VFORK
+        jp      k_sw_open               ; SYS_OPEN, in the switched part
+        jp      k_sw_close              ; SYS_CLOSE
+        jp      k_sw_lseek              ; SYS_LSEEK
+        jp      k_sw_stat               ; SYS_STAT
+        jp      k_sw_readdir            ; SYS_READDIR
+        jp      k_sw_chdir              ; SYS_CHDIR
+        jp      k_sw_exec               ; SYS_EXEC
         DUP     K_SYS_N-SYS_N
         jp      sys_enosys
         EDUP
@@ -88,8 +95,11 @@ k_lasterr:
         db      0
         block   K_MAP-$
 k_map:  ds      4                       ; the segment in each page
+k_cur:  dw      K_PROC                  ; the current row (sched.asm)
+k_pid:  dw      0                       ; the current pid; the high byte stays 0
         block   K_PROC-$
 k_proc: ds      NPROC*P_SIZE            ; the process table, one aligned page
+k_fd:   ds      NPROC*NOFILE            ; the descriptor table (proc.asm)
         ASSERT  k_ticks == K_TICKS
         ASSERT  k_probe == K_PROBE
         ASSERT  k_probe_slot == K_PROBE_SLOT
@@ -104,7 +114,10 @@ k_proc: ds      NPROC*P_SIZE            ; the process table, one aligned page
         ASSERT  k_bcalls == K_BLK_CALLS
         ASSERT  k_lasterr == K_BLK_LASTERR
         ASSERT  k_map == K_MAP
+        ASSERT  k_cur == K_CUR
+        ASSERT  k_pid == K_PID
         ASSERT  k_proc == K_PROC
+        ASSERT  k_fd == K_FD
 
 ; The driver module's two external needs, supplied by this image: its own
 ; slot switch, and the RAM slot for page 1 as captured.

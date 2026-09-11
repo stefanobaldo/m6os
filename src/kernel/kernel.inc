@@ -53,9 +53,19 @@ K_MAP           equ K_BASE+504  ; 4: the segment in each page, as the kernel
                                 ;    believes it: from the record at boot,
                                 ;    then proc_run's and sys_exit's; the
                                 ;    mapper register is never read
+K_CUR           equ K_BASE+508  ; dw: the current process's row (sched.asm)
+K_PID           equ K_BASE+510  ; dw: its pid; the high byte stays 0
 K_PROC          equ K_BASE+512  ; the process table (sched.asm): NPROC rows
                                 ;     of P_SIZE bytes, one 256-byte page,
                                 ;     so a row is K_PROC + (pid << 4)
+K_FD            equ K_BASE+768  ; the descriptor table: NPROC rows of NOFILE
+                                ;     bytes, a row at K_FD + (pid << 3); a
+                                ;     byte is FD_NONE, FD_CON, FD_KBD or an
+                                ;     index into the open-file table (ST_OFT)
+NOFILE          equ 8
+FD_NONE         equ 0FFh
+FD_CON          equ 0FEh        ; the console: write
+FD_KBD          equ 0FDh        ; the keyboard: read
 
 ; The jump table's entries. Contracts are the routines' own (con.asm,
 ; abi2.asm, slot.asm, mem.asm).
@@ -99,6 +109,10 @@ API_BREAD_DIRECT equ 24         ; A = volume, DE:HL = sector, B = segment,
                                 ; C = slot
 API_BWRITE_DIRECT equ 25        ; the same, writing; bdrop first
 API_RTC_READ    equ 26          ; -> HL = FAT date, DE = FAT time
+API_EXEC_FINISH equ 27          ; exec's resident tail (proc.asm): the new
+                                ; image's frame and row, then into it; never
+                                ; returns. Under the window and the gate,
+                                ; with ST_VFS's VX_* filled
 
 ; k_call n — call the resident through the jump table.
     macro k_call n
@@ -129,7 +143,66 @@ SYS_FORK        equ 8           ; -> HL = A = the child's pid in the parent,
 SYS_VFORK       equ 9           ; -> the same; the child shares the parent's
                                 ; memory and stack and the parent sleeps
                                 ; until the child exits; EPERM, EAGAIN
-SYS_N           equ 10          ; entries given a syscall so far
+; The filesystem's (ks_vfs.asm, ks_exec.asm), every one switched, under the
+; storage gate. A path is a 0-terminated string of at most PATH_MAX bytes,
+; components separated by '/', relative to the process's current directory
+; unless it begins with '/'.
+SYS_OPEN        equ 10          ; HL = path, A = O_* flags (O_RDONLY only)
+                                ; -> HL = A = fd; ENOENT, ENOTDIR,
+                                ; ENAMETOOLONG, EMFILE, ENFILE, EINVAL, EIO
+SYS_CLOSE       equ 11          ; A = fd; EBADF
+SYS_LSEEK       equ 12          ; A = fd, DE:HL = offset, B = SEEK_* ->
+                                ; DE:HL = the position (the one syscall
+                                ; whose result is 32 bits); EBADF, EINVAL
+SYS_STAT        equ 13          ; HL = path, DE = a DIRENT_SIZE buffer;
+                                ; ENOENT, ENOTDIR, ENAMETOOLONG, EIO
+SYS_READDIR     equ 14          ; A = fd (a directory), HL = a DIRENT_SIZE
+                                ; buffer -> HL = 1 (an entry), 0 (the end);
+                                ; EBADF, ENOTDIR, EIO
+SYS_CHDIR       equ 15          ; HL = path (a directory); ENOENT, ENOTDIR,
+                                ; ENAMETOOLONG, EIO
+SYS_EXEC        equ 16          ; HL = path, DE = argv (a 0-terminated vector
+                                ; of pointers; 0 = none): the process's image
+                                ; is replaced and does not return; ENOENT,
+                                ; ENOTDIR, EISDIR, ENOEXEC, E2BIG, ENOMEM,
+                                ; EIO, EPERM (process 0)
+SYS_N           equ 17          ; entries given a syscall so far
+
+O_RDONLY        equ 0           ; open's flags; every value but 0 is EINVAL
+O_WRONLY        equ 1           ; until the write side exists
+O_RDWR          equ 2
+O_APPEND        equ 08h
+O_CREAT         equ 40h
+O_TRUNC         equ 80h
+SEEK_SET        equ 0           ; lseek's whence: from the start,
+SEEK_CUR        equ 1           ; the position,
+SEEK_END        equ 2           ; the end
+PATH_MAX        equ 128         ; bytes of a path, its terminator included
+
+; What stat and readdir return: DIRENT_SIZE bytes in the caller's buffer.
+DIRENT_SIZE     equ 24
+DE_NAME         equ 0           ; 13: "name.ext" in lower case, 0-terminated
+DE_ATTR         equ 13          ; the FAT attribute byte: DA_*
+DE_SIZE         equ 14          ; 4: bytes; 0 for a directory
+DE_MTIME        equ 18          ; 4: the FAT date word, then the time word
+                                ; 22-23 zero
+DA_RDONLY       equ 01h
+DA_HIDDEN       equ 02h
+DA_SYSTEM       equ 04h
+DA_LABEL        equ 08h         ; a volume label, or with the three above
+                                ; an LFN entry: never a file
+DA_DIR          equ 10h
+DA_ARCHIVE      equ 20h
+
+; An executable file: loaded at P0_PROG, it begins with a jump over a
+; six-byte header, and the kernel refuses a file without the signature.
+XH_JR           equ 0           ; 2: jr start
+XH_SIGN         equ 2           ; 2: "m6"
+XH_PAGES        equ 4           ; pages the program wants, 1-3
+XH_FLAGS        equ 5           ; 0
+XH_SIZE         equ 6
+ARGV_MAX        equ 256         ; bytes of an argument block: the pointers
+                                ; and the strings
 
     macro sys n
         call    K_SYS+3*n
@@ -168,6 +241,7 @@ E_NOSPC         equ 28
 E_ROFS          equ 30
 E_PIPE          equ 32
 E_NOSYS         equ 38
+E_NAMETOOLONG   equ 63          ; Linux's number, as ENOSYS
 
 ; The switched part of the kernel (kseg.asm): assembled at KS_BASE, the
 ; kernel window, and entered through its own jump table. Code and constants
@@ -184,6 +258,17 @@ KS_BINVAL       equ KS_BASE+21
 KS_BREAD_DIRECT equ KS_BASE+24
 KS_BWRITE_DIRECT equ KS_BASE+27
 KS_RTC_READ     equ KS_BASE+30
+; The table's first part ends before the interrupt entry at KS_BASE+0038h;
+; it continues after the subslot stub, from KS_TABLE2.
+KS_TABLE2       equ KS_BASE+K_SSLOT+K_SSLOT_LEN
+KS_READ         equ KS_TABLE2+0 ; the filesystem's syscalls (ks_vfs.asm,
+KS_OPEN         equ KS_TABLE2+3 ; ks_exec.asm), entered through k_sw_s
+KS_CLOSE        equ KS_TABLE2+6
+KS_LSEEK        equ KS_TABLE2+9
+KS_STAT         equ KS_TABLE2+12
+KS_READDIR      equ KS_TABLE2+15
+KS_CHDIR        equ KS_TABLE2+18
+KS_EXEC         equ KS_TABLE2+21
 
 ; The window (kwin.asm) and the storage gate: what is in page 2 and page 1
 ; while the switched part of the kernel runs. kwin_enter puts the switched
@@ -245,6 +330,9 @@ P_NEXT          equ 10          ; low byte of the next row in the ring of
 P_VPC           equ 11          ; 2: a vfork parent's return address, kept
                                 ;    here because the child's pushes
                                 ;    overwrite it on the shared stack
+P_CWD           equ 13          ; 3: the current directory — the volume,
+                                ;    then a cluster (0 = the volume's root);
+                                ;    VOL_NONE as the volume is /mnt
 P_SIZE          equ 16
 PS_FREE         equ 0           ; the row is nobody's
 PS_RUN          equ 1           ; runnable, or running
@@ -317,9 +405,13 @@ MMF_PRIMARY     equ 1           ; the mapper page 3 lives in
 
 ; The block layer (blk.asm, ks_blk.asm). Sectors are 512 bytes; a sector
 ; number is 32 bits and travels in DE:HL, DE high; a transfer target is a
-; segment and a 512-byte slot in it, 0-31.
+; segment and a 256-byte slot in it, 0-62 (BLK_SLOTS): the sector lands at
+; slot * 256 and must not cross the page, so that a whole sector goes from
+; the driver into a program's page at any 256-byte boundary — P0_PROG
+; included — with no copy.
 BLK_PER_CALL    equ 1           ; sectors per driver call: one keeps the
                                 ; interrupt-disabled region inside a frame
+BLK_SLOTS       equ 63          ; slots a segment has: 0-62
 VOL_N           equ 8           ; volumes the table holds
 VOL_SIZE        equ 12
 V_DRV           equ 0           ; driver index 0-3; FFh = the row is free
@@ -346,8 +438,13 @@ ST_INFO         equ 08C0h       ; 64: what blk_query returns; the copy of
                                 ; the primary entries during the walk
 ST_VARS         equ 0900h       ; 128: the switched part's variables (it
                                 ; keeps none of its own: it may be ROM)
-ST_RESERVED     equ 0980h       ; to 0FFFh: the open-file table, the mount
-                                ; table, the exec argument area — later
+ST_MNT          equ 0980h       ; the mount table: MNT_N rows of MNT_SIZE,
+                                ; row i describing volume i of K_VOL
+ST_OFT          equ 0A80h       ; the open-file table: OFT_N rows of OFT_SIZE
+ST_ARGV         equ 0CC0h       ; ARGV_MAX: exec's argument block, gathered
+                                ; before the image is overwritten
+ST_VFS          equ 0DC0h       ; 320: the filesystem's variables (VV_*, VX_*)
+ST_FREE         equ 0F00h       ; to 0FFFh: nothing yet
 ST_BUF          equ 1000h       ; BUF_N sector buffers of 512
 BUF_N           equ 24
 BUF_SCRATCH     equ 23          ; the enumeration's buffer at boot
@@ -383,6 +480,105 @@ SV_NAME         equ ST_VARS+64  ; 32: the driver's name
 PK_PRIMARY      equ 0
 PK_LOGICAL      equ 1
 PK_SUPER        equ 2
+
+; The filesystem (ks_fat.asm, ks_vfs.asm, ks_exec.asm): FAT12 and FAT16,
+; read only. A mount row is filled at boot from the boot sector the
+; enumeration validates; every sector in it is relative to the volume, so
+; blk_rw's bounds check stands between a chain and the neighbouring
+; partition.
+MNT_N           equ VOL_N
+MNT_SIZE        equ 32
+M_FLAGS         equ 0           ; MF_*
+M_SPC           equ 1           ; sectors per cluster, 1-128
+M_SPCSH         equ 2           ; log2 of it
+M_NFATS         equ 3
+M_FATSZ         equ 4           ; 2: sectors per FAT
+M_FAT           equ 6           ; 4: the first FAT's first sector
+M_ROOT          equ 10          ; 4: the root directory's first sector
+M_ROOTN         equ 14          ; 2: its sectors
+M_DATA          equ 16          ; 4: the sector of cluster 2
+M_NCLUS         equ 18          ; 2: data clusters, at most 65524
+MF_FAT16        equ 1           ; else FAT12
+
+OFT_N           equ 24
+OFT_SIZE        equ 24
+OF_VOL          equ 0           ; the volume; VOL_NONE = the row is free
+OF_REFS         equ 1           ; descriptors pointing here, every process
+OF_FLAGS        equ 2           ; OFF_*
+OF_FIRST        equ 3           ; 2: first cluster; 0 for a root directory
+OF_SIZE         equ 5           ; 4: bytes; 0 for a directory
+OF_POS          equ 9           ; 4: the position — bytes in a file, an
+                                ;    entry index in a directory
+OF_CLUS         equ 13          ; 2: the cluster OF_POS is in; OF_CLUS_NONE
+                                ;    = rebuild it from OF_FIRST, OF_CLUS_END
+                                ;    = the chain ended before OF_POS
+OF_DSEC         equ 15          ; 4: the sector holding the directory entry
+OF_DIDX         equ 19          ;    and its index there (for the write side)
+OF_ERRNO        equ 20          ; the errno owed to the next read (OFF_ERR)
+                                ; 21-23 spare
+OFF_DIR         equ 1           ; a directory
+OFF_ROOT        equ 2           ; the root directory: a fixed area, no chain
+OFF_MNT         equ 4           ; the synthetic /mnt
+OFF_ERR         equ 8           ; a read stopped short; OF_ERRNO is owed
+OF_CLUS_NONE    equ 0
+OF_CLUS_END     equ 0FFFFh
+
+; A FAT directory entry, 32 bytes.
+FE_NAME         equ 0           ; 11: name and extension, space padded
+FE_ATTR         equ 11          ; DA_*
+FE_MTIME        equ 22          ; 2: time, then
+FE_MDATE        equ 24          ; 2: date
+FE_CLUS         equ 26          ; 2: first cluster
+FE_SIZE         equ 28          ; 4
+FE_SIZEOF       equ 32
+FE_END          equ 00h         ; a first byte: no entry from here on
+FE_FREE         equ 0E5h        ; a first byte: deleted
+
+; ST_VFS: the filesystem's variables. The path and its cursor, the name
+; being matched, the directory scan's cursor, the lookup's result (VR_*),
+; the record being built, the read loop's scalars, and exec's (VX_*).
+VV_PATH         equ ST_VFS+0    ; PATH_MAX: the path, copied in
+VV_NAME         equ ST_VFS+128  ; 11: the component as a FAT name
+VV_P            equ ST_VFS+139  ; 2: the cursor into VV_PATH
+VV_VOL          equ ST_VFS+141  ; the node being walked: volume (VOL_NONE =
+VV_CLUS         equ ST_VFS+142  ; 2: /mnt), cluster (0 = the volume's root)
+VV_SSEC         equ ST_VFS+144  ; 4: the scan's sector
+VV_SCLUS        equ ST_VFS+148  ; 2: its cluster
+VV_SN           equ ST_VFS+150  ; sectors left in the cluster, or 2: in the
+                                ;    root area
+VV_SEGP         equ ST_VFS+152  ; 2: -> three segments, the pages a user
+                                ;    address is read or written through
+VR_KIND         equ ST_VFS+154  ; the result: VK_*
+VR_VOL          equ ST_VFS+155
+VR_CLUS         equ ST_VFS+156  ; 2
+VR_ATTR         equ ST_VFS+158
+VR_SIZE         equ ST_VFS+159  ; 4
+VR_MTIME        equ ST_VFS+163  ; 4: time, date as the entry has them
+VR_DSEC         equ ST_VFS+167  ; 4: the entry's sector
+VR_DIDX         equ ST_VFS+171  ;    and index
+VR_ENT          equ ST_VFS+172  ; 32: the entry itself
+VV_REC          equ ST_VFS+204  ; DIRENT_SIZE: the record being built
+VV_RBUF         equ ST_VFS+228  ; 2: read: the user address
+VV_RLEFT        equ ST_VFS+230  ; 2: bytes still to deliver
+VV_RDONE        equ ST_VFS+232  ; 2: bytes delivered
+VV_ROW          equ ST_VFS+234  ; 2: the open-file row
+VV_T            equ ST_VFS+236  ; 8: scratch
+VX_PAGES        equ ST_VFS+244  ; exec: pages the program wants
+VX_FRESH        equ ST_VFS+245  ;    1 = new segments (a vfork child)
+VX_SEG          equ ST_VFS+246  ; 3: the segments the image loads into
+VX_BLEN         equ ST_VFS+249  ;    the argument block's length
+VX_ARGC         equ ST_VFS+250
+VX_SIZE         equ ST_VFS+251  ; 4: the file's size
+VX_LEFT         equ ST_VFS+255  ; 4: bytes still to load
+VX_ADDR         equ ST_VFS+259  ; 2: where the next sector goes
+VX_CLUS         equ ST_VFS+261  ; 2: the chain's cursor
+VX_SIDX         equ ST_VFS+263  ;    sector index in the cluster
+VX_OLDN         equ ST_VFS+264  ;    the process's pages before
+VX_ARGV         equ ST_VFS+265  ; 2: the caller's vector
+VX_BP           equ ST_VFS+267  ; 2: the block's fill pointer
+VK_ENTRY        equ 0           ; VR_KIND: a directory entry (VR_ENT valid)
+VK_ROOT         equ 1           ; the root directory of VR_VOL
+VK_MNT          equ 2           ; the /mnt node
 
 ; Page 0. Every page 0 the kernel runs with carries these two things and
 ; nothing else is required of it: the interrupt entry, and the secondary
