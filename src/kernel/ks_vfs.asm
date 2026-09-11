@@ -1180,11 +1180,12 @@ rd_entry:
         add     a,a
         add     a,a
         add     a,a
-        add     a,a
-        add     a,a                     ; (pos & 15) * 32
+        add     a,a                     ; (pos & 15) * 16: at most 240
         ld      e,a
         ld      d,0
-        add     hl,de
+        sla     e
+        rl      d                       ; * 32, in sixteen bits: the ninth
+        add     hl,de                   ;   entry of a sector is at 256
         or      1                       ; NZ, CF clear
         ret
 .pop:   pop     de
