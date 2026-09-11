@@ -124,8 +124,10 @@ A whole sector read into a buffer that starts on a 256-byte boundary goes
 from the driver straight into the program's memory; every other read goes
 through the kernel's cache and a copy, at about 3.3 ms more per sector on
 an MSX at 3.58 MHz. Sequential reads of whole sectors therefore run at the
-driver's speed less the table lookups — about 90 KB/s through a driver
-that moves a sector in 5.4 ms.
+driver's speed less the table lookups. Measured on an MSX2 at 3.58 MHz
+reading a 64K file: about 89 KB/s through a driver that moves a sector in
+4.8 ms, and about 77 KB/s through one that takes 5.4 ms. The kernel's own
+share is about 0.8 ms per sector on either — the rest is the driver.
 
 ## Not yet
 
