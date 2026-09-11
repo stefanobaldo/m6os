@@ -685,6 +685,8 @@ bi_mount:
 .clusters:
         ld      (ix+M_NCLUS),l
         ld      (ix+M_NCLUS+1),h
+        ld      (ix+M_HINT),2           ; a new file's first cluster is
+        ld      (ix+M_HINT+1),0         ; looked for from the start
         ld      de,4085
         or      a
         sbc     hl,de
@@ -851,11 +853,13 @@ s_kb:         db " KB",0
 s_root:       db " /",0
 
 ; ---------------------------------------------------------------------
-; The cache: BUF_N headers at SG_HDR, buffers at SG_BUF; write-through,
-; so a header is (volume, sector, age) and nothing is ever dirty; the
-; least recently touched buffer is the victim. The two most recent
-; buffers returned are valid: the newest is the most recently touched and
-; the next miss evicts the least.
+; The cache: BUF_N headers at SG_HDR, buffers at SG_BUF; write-through
+; at the syscall's grain: a data sector is written the moment it changes,
+; a FAT sector is marked dirty (H_FLAGS) by the write side and written to
+; every copy by ks_bflush before the syscall returns, so nothing is dirty
+; between syscalls. The least recently touched buffer that is not dirty
+; is the victim. The two most recent buffers returned are valid: the
+; newest is the most recently touched and the next miss evicts the least.
 
 ; ks_cache_init — every header free, the clock at 0; and every row of the
 ; open-file table (ks_vfs.asm) nobody's, since this is where the storage
@@ -864,11 +868,18 @@ ks_cache_init:
         ld      hl,SG_HDR
         ld      b,BUF_N
 .free:  ld      (hl),VOL_NONE
+        push    hl
+        ld      de,H_FLAGS
+        add     hl,de
+        ld      (hl),0
+        pop     hl
         ld      de,H_SIZE
         add     hl,de
         djnz    .free
         xor     a
         ld      (SG+SV_CLOCK),a
+        ld      hl,SG_HDR
+        ld      (SG+SV_LAST),hl         ; a free header: no false hit
         ld      hl,SG+ST_OFT
         ld      b,OFT_N
 .rows:  ld      (hl),VOL_NONE           ; OF_VOL
@@ -894,6 +905,7 @@ ks_bget:
         ld      (ix+H_SEC+1),h
         ld      (ix+H_SEC+2),e
         ld      (ix+H_SEC+3),d
+        ld      (ix+H_FLAGS),0
         push    ix
         call    bc_index                ; c = the buffer's index
         ld      a,c
@@ -924,21 +936,13 @@ ks_bget:
         or      a
         ret
 
-; ks_bwrite — HL = a buffer returned by ks_bget: written to its sector.
-; CF with the errno on failure, and the buffer is dropped. Corrupts
-; everything.
+; ks_bwrite — HL = a buffer returned by ks_bget or ks_bzero: written to
+; its sector, its dirty bit cleared. CF with the errno on failure, and
+; the buffer is dropped. Not for a FAT sector, which bflush writes to
+; every copy. Corrupts everything.
 ks_bwrite:
-        ld      a,h
-        sub     high SG_BUF
-        srl     a                       ; the buffer's index
-        ld      c,a
-        add     a,a
-        add     a,a
-        add     a,a                     ; * 8
-        ld      e,a
-        ld      d,0
-        ld      ix,SG_HDR
-        add     ix,de
+        call    bc_header               ; ix -> the header, c = the index
+        ld      (ix+H_FLAGS),0
         ld      a,c
         add     a,a
         add     a,SLOT_BUF0
@@ -963,6 +967,7 @@ ks_bdrop:
         call    bc_find
         ret     nz
         ld      (ix+H_VOL),VOL_NONE
+        ld      (ix+H_FLAGS),0
         ret
 
 ; ks_binval — A = volume: every buffer of it freed.
@@ -973,8 +978,165 @@ ks_binval:
 .scan:  cp      (ix+H_VOL)
         jr      nz,.next
         ld      (ix+H_VOL),VOL_NONE
+        ld      (ix+H_FLAGS),0
 .next:  add     ix,de
         djnz    .scan
+        ret
+
+; ks_bzero — A = volume, DE:HL = sector: HL = a buffer of zeros standing
+; for it, nothing read from the disk — for a sector whose contents are
+; about to be replaced whole: a hole, a fresh partial sector, a new
+; directory's cluster. The buffer is valid until written or evicted like
+; any other; nothing is written here. Corrupts everything.
+ks_bzero:
+        call    bc_find
+        jr      z,.have
+        push    af
+        push    hl
+        push    de
+        call    bc_victim
+        pop     de
+        pop     hl
+        pop     af
+        ld      (ix+H_VOL),a
+        ld      (ix+H_SEC),l
+        ld      (ix+H_SEC+1),h
+        ld      (ix+H_SEC+2),e
+        ld      (ix+H_SEC+3),d
+        ld      (ix+H_FLAGS),0
+.have:  call    bc_touch
+        call    bc_index
+        ld      a,c
+        add     a,a
+        ld      h,a
+        ld      l,0
+        ld      de,SG_BUF
+        add     hl,de
+        push    hl
+        ld      d,h
+        ld      e,l
+        inc     de
+        ld      (hl),0
+        ld      bc,511
+        ldir
+        pop     hl
+        or      a
+        ret
+
+; ks_bflush — every dirty buffer written to its sector, a FAT sector (HF_FAT)
+; to every copy of the table, each one's bits cleared. A buffer whose write
+; fails is freed — the copy in memory is no longer the disk's — and the
+; flush goes on; CF with the first errno met. What makes write-through
+; true at the syscall's grain: every syscall that dirties a buffer calls
+; this before it returns. Corrupts everything.
+ks_bflush:
+        xor     a
+        ld      (SG+SV_FERR),a
+        ld      ix,SG_HDR
+        ld      b,BUF_N
+.scan:  ld      a,(ix+H_VOL)
+        cp      VOL_NONE
+        jr      z,.next
+        bit     0,(ix+H_FLAGS)          ; HF_DIRTY
+        jr      z,.next
+        push    bc
+        call    bf_one
+        pop     bc
+.next:  ld      de,H_SIZE
+        add     ix,de
+        djnz    .scan
+        ld      a,(SG+SV_FERR)
+        or      a
+        ret     z
+        scf
+        ret
+
+; bf_one — IX -> a dirty header: written, to every copy when it is a FAT
+; sector. Preserves IX (through SV_FHDR); corrupts the rest.
+bf_one:
+        ld      (SG+SV_FHDR),ix
+        ld      c,1                     ; copies
+        bit     1,(ix+H_FLAGS)          ; HF_FAT
+        jr      z,.copies
+        ld      a,(ix+H_VOL)
+        call    fat_mnt                 ; ix -> the mount row
+        ld      c,(ix+M_NFATS)
+        ld      l,(ix+M_FATSZ)
+        ld      h,(ix+M_FATSZ+1)
+        ld      (SG+SV_FSTEP),hl
+        ld      ix,(SG+SV_FHDR)
+.copies:
+        ld      a,c
+        ld      (SG+SV_FN),a
+        ld      l,(ix+H_SEC)
+        ld      h,(ix+H_SEC+1)
+        ld      (SG+SV_FSEC),hl
+        ld      l,(ix+H_SEC+2)
+        ld      h,(ix+H_SEC+3)
+        ld      (SG+SV_FSEC+2),hl
+.copy:  ld      ix,(SG+SV_FHDR)
+        call    bc_index
+        ld      a,c
+        add     a,a
+        add     a,SLOT_BUF0
+        ld      c,a
+        ld      a,(K_REC+KR_SEG64K+2)
+        ld      b,a
+        ld      hl,(SG+SV_FSEC)
+        ld      de,(SG+SV_FSEC+2)
+        ld      a,(ix+H_VOL)
+        scf                             ; write
+        k_call  API_BLK_RW
+        jr      c,.fail
+        ld      a,(SG+SV_FN)
+        dec     a
+        ld      (SG+SV_FN),a
+        jr      z,.ok
+        ld      hl,(SG+SV_FSEC)
+        ld      de,(SG+SV_FSTEP)
+        add     hl,de
+        ld      (SG+SV_FSEC),hl
+        jr      nc,.copy
+        ld      hl,(SG+SV_FSEC+2)
+        inc     hl
+        ld      (SG+SV_FSEC+2),hl
+        jr      .copy
+.ok:    ld      ix,(SG+SV_FHDR)
+        ld      (ix+H_FLAGS),0
+        ret
+.fail:  ld      c,a
+        ld      a,(SG+SV_FERR)
+        or      a
+        jr      nz,.free
+        ld      a,c
+        ld      (SG+SV_FERR),a
+.free:  ld      ix,(SG+SV_FHDR)
+        ld      (ix+H_VOL),VOL_NONE
+        ld      (ix+H_FLAGS),0
+        ret
+
+; bc_header — HL = a buffer's address: IX -> its header, C = its index.
+; Corrupts AF, DE.
+bc_header:
+        ld      a,h
+        sub     high SG_BUF
+        srl     a                       ; the buffer's index
+        ld      c,a
+        add     a,a
+        add     a,a
+        add     a,a                     ; * 8
+        ld      e,a
+        ld      d,0
+        ld      ix,SG_HDR
+        add     ix,de
+        ret
+
+; bc_mark_fat — HL = a FAT sector's buffer: dirty, and a FAT sector, for
+; bflush. Corrupts AF, BC, DE, IX.
+bc_mark_fat:
+        call    bc_header
+        set     0,(ix+H_FLAGS)          ; HF_DIRTY
+        set     1,(ix+H_FLAGS)          ; HF_FAT
         ret
 
 ; ks_bread_direct — A = volume, DE:HL = sector, B = segment, C = slot:
@@ -999,56 +1161,125 @@ ks_bwrite_direct:
         scf                             ; write
         jp      K_API+3*API_BLK_RW
 
-; bc_find — A = volume, DE:HL = sector: Z with IX -> the header when it
-; is cached, else NZ. Preserves A, DE, HL; corrupts BC, IX.
+; bc_find — A = volume, DE:HL = sector: Z with IX -> the header that holds
+; it, else NZ. Preserves A, DE, HL; corrupts BC, IX. The sector's low byte
+; is compared first, one 7-cycle cp (hl) per header, and the rest of the
+; key only where it matches; the header pointer steps in L alone, the
+; headers lying in one page. Measured in openMSX before this form: ~1 ms
+; per call, and four calls per sector written.
 bc_find:
-        ld      ix,SG_HDR
-        ld      b,BUF_N
-.scan:  cp      (ix+H_VOL)
-        jr      nz,.next
+        push    af
+        push    de
         push    hl
-        ld      c,a
-        ld      a,(ix+H_SEC)
-        cp      l
-        jr      nz,.no
-        ld      a,(ix+H_SEC+1)
-        cp      h
-        jr      nz,.no
-        ld      a,(ix+H_SEC+2)
+        ld      c,a                     ; c = the volume
+        ld      (SG+SV_FKEY),de         ; the sector's high word
+        ld      d,h                     ; d = the sector's second byte
+        ld      e,l                     ; e = its first
+        ; The last hit first: a FAT sector is asked for three times per
+        ; cluster, a directory sector sixteen times per listing.
+        ld      hl,(SG+SV_LAST)
+        ld      a,(hl)
+        cp      c
+        jr      nz,.all
+        inc     hl
+        ld      a,(hl)
         cp      e
+        jr      nz,.all
+        inc     hl
+        ld      a,(hl)
+        cp      d
+        jr      nz,.all
+        inc     hl
+        ld      a,(SG+SV_FKEY)
+        cp      (hl)
+        jr      nz,.all
+        inc     hl
+        ld      a,(SG+SV_FKEY+1)
+        cp      (hl)
+        jr      nz,.all
+        ld      hl,(SG+SV_LAST)
+        push    hl
+        pop     ix
+        pop     hl
+        pop     de
+        pop     af
+        cp      a                       ; Z
+        ret
+.all:   ld      a,e
+        ld      hl,SG_HDR+H_SEC
+        ld      b,BUF_N
+.scan:  cp      (hl)
+        jr      z,.maybe
+.next:  ld      a,l
+        add     a,H_SIZE
+        ld      l,a
+        ld      a,e
+        djnz    .scan
+        pop     hl
+        pop     de
+        pop     af
+        inc     b                       ; NZ
+        ret
+.maybe: push    hl
+        dec     hl
+        ld      a,(hl)
+        cp      c                       ; the volume; VOL_NONE never equal
         jr      nz,.no
-        ld      a,(ix+H_SEC+3)
+        inc     hl
+        inc     hl
+        ld      a,(hl)
         cp      d
         jr      nz,.no
-        ld      a,c
+        inc     hl
+        ld      a,(hl)
+        ld      hl,SG+SV_FKEY
+        cp      (hl)
+        jr      nz,.no
         pop     hl
-        ret                             ; Z from the last cp
-.no:    ld      a,c
+        push    hl
+        inc     hl
+        inc     hl
+        inc     hl
+        ld      a,(hl)
+        ld      hl,SG+SV_FKEY+1
+        cp      (hl)
+        jr      nz,.no
         pop     hl
-.next:  push    de
-        ld      de,H_SIZE
-        add     ix,de
+        ld      a,l
+        and     0F8h                    ; the header's first byte
+        ld      l,a
+        ld      (SG+SV_LAST),hl
+        push    hl
+        pop     ix
+        pop     hl
         pop     de
-        djnz    .scan
-        inc     b                       ; NZ, A untouched
+        pop     af
+        cp      a                       ; Z, A untouched
         ret
+.no:    pop     hl
+        jr      .next
 
-; bc_victim — IX -> the first free header, else the one of least age.
-; Corrupts AF, BC, DE, HL, IY.
+; bc_victim — IX -> the first free header, else the one of least age among
+; those not dirty: a dirty buffer holds a FAT update the syscall has not
+; flushed yet, and at most three are dirty at a time, so a victim is
+; always found. Corrupts AF, BC, DE, HL, IY.
 bc_victim:
         ld      ix,SG_HDR
         push    ix
         pop     iy                      ; iy = the best so far
-        ld      c,(ix+H_AGE)
+        ld      c,0FFh                  ; older than any age
         ld      b,BUF_N
         ld      de,H_SIZE
 .scan:  ld      a,(ix+H_VOL)
         cp      VOL_NONE
         jr      z,.free
+        bit     0,(ix+H_FLAGS)          ; HF_DIRTY: never the victim
+        jr      nz,.next
         ld      a,(ix+H_AGE)
         cp      c
+        jr      z,.take
         jr      nc,.next
-        ld      c,a
+.take:  ld      c,a
         push    ix
         pop     iy
 .next:  add     ix,de

@@ -113,6 +113,10 @@ API_EXEC_FINISH equ 27          ; exec's resident tail (proc.asm): the new
                                 ; image's frame and row, then into it; never
                                 ; returns. Under the window and the gate,
                                 ; with ST_VFS's VX_* filled
+API_BFLUSH      equ 28          ; every dirty buffer written, a FAT sector to
+                                ; every copy; CF with the first errno met
+API_BZERO       equ 29          ; A = volume, DE:HL = sector -> HL = a buffer
+                                ; of zeros for it, nothing read
 
 ; k_call n — call the resident through the jump table.
     macro k_call n
@@ -125,8 +129,10 @@ API_EXEC_FINISH equ 27          ; exec's resident tail (proc.asm): the new
 ; errno in A. Nothing the syscall does not return is preserved: BC, DE, IX,
 ; IY and the alternate set are undefined afterwards.
 SYS_EXIT        equ 0           ; A = status; does not return
-SYS_WRITE       equ 1           ; A = fd (1, 2), HL = buffer, BC = length
-                                ; -> HL = bytes written; EBADF
+SYS_WRITE       equ 1           ; A = fd, HL = buffer, BC = length -> HL =
+                                ; bytes written; the console, or a file
+                                ; open for writing (ks_vfsw.asm): EBADF,
+                                ; EISDIR, ENOSPC, EIO, EROFS
 SYS_GETPID      equ 2           ; -> HL = pid
 SYS_SYSCONF     equ 3           ; HL = SC_* -> HL = value; EINVAL
 SYS_SPAWN       equ 4           ; HL = image (not in page 2), BC = length,
@@ -147,9 +153,10 @@ SYS_VFORK       equ 9           ; -> the same; the child shares the parent's
 ; storage gate. A path is a 0-terminated string of at most PATH_MAX bytes,
 ; components separated by '/', relative to the process's current directory
 ; unless it begins with '/'.
-SYS_OPEN        equ 10          ; HL = path, A = O_* flags (O_RDONLY only)
-                                ; -> HL = A = fd; ENOENT, ENOTDIR,
-                                ; ENAMETOOLONG, EMFILE, ENFILE, EINVAL, EIO
+SYS_OPEN        equ 10          ; HL = path, A = O_* flags -> HL = A = fd;
+                                ; ENOENT, ENOTDIR, ENAMETOOLONG, EMFILE,
+                                ; ENFILE, EINVAL, EISDIR, EACCES, EBUSY,
+                                ; ENOSPC, EIO, EROFS
 SYS_CLOSE       equ 11          ; A = fd; EBADF
 SYS_LSEEK       equ 12          ; A = fd, DE:HL = offset, B = SEEK_* ->
                                 ; DE:HL = the position (the one syscall
@@ -166,14 +173,26 @@ SYS_EXEC        equ 16          ; HL = path, DE = argv (a 0-terminated vector
                                 ; is replaced and does not return; ENOENT,
                                 ; ENOTDIR, EISDIR, ENOEXEC, E2BIG, ENOMEM,
                                 ; EIO, EPERM (process 0)
-SYS_N           equ 17          ; entries given a syscall so far
+SYS_UNLINK      equ 17          ; HL = path (a file): removed; ENOENT,
+                                ; ENOTDIR, EISDIR, EACCES, EBUSY, EIO, EROFS
+SYS_MKDIR       equ 18          ; HL = path: a directory made; ENOENT (the
+                                ; parent), ENOTDIR, EEXIST, EINVAL, ENOSPC,
+                                ; EIO, EROFS
+SYS_RMDIR       equ 19          ; HL = path (an empty directory): removed;
+                                ; ENOENT, ENOTDIR, ENOTEMPTY, EBUSY, EINVAL,
+                                ; EIO, EROFS
+SYS_RENAME      equ 20          ; HL = old path, DE = new path, on one
+                                ; volume; a file replaces a file; ENOENT,
+                                ; ENOTDIR, EXDEV, EEXIST, EINVAL, EACCES,
+                                ; EBUSY, ENOSPC, EIO, EROFS
+SYS_N           equ 21          ; entries given a syscall so far
 
-O_RDONLY        equ 0           ; open's flags; every value but 0 is EINVAL
-O_WRONLY        equ 1           ; until the write side exists
+O_RDONLY        equ 0           ; open's flags: the access mode in bits 0-1
+O_WRONLY        equ 1           ; (3 is EINVAL), then
 O_RDWR          equ 2
-O_APPEND        equ 08h
-O_CREAT         equ 40h
-O_TRUNC         equ 80h
+O_APPEND        equ 08h         ; every write at the end
+O_CREAT         equ 40h         ; create the file when it is not there
+O_TRUNC         equ 80h         ; with a writable mode: empty it first
 SEEK_SET        equ 0           ; lseek's whence: from the start,
 SEEK_CUR        equ 1           ; the position,
 SEEK_END        equ 2           ; the end
@@ -231,6 +250,7 @@ E_ACCES         equ 13
 E_FAULT         equ 14
 E_BUSY          equ 16
 E_EXIST         equ 17
+E_XDEV          equ 18
 E_NODEV         equ 19
 E_NOTDIR        equ 20
 E_ISDIR         equ 21
@@ -241,6 +261,7 @@ E_NOSPC         equ 28
 E_ROFS          equ 30
 E_PIPE          equ 32
 E_NOSYS         equ 38
+E_NOTEMPTY      equ 39          ; Linux's number, as ENOSYS
 E_NAMETOOLONG   equ 63          ; Linux's number, as ENOSYS
 
 ; The switched part of the kernel (kseg.asm): assembled at KS_BASE, the
@@ -269,6 +290,13 @@ KS_STAT         equ KS_TABLE2+12
 KS_READDIR      equ KS_TABLE2+15
 KS_CHDIR        equ KS_TABLE2+18
 KS_EXEC         equ KS_TABLE2+21
+KS_WRITE        equ KS_TABLE2+24 ; the write side (ks_vfsw.asm)
+KS_UNLINK       equ KS_TABLE2+27
+KS_MKDIR        equ KS_TABLE2+30
+KS_RMDIR        equ KS_TABLE2+33
+KS_RENAME       equ KS_TABLE2+36
+KS_BFLUSH       equ KS_TABLE2+39 ; the cache's write side (ks_blk.asm)
+KS_BZERO        equ KS_TABLE2+42
 
 ; The window (kwin.asm) and the storage gate: what is in page 2 and page 1
 ; while the switched part of the kernel runs. kwin_enter puts the switched
@@ -444,14 +472,18 @@ ST_OFT          equ 0A80h       ; the open-file table: OFT_N rows of OFT_SIZE
 ST_ARGV         equ 0CC0h       ; ARGV_MAX: exec's argument block, gathered
                                 ; before the image is overwritten
 ST_VFS          equ 0DC0h       ; 320: the filesystem's variables (VV_*, VX_*)
-ST_FREE         equ 0F00h       ; to 0FFFh: nothing yet
+ST_VFSW         equ 0F00h       ; 256: the write side's variables (VW_*)
 ST_BUF          equ 1000h       ; BUF_N sector buffers of 512
 BUF_N           equ 24
 BUF_SCRATCH     equ 23          ; the enumeration's buffer at boot
 H_VOL           equ 0           ; a header: the volume; FFh = free
 H_SEC           equ 1           ; 4: the sector
 H_AGE           equ 5           ; the clock's value at the last touch
+H_FLAGS         equ 6           ; HF_*
 H_SIZE          equ 8
+HF_DIRTY        equ 1           ; newer than the disk: written by bflush
+                                ; before the syscall returns, never evicted
+HF_FAT          equ 2           ; a FAT sector: bflush writes every copy
 SV_CLOCK        equ ST_VARS+0   ; the cache's clock
 SV_TOTAL        equ ST_VARS+1   ; 4: the LUN's sectors, 0 = unknown
 SV_LFLAGS       equ ST_VARS+5   ; the LUN's flags, VF_*
@@ -477,6 +509,13 @@ SV_FULL         equ ST_VARS+42  ; the "more volumes" line was printed
 SV_NAMELEN      equ ST_VARS+43  ; the driver's name without its padding
 SV_RTC          equ ST_VARS+44  ; 13: the RTC's registers as read
 SV_NAME         equ ST_VARS+64  ; 32: the driver's name
+SV_FERR         equ ST_VARS+96  ; bflush: the first errno met, 0 = none
+SV_FHDR         equ ST_VARS+97  ; 2: the header being flushed
+SV_FN           equ ST_VARS+99  ;    copies still to write
+SV_FSTEP        equ ST_VARS+100 ; 2: sectors between two FAT copies
+SV_FSEC         equ ST_VARS+102 ; 4: the sector being written
+SV_FKEY         equ ST_VARS+106 ; 2: bc_find: the sector's high word
+SV_LAST         equ ST_VARS+108 ; 2: the header of bc_find's last hit
 PK_PRIMARY      equ 0
 PK_LOGICAL      equ 1
 PK_SUPER        equ 2
@@ -498,7 +537,9 @@ M_ROOT          equ 10          ; 4: the root directory's first sector
 M_ROOTN         equ 14          ; 2: its sectors
 M_DATA          equ 16          ; 4: the sector of cluster 2
 M_NCLUS         equ 20          ; 2: data clusters, at most 65524
-                                ; 22-31 spare
+M_HINT          equ 22          ; 2: where a new file's first cluster is
+                                ;    looked for; 2 at mount
+                                ; 24-31 spare
 MF_FAT16        equ 1           ; else FAT12
 
 OFT_N           equ 24
@@ -516,17 +557,26 @@ OF_CLUS         equ 13          ; 2: the cluster OF_POS is in; OF_CLUS_NONE
 OF_DSEC         equ 15          ; 4: the sector holding the directory entry
 OF_DIDX         equ 19          ;    and its index there (for the write side)
 OF_ERRNO        equ 20          ; the errno owed to the next read (OFF_ERR)
-                                ; 21-23 spare
+OF_TAIL         equ 21          ; 2: the chain's last cluster, when the write
+                                ;    side knows it; 0 = not known
+                                ; 23 spare
 OFF_DIR         equ 1           ; a directory
 OFF_ROOT        equ 2           ; the root directory: a fixed area, no chain
 OFF_MNT         equ 4           ; the synthetic /mnt
-OFF_ERR         equ 8           ; a read stopped short; OF_ERRNO is owed
+OFF_ERR         equ 8           ; a read or a write stopped short; OF_ERRNO
+                                ; is owed to the next call
+OFF_WR          equ 16          ; open for writing: the one writer
+OFF_APPEND      equ 32          ; every write at the end (O_APPEND)
 OF_CLUS_NONE    equ 0
 OF_CLUS_END     equ 0FFFFh
 
 ; A FAT directory entry, 32 bytes.
 FE_NAME         equ 0           ; 11: name and extension, space padded
 FE_ATTR         equ 11          ; DA_*
+FE_CTENTH       equ 13          ; creation time, tenths of a second: 0
+FE_CTIME        equ 14          ; 2: creation time and
+FE_CDATE        equ 16          ; 2: date
+FE_ADATE        equ 18          ; 2: last-access date
 FE_MTIME        equ 22          ; 2: time, then
 FE_MDATE        equ 24          ; 2: date
 FE_CLUS         equ 26          ; 2: first cluster
@@ -594,6 +644,60 @@ VK_ENTRY        equ 0           ; VR_KIND: a directory entry (VR_ENT valid)
 VK_ROOT         equ 1           ; the root directory of VR_VOL
 VK_MNT          equ 2           ; the /mnt node
 VK_NODE         equ 3           ; a directory known by its cluster alone
+VK_PARENT       equ 4           ; left by a failed lookup (E_NOENT): the last
+                                ; component is missing and VR_VOL/VR_CLUS
+                                ; are its parent, VV_NAME its FAT name
+VK_BADNAME      equ 5           ; the same, but the component is not a name
+VK_NONE         equ 0FFh        ; a failed lookup that left nothing
+
+; ST_VFSW: the write side's variables (ks_vfsw.asm, ks_fat.asm).
+VW_PATH2        equ ST_VFSW+0   ; PATH_MAX: rename's second path
+VW_ESEC         equ ST_VFSW+128 ; 4: dir_alloc_entry's slot: its sector
+VW_EIDX         equ ST_VFSW+132 ;    and index
+VW_TAIL         equ ST_VFSW+133 ; 2: a chain's last cluster
+VW_NEWC         equ ST_VFSW+135 ; 2: a cluster just allocated
+VW_DATE         equ ST_VFSW+137 ; 2: the stamp this syscall writes: date
+VW_TIME         equ ST_VFSW+139 ; 2: and time
+VW_FLAGS        equ ST_VFSW+141 ; open's flags
+VW_ACC          equ ST_VFSW+142 ; its access mode, 0-2
+VW_NATTR        equ ST_VFSW+143 ; dir_new_entry: the attribute
+VW_NCLUS        equ ST_VFSW+144 ; 2: and the first cluster
+VW_VAL          equ ST_VFSW+146 ; 2: fat_set: the value
+VW_BUF0         equ ST_VFSW+148 ; 2: the entry's first byte's buffer
+VW_P0           equ ST_VFSW+150 ; 2: -> its low byte
+VW_P1           equ ST_VFSW+152 ; 2: -> its high byte
+VW_AVOL         equ ST_VFSW+154 ; fat_alloc, fat_free_chain: the volume
+VW_ACUR         equ ST_VFSW+155 ; 2: the cluster being probed
+VW_ALEFT        equ ST_VFSW+157 ; 2: probes left in the circuit
+VW_ALAST        equ ST_VFSW+159 ; 2: the volume's last cluster
+VW_ZVOL         equ ST_VFSW+161 ; dir_zero_cluster: the volume
+VW_ZSEC         equ ST_VFSW+162 ; 4: the sector being zeroed
+VW_ZN           equ ST_VFSW+166 ;    sectors left
+VW_BMODE        equ ST_VFSW+167 ; vfs_busy: 0 any row, 1 a writer's
+VW_S32          equ ST_VFSW+168 ; 4: write: the size before
+VW_P32          equ ST_VFSW+172 ; 4: where the caller's bytes go
+VW_ERR          equ ST_VFSW+176 ;    the errno met, 0 = none
+VW_OFF          equ ST_VFSW+177 ; 2: this sector: the offset in it,
+VW_HOLE         equ ST_VFSW+179 ; 2: bytes of zeros to lay down,
+VW_OFF2         equ ST_VFSW+181 ; 2: the offset after them,
+VW_DATA         equ ST_VFSW+183 ; 2: the caller's bytes,
+VW_BUF          equ ST_VFSW+185 ; 2: the buffer
+VW_OSEC         equ ST_VFSW+187 ; 4: rename: the old entry's sector,
+VW_OIDX         equ ST_VFSW+191 ;    index,
+VW_OVOL         equ ST_VFSW+192 ;    volume,
+VW_OATTR        equ ST_VFSW+193 ;    attribute,
+VW_OCLUS        equ ST_VFSW+194 ; 2: first cluster;
+VW_OENT         equ ST_VFSW+196 ; 32: the old entry itself
+VW_DVOL         equ ST_VFSW+228 ;    the new name's directory: volume
+VW_DCLUS        equ ST_VFSW+229 ; 2: and cluster
+VW_NEW          equ ST_VFSW+231 ;    1 when the new name exists already
+VW_TSEC         equ ST_VFSW+232 ; 4: that entry's sector,
+VW_TIDX         equ ST_VFSW+236 ;    index,
+VW_TCLUS        equ ST_VFSW+237 ; 2: first cluster
+VW_ZB           equ ST_VFSW+239 ; 2: zw_write: the buffer of zeros, 0 = none
+VW_ZBV          equ ST_VFSW+241 ;    the volume and
+VW_ZBS          equ ST_VFSW+242 ; 4: sector its header names
+VW_T            equ ST_VFSW+246 ; 8: scratch
 
 ; Page 0. Every page 0 the kernel runs with carries these two things and
 ; nothing else is required of it: the interrupt entry, and the secondary

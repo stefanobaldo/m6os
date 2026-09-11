@@ -174,10 +174,16 @@ vfs_getpath:
 ; vfs_lookup — the path in VV_PATH, from the process's directory or from
 ; / : VR_* describes what it names. CF with E_NOENT (a component that is
 ; not there, or cannot be a name), E_NOTDIR (a file where a directory is
-; needed) or E_IO. Corrupts everything.
+; needed) or E_IO. After E_NOENT, VR_KIND says what the write side may do
+; with it: VK_PARENT when only the last component is missing — VV_VOL and
+; VV_CLUS (and VR_VOL, VR_CLUS) are then its directory and VV_NAME its FAT
+; name — VK_BADNAME when that component is not a name, VK_NONE otherwise.
+; Corrupts everything.
 vfs_lookup:
         xor     a
         ld      (SG+VV_HASENT),a
+        ld      a,VK_NONE
+        ld      (SG+VR_KIND),a
         ld      hl,SG+VV_PATH
         ld      a,(hl)
         cp      '/'
@@ -251,9 +257,9 @@ vfs_lookup:
         ld      (SG+VV_VOL),a
         jr      .next
 .scan:  call    name83
-        jp      c,.noent                ; not a name: nothing has it
+        jp      c,.badname              ; not a name: nothing has it
         call    dir_find
-        ret     c
+        jp      c,.missing
         ; More components: this one must be a directory.
         ld      hl,(SG+VV_PN)
         ld      a,(hl)
@@ -349,6 +355,25 @@ vfs_lookup:
         djnz    .zero
         or      a
         ret
+.missing:
+        cp      E_NOENT
+        scf                             ; cp cleared the carry
+        ret     nz
+        ld      a,VK_PARENT
+        jr      .last
+.badname:
+        ld      a,VK_BADNAME
+.last:  ; The last component, or a middle one? Only the last leaves a kind.
+        ld      hl,(SG+VV_PN)
+        ld      c,(hl)
+        inc     c
+        dec     c
+        jr      nz,.noent
+        ld      (SG+VR_KIND),a
+        ld      a,(SG+VV_VOL)
+        ld      (SG+VR_VOL),a
+        ld      hl,(SG+VV_CLUS)
+        ld      (SG+VR_CLUS),hl
 .noent: ld      a,E_NOENT
         scf
         ret
@@ -785,14 +810,89 @@ fd_row:
 ; The syscalls
 
 ; ks_open — SYS_OPEN: HL = path, A = flags. Out: HL = A = the descriptor.
+; O_CREAT makes the file when the last component is missing; O_TRUNC with
+; a writable mode empties an existing one; a writable mode takes the one
+; writer's place (E_BUSY when any row has the file, E_ACCES on a read-only
+; entry), a read-only open fails while a writer has it. Both creation and
+; truncation reach the disk, and flush the table, before a descriptor or
+; a row is taken.
 ks_open:
-        or      a
-        jp      nz,.inval               ; O_RDONLY alone, for now
+        ld      (SG+VW_FLAGS),a
+        and     ~(3|O_APPEND|O_CREAT|O_TRUNC) & 0FFh
+        jp      nz,.inval
+        ld      a,(SG+VW_FLAGS)
+        and     3
+        cp      3
+        jp      z,.inval
+        ld      (SG+VW_ACC),a
         call    vfs_getpath
         ret     c
         call    vfs_lookup
+        jr      nc,.found
+        cp      E_NOENT
+        scf                             ; cp cleared the carry
+        ret     nz
+        ld      a,(SG+VW_FLAGS)
+        and     O_CREAT
+        jp      z,.noent
+        ld      a,(SG+VR_KIND)
+        cp      VK_BADNAME
+        jp      z,.inval
+        cp      VK_PARENT
+        jp      nz,.noent
+        ; Created: an empty file in the directory the lookup stopped at.
+        call    wr_stamp
+        ld      a,DA_ARCHIVE
+        ld      de,0
+        call    dir_new_entry
+        jp      c,wr_finish
+        call    ks_bflush
         ret     c
-        ; A descriptor: the lowest FD_NONE in the row.
+        jr      .alloc
+.found: ld      a,(SG+VR_KIND)
+        cp      VK_ENTRY
+        jr      nz,.dir
+        ld      a,(SG+VR_ATTR)
+        and     DA_DIR
+        jr      nz,.dir
+        ; A file.
+        ld      a,(SG+VW_ACC)
+        or      a
+        jr      z,.reader
+        ld      a,(SG+VR_ATTR)
+        and     DA_RDONLY
+        jp      nz,.acces
+        xor     a                       ; any row
+        call    vfs_busy
+        ret     c
+        ld      a,(SG+VW_FLAGS)
+        and     O_TRUNC
+        jr      z,.alloc
+        ld      hl,(SG+VR_CLUS)
+        ld      a,(SG+VR_SIZE)
+        or      (hl)
+        ld      hl,SG+VR_SIZE+1
+        or      (hl)
+        inc     hl
+        or      (hl)
+        inc     hl
+        or      (hl)
+        ld      hl,(SG+VR_CLUS)
+        or      h
+        or      l
+        jr      z,.alloc                ; empty already
+        call    wr_truncate
+        ret     c
+        jr      .alloc
+.reader:
+        ld      a,1                     ; a writer's row
+        call    vfs_busy
+        ret     c
+        jr      .alloc
+.dir:   ld      a,(SG+VW_FLAGS)
+        and     3|O_CREAT|O_TRUNC
+        jp      nz,.isdir
+.alloc: ; A descriptor: the lowest FD_NONE in the row.
         ld      a,(K_PID)
         add     a,a
         add     a,a
@@ -840,6 +940,8 @@ ks_open:
         ld      (iy+OF_VOL),a
         ld      (iy+OF_REFS),1
         ld      (iy+OF_ERRNO),0
+        ld      (iy+OF_TAIL),0          ; the chain's end: not known yet
+        ld      (iy+OF_TAIL+1),0
         ld      a,(SG+VR_KIND)
         ld      c,0                     ; the flags
         cp      VK_MNT
@@ -850,13 +952,22 @@ ks_open:
 .notmnt:
         ld      a,(SG+VR_ATTR)
         and     DA_DIR
-        jr      z,.flags                ; a file
+        jr      z,.file
         ld      c,OFF_DIR
         ld      hl,(SG+VR_CLUS)
         ld      a,h
         or      l
         jr      nz,.flags
         ld      c,OFF_DIR|OFF_ROOT      ; cluster 0: the root directory
+        jr      .flags
+.file:  ld      a,(SG+VW_ACC)
+        or      a
+        jr      z,.flags
+        ld      c,OFF_WR                ; the writer
+        ld      a,(SG+VW_FLAGS)
+        and     O_APPEND
+        jr      z,.flags
+        ld      c,OFF_WR|OFF_APPEND
 .flags: ld      (iy+OF_FLAGS),c
         ld      hl,(SG+VR_CLUS)
         ld      (iy+OF_FIRST),l
@@ -890,6 +1001,15 @@ ks_open:
         or      a                       ; CF clear
         ret
 .inval: ld      a,E_INVAL
+        scf
+        ret
+.noent: ld      a,E_NOENT
+        scf
+        ret
+.acces: ld      a,E_ACCES
+        scf
+        ret
+.isdir: ld      a,E_ISDIR
         scf
         ret
 

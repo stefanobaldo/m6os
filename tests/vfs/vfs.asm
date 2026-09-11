@@ -513,7 +513,7 @@ t_entry:
         ld      c,0F5h
         call    t_expect
         ld      hl,p_hello
-        ld      a,O_WRONLY
+        ld      a,3                     ; no such access mode
         sys     SYS_OPEN
         ld      b,E_INVAL
         ld      c,0EFh
