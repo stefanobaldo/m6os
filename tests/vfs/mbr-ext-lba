@@ -1,0 +1,4 @@
+Rewrite the extended container's MBR type to 0Fh, the LBA form, after the
+image is built. The builder writes 05h because its images are small; real
+cards put the container past the CHS limit and get 0Fh, which is the shape
+this test's volumes are meant to have.

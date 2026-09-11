@@ -20,6 +20,7 @@ PE_TYPE         equ 4                   ; a partition entry: the type byte
 PE_FIRST        equ 8                   ; 4: first sector, relative
 PE_COUNT        equ 12                  ; 4: sectors
 PT_EXTENDED     equ 05h
+PT_EXTENDED_LBA equ 0Fh
 
 ; ---------------------------------------------------------------------
 ; The enumeration
@@ -185,7 +186,7 @@ bi_walk:
         ld      ix,SG_INFO
         add     ix,de
         ld      a,(ix+PE_TYPE)
-        cp      PT_EXTENDED
+        call    bi_isext
         jr      nz,.primary
         call    bi_chain
         jr      .nextpri
@@ -230,7 +231,18 @@ bi_walk:
         ld      (SG+SV_PKIND),a
         jp      bi_row
 
-; bi_chain — IX -> a type 05h entry of the MBR: walk its EBRs. Each EBR's
+; bi_isext — A = a partition entry's type: Z when it opens an extended
+; chain. 05h is the CHS form; 0Fh is the same thing addressed by LBA,
+; which is what a partitioner writes for a container beginning past the
+; CHS limit — a card of a few gigabytes reaches that, and the FDISK this
+; ecosystem ships writes 0Fh there. Preserves IX.
+bi_isext:
+        cp      PT_EXTENDED
+        ret     z
+        cp      PT_EXTENDED_LBA
+        ret
+
+; bi_chain — IX -> an extended entry of the MBR: walk its EBRs. Each EBR's
 ; entry 1 is a volume relative to the EBR, its entry 2 the next EBR
 ; relative to the chain's start, type 05h, or nothing.
 bi_chain:
@@ -278,7 +290,7 @@ bi_chain:
         ld      ix,SG_SCRATCH+MBR_TABLE ; entry 1: the volume
         call    bi_candidate
         ld      a,(SG+SV_LTYPE)
-        cp      PT_EXTENDED
+        call    bi_isext
         ret     nz                      ; the chain ends here
         ld      a,(SG+SV_NLOG)
         cp      9

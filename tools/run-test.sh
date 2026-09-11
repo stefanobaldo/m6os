@@ -122,6 +122,23 @@ for machine in $machines; do
         M6_STEP=create openmsx_run -script tools/mkdisk.tcl
         M6_STEP=import openmsx_run -ext "$ext" -hda "$M6_IMAGE" -command "$slave_cmd" \
             -script tools/mkdisk.tcl
+        # A test that ships mbr-ext-lba wants its extended container
+        # addressed by LBA, type 0Fh, the way a partitioner writes one that
+        # begins past the CHS limit. The image builder writes 05h, the CHS
+        # form, because the images it makes are small; a card of a few
+        # gigabytes is the other form, and only this rewrite puts it under
+        # test. Entry 2 of the MBR, its type byte at 446 + 16 + 4.
+        if [ -f "tests/$name/mbr-ext-lba" ]; then
+            cur=$(dd if="$M6_IMAGE" bs=1 skip=466 count=1 2>/dev/null |
+                  od -An -tx1 | tr -d ' \n')
+            if [ "$cur" != "05" ]; then
+                echo "run-test: $name: MBR entry 2 is type $cur, not 05:" \
+                     "the extended container is not where this expects it" >&2
+                exit 1
+            fi
+            printf '\017' |
+                dd of="$M6_IMAGE" bs=1 seek=466 count=1 conv=notrunc 2>/dev/null
+        fi
 
         M6_TEST="$name" M6_TEST_DIR="$ROOT/tests/$name" \
             openmsx_run -ext "$ext" -ext debugdevice -hda "$M6_IMAGE" -command "$slave_cmd" \
