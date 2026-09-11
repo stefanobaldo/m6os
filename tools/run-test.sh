@@ -89,6 +89,17 @@ byte() { od -An -tu1 -j "$2" -N 1 "$1" | tr -d ' \n'; }
 check_volume() {
     ci_vol="build/$name.$machine.$run.vol"
     dd if="$1" of="$ci_vol" bs=512 skip="$2" count="$3" 2> /dev/null
+    # A Nextor boot sector carries no extended signature (29h), and where
+    # dosfstools then looks for a volume label it finds nothing: its checker
+    # calls every volume an MSX formatter made invalid and exits non-zero
+    # for it, before saying anything about the filesystem. Nothing in the
+    # system writes a boot sector, so the signature and the name a volume
+    # without a label is meant to carry are filled in the carved-out copy —
+    # a scratch file, thrown away below — and both checkers then judge the
+    # same thing. The BSD one ignores labels and reads the copy exactly as
+    # it reads the original.
+    printf '\051' | dd of="$ci_vol" bs=1 seek=38 count=1 conv=notrunc 2> /dev/null
+    printf 'NO NAME    ' | dd of="$ci_vol" bs=1 seek=43 count=11 conv=notrunc 2> /dev/null
     if ! "$FSCK" -n "$ci_vol" > "$ci_vol.log" 2>&1; then
         echo "run-test: $name: $FSCK finds errors on $(basename "$1") sector $2:" >&2
         cat "$ci_vol.log" >&2
@@ -96,7 +107,7 @@ check_volume() {
     fi
     # The checker's own step titles name orphans and truncation; what is
     # matched here is a finding, not a title.
-    if grep -ci_i -E 'differ|lost|found orphan|orphaned|shared|truncating|is bad|wrong|corrupt|reclaim|unused' "$ci_vol.log" > /dev/null; then
+    if grep -q -i -E 'differ|lost|found orphan|orphaned|shared|truncating|is bad|wrong|corrupt|reclaim|unused' "$ci_vol.log" > /dev/null; then
         echo "run-test: $name: $FSCK complains about $(basename "$1") sector $2:" >&2
         cat "$ci_vol.log" >&2
         exit 1
