@@ -67,6 +67,92 @@ openmsx_run() {
     return $status
 }
 
+# The host's FAT checker: dosfstools' on Linux, the BSD one on macOS. A
+# test that ships fsck needs one.
+FSCK=""
+for c in fsck.fat /sbin/fsck_msdos fsck_msdos; do
+    if command -v "$c" > /dev/null 2>&1; then FSCK=$c; break; fi
+done
+if [ -f "tests/$name/fsck" ] && [ -z "$FSCK" ]; then
+    echo "run-test: $name: no FAT checker (fsck.fat or fsck_msdos) on this host" >&2
+    exit 2
+fi
+
+# le32 <file> <offset>, byte <file> <offset>: a little-endian word and a
+# byte of the file, in decimal.
+le32() { od -An -tu4 -j "$2" -N 4 "$1" | tr -d ' \n'; }
+byte() { od -An -tu1 -j "$2" -N 1 "$1" | tr -d ' \n'; }
+
+# check_volume <image> <first sector> <sectors>: the volume carved out and
+# handed to the checker, which must find nothing to fix; then the copies
+# of its table, which must be identical.
+check_volume() {
+    ci_vol="build/$name.$machine.$run.vol"
+    dd if="$1" of="$ci_vol" bs=512 skip="$2" count="$3" 2> /dev/null
+    if ! "$FSCK" -n "$ci_vol" > "$ci_vol.log" 2>&1; then
+        echo "run-test: $name: $FSCK finds errors on $(basename "$1") sector $2:" >&2
+        cat "$ci_vol.log" >&2
+        exit 1
+    fi
+    # The checker's own step titles name orphans and truncation; what is
+    # matched here is a finding, not a title.
+    if grep -ci_i -E 'differ|lost|found orphan|orphaned|shared|truncating|is bad|wrong|corrupt|reclaim|unused' "$ci_vol.log" > /dev/null; then
+        echo "run-test: $name: $FSCK complains about $(basename "$1") sector $2:" >&2
+        cat "$ci_vol.log" >&2
+        exit 1
+    fi
+    ci_rsvd=$(od -An -tu2 -j 14 -N 2 "$ci_vol" | tr -d ' \n')
+    ci_nfats=$(byte "$ci_vol" 16)
+    ci_fatsz=$(od -An -tu2 -j 22 -N 2 "$ci_vol" | tr -d ' \n')
+    ci_k=1
+    while [ "$ci_k" -lt "$ci_nfats" ]; do
+        dd if="$ci_vol" of="$ci_vol.fat0" bs=512 skip="$ci_rsvd" count="$ci_fatsz" 2> /dev/null
+        dd if="$ci_vol" of="$ci_vol.fat$ci_k" bs=512 skip=$((ci_rsvd + ci_k * ci_fatsz)) count="$ci_fatsz" 2> /dev/null
+        if ! cmp -s "$ci_vol.fat0" "$ci_vol.fat$ci_k"; then
+            echo "run-test: $name: the FAT copies 0 and $ci_k differ on $(basename "$1") sector $2" >&2
+            exit 1
+        fi
+        ci_k=$((ci_k + 1))
+    done
+    echo "  $(basename "$1") sector $2: $FSCK clean, $ci_nfats FAT copies identical"
+    rm -f "$ci_vol" "$ci_vol.log" "$ci_vol.fat"*
+}
+
+# check_image <image>: every volume of it — the four primary entries in
+# order, a type 05h or 0Fh entry's chain of logical partitions, or, with no
+# partition table of ours, the image as one volume.
+check_image() {
+    ci_img=$1
+    ci_total=$(( $(wc -c < "$ci_img") / 512 ))
+    ci_seen=0
+    ci_i=0
+    while [ "$ci_i" -lt 4 ]; do
+        ci_e=$((446 + 16 * ci_i))
+        ci_t=$(byte "$ci_img" $((ci_e + 4)))
+        ci_f=$(le32 "$ci_img" $((ci_e + 8)))
+        ci_c=$(le32 "$ci_img" $((ci_e + 12)))
+        case $ci_t in
+            1|4|6|14)
+                check_volume "$ci_img" "$ci_f" "$ci_c"; ci_seen=1 ;;
+            5|15)
+                ci_ext=$ci_f; ci_ebr=$ci_f; ci_n=0
+                while :; do
+                    ci_b=$((ci_ebr * 512 + 446))
+                    ci_t0=$(byte "$ci_img" $((ci_b + 4))); ci_f0=$(le32 "$ci_img" $((ci_b + 8))); ci_c0=$(le32 "$ci_img" $((ci_b + 12)))
+                    case $ci_t0 in 1|4|6|14) check_volume "$ci_img" $((ci_ebr + ci_f0)) "$ci_c0"; ci_seen=1 ;; esac
+                    ci_t1=$(byte "$ci_img" $((ci_b + 16 + 4))); ci_f1=$(le32 "$ci_img" $((ci_b + 16 + 8)))
+                    ci_n=$((ci_n + 1))
+                    case $ci_t1 in 5|15) ;; *) break ;; esac
+                    [ "$ci_n" -ge 9 ] && break
+                    ci_ebr=$((ci_ext + ci_f1))
+                done ;;
+        esac
+        ci_i=$((ci_i + 1))
+    done
+    if [ "$ci_seen" = 0 ]; then check_volume "$ci_img" 0 "$ci_total"; fi
+    return 0
+}
+
 machines=m6-msx2-128k
 [ -f "tests/$name/machines" ] && machines=$(cat "tests/$name/machines")
 # The image's shape, and the extension that goes with it: the one with a
@@ -140,8 +226,26 @@ for machine in $machines; do
                 dd of="$M6_IMAGE" bs=1 seek=466 count=1 conv=notrunc 2>/dev/null
         fi
 
+        # A test that ships patch.tcl wants something on the image no
+        # importer writes — an attribute bit. It runs with the image
+        # closed, between the import and the boot.
+        if [ -f "tests/$name/patch.tcl" ]; then
+            openmsx_run -script "tests/$name/patch.tcl"
+        fi
+
         M6_TEST="$name" M6_TEST_DIR="$ROOT/tests/$name" \
             openmsx_run -ext "$ext" -ext debugdevice -hda "$M6_IMAGE" -command "$slave_cmd" \
                 -script tools/harness.tcl
+
+        # A test that ships fsck wrote to its volumes: every one of them,
+        # on both images, is judged by the host's FAT checker and by a
+        # comparison of the two copies of its table, with the emulator
+        # gone and the images closed. Neither reads the kernel's tables:
+        # what the kernel wrote is read back by rules written from the
+        # specification.
+        if [ -f "tests/$name/fsck" ]; then
+            check_image "$M6_IMAGE"
+            if [ -n "$slave" ]; then check_image "$M6_SLAVE_IMAGE"; fi
+        fi
     done
 done
