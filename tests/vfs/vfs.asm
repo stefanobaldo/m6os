@@ -694,6 +694,72 @@ t_entry:
         ld      hl,t_ok
         k_call  API_CON_PUTS
 
+; --- step 12: exec ---------------------------------------------------------------
+        ld      a,12
+        ld      (t_step),a
+        ld      hl,t_k12
+        k_call  API_CON_PUTS
+        ; A spawned child execs hello with three arguments: 7.
+        ld      hl,u_exec1
+        ld      bc,u_exec1_end-u_exec1
+        call    t_run1
+        cp      7
+        jp      nz,t_fail_status
+        ; A vfork child execs the two-page program: the parent wakes, waits,
+        ; and hands its status on: 33. The parent has three pages, so its
+        ; stack — where its frame is rebuilt — is in page 2, the page the
+        ; window takes: a wake that leaves the kernel's pages mapped is
+        ; caught here.
+        ld      hl,u_execvf
+        ld      bc,u_execvf_end-u_execvf
+        ld      a,3
+        call    t_run
+        cp      33
+        jp      nz,t_fail_status
+        ; Three pages, with three one-page processes holding segments: on
+        ; the base machine ENOMEM comes back to the child (112); where the
+        ; segments exist, the program runs (3).
+        ld      hl,SC_SEGMENTS_FREE
+        sys     SYS_SYSCONF
+        ld      de,4+3                  ; the holders and the parent, then
+        or      a                       ; three for the program
+        sbc     hl,de
+        ld      a,3
+        jr      nc,.expect
+        ld      a,112
+.expect:
+        ld      (t_want),a
+        ld      b,3
+.hold:  push    bc
+        ld      hl,u_hold
+        ld      bc,u_hold_end-u_hold
+        ld      a,1
+        k_call  API_SPAWN
+        pop     bc
+        jp      c,t_fail
+        djnz    .hold
+        ld      hl,u_execvf3
+        ld      bc,u_execvf3_end-u_execvf3
+        call    t_run1
+        ld      hl,t_want
+        cp      (hl)
+        jp      nz,t_fail_status
+        ; Every refusal, from a child: 0.
+        ld      hl,u_execerr
+        ld      bc,u_execerr_end-u_execerr
+        call    t_run1
+        or      a
+        jp      nz,t_fail_status
+        ; A 16K program, timed: the child prints the ticks before, the
+        ; program the ticks on entry; 16.
+        ld      hl,u_exectime
+        ld      bc,u_exectime_end-u_exectime
+        call    t_run1
+        cp      16
+        jp      nz,t_fail_status
+        ld      hl,t_ok
+        k_call  API_CON_PUTS
+
 ; --- verdict --------------------------------------------------------------
 t_verdict:
         ld      hl,t_pass
@@ -734,6 +800,18 @@ t_fail_status:
         k_call  API_CON_NEWLINE
         m6_verdict M6_FAIL
         jr      t_halt
+
+; t_run1 — HL = a one-page image, BC = its length: spawn it, wait for it,
+; A = its status. A failure of spawn or wait is a failure of the test.
+; t_run — the same with A = the pages.
+t_run1:
+        ld      a,1
+t_run:  k_call  API_SPAWN
+        jp      c,t_fail
+        k_call  API_WAIT
+        jp      c,t_fail
+        ld      a,l
+        ret
 
 ; t_expect — after a syscall: CF must be set with A = B, else fail with
 ; code C (C+1 when the call succeeded). Preserves nothing.
@@ -880,6 +958,7 @@ t_attr:     db  " attr ",0
 t_k10:      db  "10 reader",10,0
 t_k10b:     db  "10 reader ok",10,0
 t_k11:      db  "11 chdir: ",0
+t_k12:      db  "12 exec: ",0
 t_ok:       db  " ok",10,0
 t_pass:     db  "PASS",10,0
 t_sfail:    db  "FAIL step ",0
@@ -1287,6 +1366,188 @@ u_reader_k:
         ENT
 u_reader_k_end:
         u_image u_reader
+
+; u_exec1 — exec /bin/hello with three arguments; the errno, plus 100, if
+; it comes back.
+u_exec1_k:
+        DISP    P0_PROG
+        ld      hl,.path
+        ld      de,.argv
+        sys     SYS_EXEC
+        add     a,100
+        sys     SYS_EXIT
+.path:  db      "/bin/hello",0
+.argv:  dw      .path,.a1,.a2,0
+.a1:    db      "one",0
+.a2:    db      "two",0
+        ENT
+u_exec1_k_end:
+        u_image u_exec1
+
+; u_execvf — vfork; the child execs /bin/two; the parent wakes with the
+; child's pid, waits, and exits with the child's status.
+u_execvf_k:
+        DISP    P0_PROG
+        sys     SYS_VFORK
+        jr      c,.fail
+        ld      a,h
+        or      l
+        jr      nz,.parent
+        ld      hl,.path
+        ld      de,0
+        sys     SYS_EXEC
+        add     a,100
+        sys     SYS_EXIT
+.parent:
+        sys     SYS_WAIT
+        jr      c,.fail
+        ld      a,l
+        sys     SYS_EXIT
+.fail:  ld      a,90
+        sys     SYS_EXIT
+.path:  db      "/bin/two",0
+        ENT
+u_execvf_k_end:
+        u_image u_execvf
+
+; u_execvf3 — the same with /bin/three, which wants three pages.
+u_execvf3_k:
+        DISP    P0_PROG
+        sys     SYS_VFORK
+        jr      c,.fail
+        ld      a,h
+        or      l
+        jr      nz,.parent
+        ld      hl,.path
+        ld      de,0
+        sys     SYS_EXEC
+        add     a,100
+        sys     SYS_EXIT
+.parent:
+        sys     SYS_WAIT
+        jr      c,.fail
+        ld      a,l
+        sys     SYS_EXIT
+.fail:  ld      a,90
+        sys     SYS_EXIT
+.path:  db      "/bin/three",0
+        ENT
+u_execvf3_k_end:
+        u_image u_execvf3
+
+; u_hold — a process that holds its page: it reads the keyboard, which
+; nobody types on, for ever.
+u_hold_k:
+        DISP    P0_PROG
+        xor     a
+        ld      hl,.buf
+        ld      bc,1
+        sys     SYS_READ
+        ld      a,99
+        sys     SYS_EXIT
+.buf:   db      0
+        ENT
+u_hold_k_end:
+        u_image u_hold
+
+; u_execerr — every way exec refuses, each with its errno: 0 when all
+; four came back as they should, else 200 + the one that did not.
+u_execerr_k:
+        DISP    P0_PROG
+        ld      hl,.odd
+        ld      de,0
+        sys     SYS_EXEC
+        jr      nc,.e1
+        cp      E_NOEXEC
+        jr      nz,.e1
+        ld      hl,.bin
+        ld      de,0
+        sys     SYS_EXEC
+        jr      nc,.e2
+        cp      E_ISDIR
+        jr      nz,.e2
+        ld      hl,.nope
+        ld      de,0
+        sys     SYS_EXEC
+        jr      nc,.e3
+        cp      E_NOENT
+        jr      nz,.e3
+        ld      hl,.hello
+        ld      de,.bigargv
+        sys     SYS_EXEC
+        jr      nc,.e4
+        cp      E_2BIG
+        jr      nz,.e4
+        xor     a
+        sys     SYS_EXIT
+.e1:    ld      a,201
+        sys     SYS_EXIT
+.e2:    ld      a,202
+        sys     SYS_EXIT
+.e3:    ld      a,203
+        sys     SYS_EXIT
+.e4:    ld      a,204
+        sys     SYS_EXIT
+.odd:   db      "/data/odd.txt",0
+.bin:   db      "/bin",0
+.nope:  db      "/nope",0
+.hello: db      "/bin/hello",0
+.bigargv: dw    .hello,.big,0
+.big:   DUP 300
+        db      "x"
+        EDUP
+        db      0
+        ENT
+u_execerr_k_end:
+        u_image u_execerr
+
+; u_exectime — the ticks now on the screen, then exec /bin/big16k, which
+; prints the ticks on its entry and exits with 16.
+u_exectime_k:
+        DISP    P0_PROG
+        ld      hl,(K_TICKS)
+        ld      de,.digits+4
+        ld      b,5
+.dig:   push    bc
+        ld      bc,10
+        call    .div
+        add     a,'0'
+        ld      (de),a
+        dec     de
+        pop     bc
+        djnz    .dig
+        ld      a,1
+        ld      hl,.line
+        ld      bc,.linelen
+        sys     SYS_WRITE
+        ld      hl,.path
+        ld      de,0
+        sys     SYS_EXEC
+        add     a,100
+        sys     SYS_EXIT
+; .div — HL = HL / BC, A = the remainder (BC < 256).
+.div:   push    de
+        ld      d,0
+        ld      e,16
+.bit:   add     hl,hl
+        rl      d
+        ld      a,d
+        sub     c
+        jr      c,.no
+        ld      d,a
+        inc     l
+.no:    dec     e
+        jr      nz,.bit
+        ld      a,d
+        pop     de
+        ret
+.line:  db      "exec: t0 "
+.digits: db     "00000",10
+.linelen equ    $-.line
+.path:  db      "/bin/big16k",0
+        ENT
+u_exectime_k_end:
+        u_image u_exectime
 
 tblock_end:
         ASSERT  $ < 8000h

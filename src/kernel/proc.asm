@@ -469,6 +469,174 @@ sys_exit:
         ld      hl,(k_cur)
         jp      sched_next_idle
 
+; exec_finish — API_EXEC_FINISH: the switched exec has loaded the new image
+; into the VX_SEG segments (ST_VFS of the storage segment, in page 1 under
+; the gate): write the page-0 header when the segments are fresh, the
+; argument block and the initial frame at the top of the highest page, the
+; row, and free what a smaller image leaves over; wake a vfork parent; run
+; the image. Resident, because what it does takes the window away from
+; under any code running there. Never returns.
+SX              equ 4000h+ST_VFS        ; ST_VFS through page 1
+exec_finish:
+        ld      a,(SX+VX_FRESH-ST_VFS)
+        or      a
+        jr      z,.header
+        ld      a,(SX+VX_SEG-ST_VFS)    ; a new page 0: the kernel's region
+        out     (0FEh),a
+        call    sp_header
+.header:
+        ; The highest page into the window: the block under its top, the
+        ; frame under the block.
+        ld      a,(SX+VX_PAGES-ST_VFS)
+        ld      c,a
+        dec     a
+        add     a,low (SX+VX_SEG-ST_VFS)
+        ld      l,a
+        ld      h,high (SX+VX_SEG-ST_VFS)
+        ld      a,(hl)
+        out     (0FEh),a
+        ld      de,(SX+VX_BLEN-ST_VFS)
+        ld      hl,0C000h
+        or      a
+        sbc     hl,de                   ; hl = the block, in the window
+        push    hl
+        ld      a,d
+        or      e
+        jr      z,.placed
+        ex      de,hl                   ; de = destination, hl = length
+        push    de
+        ld      b,h
+        ld      c,l
+        ld      hl,4000h+ST_ARGV
+        ldir
+        pop     hl
+.placed:
+        ; The block's base in the process's addresses: pages * 4000h - blen;
+        ; the table's words become addresses.
+        ld      a,(SX+VX_PAGES-ST_VFS)
+        rrca
+        rrca
+        ld      d,a
+        ld      e,0                     ; de = pages * 4000h
+        ld      bc,(SX+VX_BLEN-ST_VFS)
+        ex      de,hl
+        or      a
+        sbc     hl,bc
+        ex      de,hl                   ; de = the base, hl = the block (window)
+        ld      a,(SX+VX_ARGC-ST_VFS)
+        ld      b,a
+        or      a
+        jr      z,.reloc_done
+        push    hl
+.reloc: ld      a,(hl)
+        add     a,e
+        ld      (hl),a
+        inc     hl
+        ld      a,(hl)
+        adc     a,d
+        ld      (hl),a
+        inc     hl
+        djnz    .reloc
+        pop     hl
+.reloc_done:
+        ; The frame: BC = argc, HL = the base.
+        ld      a,(SX+VX_ARGC-ST_VFS)
+        ld      c,a
+        ld      b,0
+        pop     hl                      ; the block, in the window: the frame's top
+        call    pr_frame                ; hl = SP, in the window
+        ld      a,h
+        sub     80h                     ; into the process's highest page
+        ld      c,a
+        ld      a,(SX+VX_PAGES-ST_VFS)
+        dec     a
+        rrca
+        rrca                            ; (pages - 1) * 40h
+        add     a,c
+        ld      h,a
+        ld      (SX+VX_SP-ST_VFS),hl
+        ld      a,(K_KSEG)
+        out     (0FEh),a                ; the window back
+        ; The row.
+        ld      hl,(k_cur)
+        push    hl
+        ld      de,P_SP
+        add     hl,de
+        ld      de,(SX+VX_SP-ST_VFS)
+        ld      (hl),e
+        inc     hl
+        ld      (hl),d
+        pop     hl
+        push    hl
+        ld      de,P_NPAGES
+        add     hl,de
+        ld      a,(SX+VX_PAGES-ST_VFS)
+        ld      (hl),a
+        inc     hl
+        ex      de,hl
+        ld      hl,SX+VX_SEG-ST_VFS
+        ld      bc,3
+        ldir
+        pop     hl
+        ; A smaller image: the pages it no longer needs, back.
+        ld      a,(SX+VX_FRESH-ST_VFS)
+        or      a
+        jr      nz,.woken_check
+        ld      a,(SX+VX_OLDN-ST_VFS)
+        ld      b,a
+        ld      a,(SX+VX_PAGES-ST_VFS)
+        sub     b
+        jr      nc,.woken_check
+        neg                             ; a = surplus pages
+        ld      b,a
+        ld      a,(SX+VX_PAGES-ST_VFS)
+        add     a,low (SX+VX_SEG-ST_VFS)
+        ld      l,a
+        ld      h,high (SX+VX_SEG-ST_VFS)
+.surplus:
+        push    bc
+        push    hl
+        ld      a,(k_pid)
+        ld      b,a
+        ld      a,(hl)
+        call    mem_free
+        pop     hl
+        pop     bc
+        inc     hl
+        djnz    .surplus
+.woken_check:
+        ; The storage segment is no longer needed: the process's pages 1
+        ; and 2 back, so that a vfork parent's frame is rebuilt on the
+        ; pages it shares with this child, wherever its stack is.
+        ld      a,(k_map+1)
+        out     (0FDh),a
+        ld      a,(k_map+2)
+        out     (0FEh),a
+        ld      hl,(k_cur)
+        ld      de,P_PPID
+        add     hl,de
+        ld      a,(hl)
+        cp      PP_NONE
+        jr      z,.go
+        ld      l,a
+        ld      h,0
+        add     hl,hl
+        add     hl,hl
+        add     hl,hl
+        add     hl,hl
+        ld      de,K_PROC
+        add     hl,de                   ; the parent's row
+        ld      a,(hl)
+        cp      PS_VFORK
+        jr      nz,.go
+        call    vf_resume               ; its frame, HL = my pid
+        ld      (hl),PS_RUN
+        di
+        call    sched_link
+        ei
+.go:    ld      hl,(k_cur)
+        jp      sched_load
+
 ; vf_resume — HL = the row of a parent blocked in vfork: the frame it will
 ; resume on, on the pages it shares with the exiting child — every
 ; register zero but HL = the child's pid, and the return address the row
