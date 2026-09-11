@@ -283,6 +283,14 @@ version anyone else is meant to install.
 
 ### Changed
 
+- The throughput figures in `docs/storage.md` and `docs/programs.md` are
+  now measurements from an MSX2 at 3.58 MHz rather than estimates, and
+  they name the driver each was taken through: a 64K sequential read runs
+  at about 89 KB/s through a driver that moves a sector in 4.8 ms and
+  about 77 KB/s through one that takes 5.4 ms, and `exec` of a 16K
+  program takes about 200 ms and 220 ms on the same two. The single
+  "about 90 KB/s through a driver that moves a sector in 5.4 ms" paired
+  the faster figure with the slower driver.
 - The kernel's jump tables: the kernel-side table has 32 entries, the
   syscall table 48, and the syscall table moved from `C040h` to `C070h`
   (`docs/syscalls.md`). Nothing released depends on either address.
