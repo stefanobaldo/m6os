@@ -1,12 +1,15 @@
 ; blkspike — what a driver call of 1, 2, 4 and 8 sectors costs: the
 ; interrupt-disabled region per call and per sector, by difference between
 ; a loop with the call and the same loop without it, and the ticks the
-; kernel counts against the real-time clock while the calls are made. The
-; numbers decide nothing in the emulator; on the Omega they are what one
-; sector per call is measured against. The verdict is functional: every
-; B returned the same bytes as B = 1. Under Nextor: the driver behind the
-; current drive and the capture, then the takeover; the block above the
-; image does the loops, calling the driver directly through the resident.
+; kernel counts against the real-time clock while the calls are made —
+; reading, then writing the same bytes back to a file's sectors, so that
+; the write's cost stands beside the read's. The numbers decide nothing in
+; the emulator; on the Omega they are what one sector per call is measured
+; against. The verdict is functional: every B returned the same bytes as B
+; = 1, and the file holds what was written. Under Nextor: the driver
+; behind the current drive and the capture, a 4K file made and its first
+; sector found, then the takeover; the block above the image does the
+; loops, calling the driver directly through the resident.
         include "m6test.inc"
         include "nextor/nextor.inc"
         include "kernel/kernel.inc"
@@ -15,6 +18,13 @@
 _STROUT     equ 09h
 _CURDRV     equ 19h
 _TERM       equ 62h
+_SETDTA     equ 1Ah
+_RDDRV      equ 73h
+_DELETE     equ 4Dh
+_CREATE     equ 44h
+_WRITE      equ 49h
+_CLOSE      equ 45h
+_FLUSH      equ 5Fh
 
         org     100h
 
@@ -33,6 +43,7 @@ start:
         ld      (step),a
         ld      c,_CURDRV
         call    BDOS
+        ld      (drive),a
         ld      ix,REC+KR_DRV
         ld      hl,KT_SCRATCH
         call    nx_find
@@ -44,6 +55,140 @@ start:
         ld      (step),a
         ld      ix,REC
         call    nx_capture
+        ; A 4K file — eight sectors, one cluster on the boot volume, so
+        ; consecutive — for the write loops to land on; its first device
+        ; sector into KR_TARGET, found through the boot sector and the
+        ; root directory as blk does.
+        ld      a,4
+        ld      (step),a
+        ld      de,fname
+        ld      c,_DELETE
+        call    BDOS                    ; a previous run's; no error check
+        ld      de,fname
+        xor     a
+        ld      b,0
+        ld      c,_CREATE
+        call    BDOS
+        or      a
+        jp      nz,fail
+        ld      a,b
+        ld      (fh),a
+        ld      a,5
+        ld      (step),a
+        ld      b,8
+.wr:    push    bc
+        ld      a,(fh)
+        ld      b,a
+        ld      de,KT_BUF_C
+        ld      hl,512
+        ld      c,_WRITE
+        call    BDOS
+        pop     bc
+        or      a
+        jp      nz,fail
+        djnz    .wr
+        ld      a,(fh)
+        ld      b,a
+        ld      c,_CLOSE
+        call    BDOS
+        ld      b,0
+        ld      d,0
+        ld      c,_FLUSH
+        call    BDOS
+        ld      a,6
+        ld      (step),a
+        ld      c,_SETDTA
+        ld      de,KT_BUF_B
+        call    BDOS
+        ld      a,(drive)
+        ld      b,1
+        ld      hl,0
+        ld      de,0
+        ld      c,_RDDRV                ; the boot sector, after the write
+        call    BDOS
+        or      a
+        jp      nz,fail
+        ld      hl,(KT_BUF_B+0Eh)
+        ld      de,(KT_BUF_B+16h)
+        ld      a,(KT_BUF_B+10h)
+.fats:  add     hl,de
+        dec     a
+        jr      nz,.fats
+        ld      (root),hl
+        ld      hl,(KT_BUF_B+11h)
+        srl     h
+        rr      l
+        srl     h
+        rr      l
+        srl     h
+        rr      l
+        srl     h
+        rr      l
+        ld      (rootsecs),hl
+        ld      de,(root)
+        add     hl,de
+        ld      (data),hl
+        ld      a,7
+        ld      (step),a
+        ld      hl,0
+.scan:  ld      (n),hl
+        ex      de,hl
+        ld      hl,(rootsecs)
+        or      a
+        sbc     hl,de
+        ld      a,0F5h                  ; the entry is not in the root
+        jp      z,fail
+        call    sec_first
+        ld      hl,(root)
+        call    add32
+        ld      hl,(n)
+        call    add32
+        call    read_a
+        jp      nz,fail
+        ld      hl,KT_BUF_A
+        ld      b,16
+.entry: push    hl
+        push    bc
+        ld      de,fname11
+        ld      b,11
+.ch:    ld      a,(de)
+        cp      (hl)
+        jr      nz,.other
+        inc     hl
+        inc     de
+        djnz    .ch
+        pop     bc
+        pop     ix
+        ld      l,(ix+1Ah)
+        ld      h,(ix+1Bh)
+        ld      (cluster),hl
+        jr      .found
+.other: pop     bc
+        pop     hl
+        ld      de,32
+        add     hl,de
+        djnz    .entry
+        ld      hl,(n)
+        inc     hl
+        jr      .scan
+.found: call    sec_first
+        ld      hl,(data)
+        call    add32
+        ld      hl,(cluster)
+        dec     hl
+        dec     hl
+        ld      a,(KT_BUF_B+0Dh)
+.mul:   push    af
+        push    hl
+        call    add32
+        pop     hl
+        pop     af
+        dec     a
+        jr      nz,.mul
+        ld      hl,(SECNUM)
+        ld      (REC+KR_TARGET),hl
+        ld      hl,(SECNUM+2)
+        ld      (REC+KR_TARGET+2),hl
         ld      de,s_takeover
         call    puts
         ld      hl,t_entry
@@ -74,6 +219,35 @@ fail:
         ld      b,1
         ld      c,_TERM
         jp      BDOS
+
+; sec_first — SECNUM = first device sector of the drive.
+sec_first:
+        ld      hl,(REC+KR_FIRST)
+        ld      (SECNUM),hl
+        ld      hl,(REC+KR_FIRST+2)
+        ld      (SECNUM+2),hl
+        ret
+
+; add32 — SECNUM += HL, HL zero-extended.
+add32:  ld      de,(SECNUM)
+        add     hl,de
+        ld      (SECNUM),hl
+        ret     nc
+        ld      hl,(SECNUM+2)
+        inc     hl
+        ld      (SECNUM+2),hl
+        ret
+
+; read_a — one sector, SECNUM, directly into KT_BUF_A. Z if ok, else NZ
+; with A = the driver's error code.
+read_a: ld      ix,REC+KR_DRV
+        or      a
+        ld      b,1
+        ld      hl,KT_BUF_A
+        ld      de,SECNUM
+        call    nx_rw
+        or      a
+        ret
 
 puts:   push    de
 .echo:  ld      a,(de)
@@ -117,6 +291,16 @@ s_code:     db  " code $"
 s_nl:       db  13,10,'$'
 chbuf:      db  0,'$'
 step:       db  0
+drive:      db  0
+fh:         db  0
+fname:      db  "M6SPIKE.TST",0
+fname11:    db  "M6SPIKE TST"
+root:       dw  0
+rootsecs:   dw  0
+data:       dw  0
+cluster:    dw  0
+n:          dw  0
+SECNUM      equ 8148h           ; 4 bytes: the sector handed to nx_rw
 REC:        ds  KREC_SIZE
 
 nx_enaslt   equ ENASLT
@@ -176,7 +360,7 @@ t_entry:
         ld      (t_b),a
 .b:     ; The loop with the call, watched against the RTC; its watch kept
         ; aside before the loop without the call overwrites it.
-        ld      hl,t_rw
+        ld      hl,(t_fn_rw)
         ld      (t_fn),hl
         call    t_loop
         ld      (t_tcall),hl
@@ -258,6 +442,40 @@ t_entry:
         ld      (t_b),a
         cp      9
         jp      c,.b
+        ld      a,(t_write)
+        or      a
+        jr      nz,.written
+        ; The same four B's writing: the reference's eight sectors to the
+        ; file's, from BUF_XFER — which holds them, the last read having
+        ; been eight.
+        ld      a,1
+        ld      (t_write),a
+        ld      hl,t_head_w
+        k_call  API_CON_PUTS
+        ld      hl,t_rww
+        ld      (t_fn_rw),hl
+        ld      a,1
+        ld      (t_b),a
+        jp      .b
+.written:
+        ; The file holds what was written: its eight sectors read back and
+        ; compared with the reference.
+        ld      a,8
+        ld      (t_b),a
+        ld      hl,K_REC+KR_TARGET
+        ld      de,t_secnum
+        ld      bc,4
+        ldir
+        ld      ix,K_REC+KR_DRV
+        ld      b,8
+        ld      hl,BUF_XFER
+        ld      de,t_secnum
+        or      a
+        k_call  API_NX_RW
+        or      a
+        jp      nz,t_fail
+        call    t_check
+        jp      nz,t_fail
         ld      hl,t_pass
         k_call  API_CON_PUTS
         m6_verdict M6_PASS
@@ -346,6 +564,22 @@ t_check:
         xor     a
         ret
 
+; t_rww — B sectors from BUF_XFER to the file's, through the driver
+; directly. Z if ok; NZ with A = the driver's code.
+t_rww:  ld      hl,K_REC+KR_TARGET
+        ld      de,t_secnum
+        ld      bc,4
+        ldir
+        ld      ix,K_REC+KR_DRV
+        ld      a,(t_b)
+        ld      b,a
+        ld      hl,BUF_XFER
+        ld      de,t_secnum
+        scf                             ; write
+        k_call  API_NX_RW
+        or      a
+        ret
+
 ; t_none — the loop without the call.
 t_none: xor     a
         ret
@@ -398,6 +632,7 @@ t_fail:
         include "m6util.asm"
 
 t_head:     db  "sectors per call: the call by difference, ticks against the rtc",10,0
+t_head_w:   db  "the same, writing",10,0
 t_sb:       db  "B=",0
 t_scall:    db  "  call ",0
 t_ssector:  db  " ms  per sector ",0
@@ -411,6 +646,8 @@ t_sfail:    db  "FAIL B=",0
 t_scode:    db  " code ",0
 
 t_b:        db  0
+t_write:    db  0
+t_fn_rw:    dw  t_rw
 t_n:        dw  0
 t_i:        dw  0
 t_t0:       dw  0
