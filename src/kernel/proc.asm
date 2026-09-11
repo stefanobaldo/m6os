@@ -168,18 +168,12 @@ sp_create:
         inc     b
         dec     c
         jr      nz,.page
-        ; The highest page is in the window: the initial frame at its top —
-        ; the exit stub's address for the program's final ret, the entry
-        ; point, and zeros for every register sched_resume pops.
-        ld      hl,P0_EXIT
-        ld      (KS_BASE+3FFEh),hl
-        ld      hl,P0_PROG
-        ld      (KS_BASE+3FFCh),hl
-        ld      hl,KS_BASE+4000h-P0_FRAME
-        ld      (hl),0
-        ld      de,KS_BASE+4000h-P0_FRAME+1
-        ld      bc,P0_FRAME-4-1
-        ldir
+        ; The highest page is in the window: the initial frame at its top,
+        ; every register zero.
+        ld      hl,KS_BASE+4000h
+        ld      bc,0
+        ld      de,0
+        call    pr_frame
         ld      a,(k_map+2)
         out     (0FEh),a
         ; The row.
@@ -202,6 +196,8 @@ sp_create:
         ld      de,P_STATUS
         add     hl,de
         ld      (hl),0
+        ld      a,(sp_pid)
+        call    pr_inherit              ; the descriptors and the directory
         ld      hl,(sp_row)
         ld      (hl),PS_RUN             ; P_STATE, then into the ring
         di
@@ -220,6 +216,145 @@ sp_create:
         call    mem_free_all            ; whatever was taken, back
         ld      a,E_NOMEM
         scf
+        ret
+
+; pr_frame — HL = the top of a process's highest page, in the window
+; (KS_BASE+4000h, or lower when something sits above the frame): the
+; initial frame under it — P0_EXIT's address for the program's final ret,
+; P0_PROG as the entry, and the ten pairs sched_resume pops, zero but for
+; BC = BC and HL = DE. Out: HL = where SP starts, in the window. Corrupts
+; AF, HL.
+pr_frame:
+        dec     hl
+        ld      (hl),high P0_EXIT
+        dec     hl
+        ld      (hl),low P0_EXIT
+        dec     hl
+        ld      (hl),high P0_PROG
+        dec     hl
+        ld      (hl),low P0_PROG
+        dec     hl
+        ld      (hl),0                  ; AF
+        dec     hl
+        ld      (hl),0
+        dec     hl
+        ld      (hl),d                  ; HL
+        dec     hl
+        ld      (hl),e
+        dec     hl
+        ld      (hl),b                  ; BC
+        dec     hl
+        ld      (hl),c
+        push    bc
+        ld      b,P0_FRAME-10           ; DE, IX, IY, BC', DE', HL', AF'
+.zero:  dec     hl
+        ld      (hl),0
+        djnz    .zero
+        pop     bc
+        ret
+
+; pr_inherit — A = a child's pid, its row filled: it inherits the current
+; process's directory and descriptors — the three bytes of P_CWD, the
+; eight of the descriptor row, and a reference on every open file they
+; name. The storage segment is in page 1 for the length of the count and
+; the process's page 1 comes back after: the same remap k_copy makes, safe
+; because the handler touches page 3 and the VDP only. On the syscall
+; stack. Corrupts everything.
+pr_inherit:
+        push    af
+        ld      l,a
+        ld      h,0
+        add     hl,hl
+        add     hl,hl
+        add     hl,hl
+        add     hl,hl
+        ld      de,K_PROC+P_CWD
+        add     hl,de
+        ex      de,hl                   ; de -> the child's P_CWD
+        ld      hl,(k_cur)
+        ld      bc,P_CWD
+        add     hl,bc
+        ld      bc,3
+        ldir
+        pop     af
+        add     a,a
+        add     a,a
+        add     a,a
+        ld      e,a
+        ld      d,high K_FD             ; de -> the child's descriptors
+        ld      a,(k_pid)
+        add     a,a
+        add     a,a
+        add     a,a
+        ld      l,a
+        ld      h,high K_FD             ; hl -> the parent's
+        push    de
+        ld      bc,NOFILE
+        ldir
+        pop     hl
+        ld      a,(K_REC+KR_SEG64K+2)
+        out     (0FDh),a
+        ld      b,NOFILE
+.ref:   ld      a,(hl)
+        cp      80h
+        jr      nc,.next
+        push    hl
+        call    fd_oft
+        inc     hl                      ; OF_REFS
+        inc     (hl)
+        pop     hl
+.next:  inc     hl
+        djnz    .ref
+        ld      a,(k_map+1)
+        out     (0FDh),a
+        ret
+
+; fd_close_all — every descriptor of the current process closed: a
+; reference off every open file they name, the file's row freed at zero.
+; The same remap as pr_inherit's; on the syscall stack. Corrupts
+; everything.
+fd_close_all:
+        ld      a,(k_pid)
+        add     a,a
+        add     a,a
+        add     a,a
+        ld      l,a
+        ld      h,high K_FD
+        ld      a,(K_REC+KR_SEG64K+2)
+        out     (0FDh),a
+        ld      b,NOFILE
+.fd:    ld      a,(hl)
+        ld      (hl),FD_NONE
+        cp      80h
+        jr      nc,.next
+        push    hl
+        call    fd_oft
+        inc     hl                      ; OF_REFS
+        dec     (hl)
+        jr      nz,.open
+        dec     hl
+        ld      (hl),VOL_NONE           ; OF_VOL: the row is free
+.open:  pop     hl
+.next:  inc     hl
+        djnz    .fd
+        ld      a,(k_map+1)
+        out     (0FDh),a
+        ret
+
+; fd_oft — A = an open-file row's index: HL -> the row, with the storage
+; segment in page 1. Corrupts AF, DE, HL.
+fd_oft:
+        ld      l,a
+        ld      h,0
+        add     hl,hl
+        add     hl,hl
+        add     hl,hl                   ; * 8
+        ld      d,h
+        ld      e,l
+        add     hl,hl                   ; * 16
+        add     hl,de                   ; * 24
+        ld      de,4000h+ST_OFT
+        add     hl,de
         ret
 
 ; sp_header — page 0 of the process is in the window: zero the kernel's
@@ -264,6 +399,7 @@ sys_exit:
         ld      de,P_STATUS
         add     hl,de
         ld      (hl),a
+        call    fd_close_all            ; while the pages are still mine
         ld      a,(k_pid)
         ld      b,a
         call    mem_free_all
@@ -582,6 +718,8 @@ fk_create:
         ld      de,P_STATUS
         add     hl,de
         ld      (hl),0
+        ld      a,(sp_pid)
+        call    pr_inherit              ; the descriptors and the directory
         ld      hl,(sp_row)
         ld      (hl),PS_RUN             ; P_STATE, then into the ring
         di
@@ -655,6 +793,18 @@ sys_vfork:
         ldir                            ; P_NPAGES, P_SEG
         ex      de,hl
         ld      (hl),0                  ; P_STATUS
+        ; The child inherits on the syscall stack: this one may be in page
+        ; 1, which pr_inherit remaps.
+        ld      (k_usp),sp
+        ld      sp,k_sstack
+        ld      a,(sp_row)
+        rrca
+        rrca
+        rrca
+        rrca
+        and     0Fh                     ; the child's pid
+        call    pr_inherit
+        ld      sp,(k_usp)
         ; The parent's row: asleep, its frame's place, its return address.
         ld      hl,(k_cur)
         ld      (hl),PS_VFORK

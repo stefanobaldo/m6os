@@ -627,7 +627,7 @@ t_entry:
         ld      hl,0
         ld      de,0                    ; sector 0 of /
         call    t_seg_bc                ; b = the storage segment
-        ld      c,ST_BUF/512+BUF_SCRATCH
+        ld      c,(ST_BUF+BUF_SCRATCH*512)/256
         or      a                       ; read
         k_call  API_BLK_RW
         t_leave
@@ -657,7 +657,7 @@ t_entry:
         t_enter
         ld      a,(K_BLK_ROOT)
         call    t_seg_bc
-        ld      c,ST_BUF/512+BUF_SCRATCH
+        ld      c,(ST_BUF+BUF_SCRATCH*512)/256
         or      a
         k_call  API_BLK_RW
         t_leave
@@ -686,7 +686,7 @@ t_entry:
         ld      hl,0
         ld      de,0
         call    t_seg_bc
-        ld      c,ST_BUF/512+BUF_SCRATCH
+        ld      c,(ST_BUF+BUF_SCRATCH*512)/256
         or      a
         k_call  API_BLK_RW
         t_leave
@@ -747,7 +747,7 @@ t_entry:
         ld      hl,(t_rel)
         ld      de,(t_rel+2)
         call    t_seg_bc
-        ld      c,ST_BUF/512+22         ; slot 30
+        ld      c,(ST_BUF+22*512)/256   ; buffer 22's first slot
         k_call  API_BWRITE_DIRECT
         t_leave
         jp      c,t_fail
@@ -891,7 +891,7 @@ t_entry:
         ld      de,(t_rel+2)
         ld      a,(t_seg)
         ld      b,a
-        ld      c,3                     ; slot 3: offset 0600h
+        ld      c,6                     ; slot 6: offset 0600h
         ld      a,(K_BLK_ROOT)
         k_call  API_BREAD_DIRECT
         t_leave

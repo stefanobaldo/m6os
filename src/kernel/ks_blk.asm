@@ -12,7 +12,9 @@ SG_INFO         equ SG+ST_INFO
 SG_HDR          equ SG+ST_HDR
 SG_BUF          equ SG+ST_BUF
 SG_SCRATCH      equ SG_BUF+BUF_SCRATCH*512 ; where blk_dev_rw reads to
-SLOT_BUF0       equ ST_BUF/512          ; the slot of buffer 0
+SLOT_BUF0       equ ST_BUF/256          ; the slot of buffer 0; a buffer is
+                                        ; two slots
+SG_MNT          equ SG+ST_MNT
 MBR_TABLE       equ 1BEh                ; the partition table in an MBR/EBR
 PE_TYPE         equ 4                   ; a partition entry: the type byte
 PE_FIRST        equ 8                   ; 4: first sector, relative
@@ -468,6 +470,11 @@ bi_row:
         ldir
         pop     af
         push    af
+        push    ix
+        call    bi_mount                ; the mount row from the BPB
+        pop     ix
+        pop     af
+        push    af
         inc     a
         ld      (K_BLK_NVOL),a
         ld      hl,SG+SV_FOUND
@@ -562,6 +569,117 @@ bi_row:
         ld      hl,s_root
         k_call  API_CON_PUTS
 .nl:    k_call  API_CON_NEWLINE
+        ret
+
+; bi_mount — A = the row's index; the candidate's boot sector is in
+; SG_SCRATCH, validated: fill mount row A from it. Every sector relative to
+; the volume: the FAT at the reserved count, the root after the FATs, the
+; data after the root; the type from the cluster count, never from the
+; string at 36h (the CI image's is garbage). Corrupts everything.
+bi_mount:
+        add     a,a
+        add     a,a
+        add     a,a
+        add     a,a
+        add     a,a                     ; * 32
+        ld      e,a
+        ld      d,0
+        ld      ix,SG_MNT
+        add     ix,de
+        ld      a,(SG_SCRATCH+0Dh)      ; sectors per cluster
+        ld      (ix+M_SPC),a
+        ld      b,0
+.log2:  rrca
+        jr      c,.shifted
+        inc     b
+        jr      .log2
+.shifted:
+        ld      (ix+M_SPCSH),b
+        ld      a,(SG_SCRATCH+10h)      ; FATs
+        ld      (ix+M_NFATS),a
+        ld      hl,(SG_SCRATCH+16h)     ; sectors per FAT
+        ld      (ix+M_FATSZ),l
+        ld      (ix+M_FATSZ+1),h
+        ld      hl,(SG_SCRATCH+0Eh)     ; reserved: the first FAT
+        ld      (ix+M_FAT),l
+        ld      (ix+M_FAT+1),h
+        ld      (ix+M_FAT+2),0
+        ld      (ix+M_FAT+3),0
+        ld      de,(SG_SCRATCH+16h)
+        ld      a,(SG_SCRATCH+10h)
+        ld      bc,0                    ; bc = the high word of the sum
+.fats:  add     hl,de
+        jr      nc,.nc
+        inc     bc
+.nc:    dec     a
+        jr      nz,.fats
+        ld      (ix+M_ROOT),l           ; root = reserved + fats * fatsz
+        ld      (ix+M_ROOT+1),h
+        ld      (ix+M_ROOT+2),c
+        ld      (ix+M_ROOT+3),b
+        push    hl
+        push    bc
+        ld      hl,(SG_SCRATCH+11h)     ; root entries * 32 / 512 = / 16
+        srl     h
+        rr      l
+        srl     h
+        rr      l
+        srl     h
+        rr      l
+        srl     h
+        rr      l
+        ld      (ix+M_ROOTN),l
+        ld      (ix+M_ROOTN+1),h
+        ex      de,hl
+        pop     bc
+        pop     hl
+        add     hl,de                   ; data = root + rootn
+        jr      nc,.nc2
+        inc     bc
+.nc2:   ld      (ix+M_DATA),l
+        ld      (ix+M_DATA+1),h
+        ld      (ix+M_DATA+2),c
+        ld      (ix+M_DATA+3),b
+        ; clusters = (total - data) >> spcsh, total the 16-bit field or
+        ; the 32-bit one.
+        push    hl
+        push    bc
+        ld      hl,(SG_SCRATCH+13h)
+        ld      de,0
+        ld      a,h
+        or      l
+        jr      nz,.total
+        ld      hl,(SG_SCRATCH+20h)
+        ld      de,(SG_SCRATCH+22h)
+.total: pop     bc                      ; bc = data.hi
+        ex      (sp),hl                 ; hl = data.lo, stack = total.lo
+        ex      de,hl                   ; hl = total.hi, de = data.lo
+        ex      (sp),hl                 ; hl = total.lo, stack = total.hi
+        or      a
+        sbc     hl,de                   ; total.lo - data.lo
+        ex      de,hl                   ; de = difference.lo
+        pop     hl                      ; total.hi
+        sbc     hl,bc                   ; hl = difference.hi
+        ex      de,hl                   ; hl = lo, de = hi
+        ld      a,(ix+M_SPCSH)
+        or      a
+        jr      z,.clusters
+        ld      b,a
+.shift: srl     d
+        rr      e
+        rr      h
+        rr      l
+        djnz    .shift
+.clusters:
+        ld      (ix+M_NCLUS),l
+        ld      (ix+M_NCLUS+1),h
+        ld      de,4085
+        or      a
+        sbc     hl,de
+        ld      a,0                     ; FAT12
+        jr      c,.type
+        ld      a,MF_FAT16
+.type:  ld      (ix+M_FLAGS),a
         ret
 
 ; bi_read — DE:HL = a device sector of the current LUN into SG_SCRATCH.
@@ -759,7 +877,8 @@ ks_bget:
         push    ix
         call    bc_index                ; c = the buffer's index
         ld      a,c
-        add     a,SLOT_BUF0
+        add     a,a
+        add     a,SLOT_BUF0             ; its first slot
         ld      c,a
         ld      a,(K_REC+KR_SEG64K+2)
         ld      b,a
@@ -801,6 +920,7 @@ ks_bwrite:
         ld      ix,SG_HDR
         add     ix,de
         ld      a,c
+        add     a,a
         add     a,SLOT_BUF0
         ld      c,a
         ld      a,(K_REC+KR_SEG64K+2)

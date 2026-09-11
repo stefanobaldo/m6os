@@ -281,13 +281,22 @@ kbd_pop:
         pop     hl
         ret
 
-; sys_read — SYS_READ: A = fd (0), HL = buffer, BC = length. Out: HL =
-; bytes read, 1 to BC; CF and E_BADF for another fd, E_INVAL for a length
-; of 0. Blocks while the queue is empty. Runs on the process's stack.
+; sys_read — SYS_READ: A = fd, HL = buffer, BC = length. A descriptor
+; that is the keyboard reads here: HL = bytes read, 1 to BC, blocking
+; while the queue is empty, on the process's stack; E_INVAL for a length
+; of 0. A descriptor that is an open file goes to the switched read
+; (ks_vfs.asm) with A = its row's index. CF and E_BADF for the console or
+; a closed descriptor.
 sys_read:
-        or      a
-        jr      nz,.badf
-        ld      a,b
+        call    fd_code
+        cp      FD_KBD
+        jr      z,.kbd
+        cp      80h
+        jp      c,k_sw_read             ; an open file: A = its row
+.badf:  ld      a,E_BADF
+        scf
+        ret
+.kbd:   ld      a,b
         or      c
         jr      z,.inval
         ld      (rd_buf),hl
@@ -353,9 +362,6 @@ sys_read:
         pop     de
 .ret:   ex      de,hl
         or      a                       ; CF clear
-        ret
-.badf:  ld      a,E_BADF
-        scf
         ret
 .inval: ld      a,E_INVAL
         scf

@@ -67,6 +67,24 @@ k_gate_ret_s:
         ld      sp,(k_usp)
         ret
 
+; k_sw_s — the shared form of k_switched_s: a K_SYS entry is a 7-byte stub,
+; ld ix,KS_X / jp k_sw_s, instead of the 30 bytes the macro expands to.
+; IX is not an argument register and is undefined after every syscall.
+; A, HL, DE, BC reach the body untouched; ~30 T more than the macro.
+    macro k_sw_stub target
+        ld      ix,target
+        jp      k_sw_s
+    endm
+
+k_sw_s:
+        ld      (k_usp),sp
+        ld      sp,k_sstack
+        kwin_enter
+        k_stgate_enter
+        call    .go
+        jp      k_gate_ret_s
+.go:    jp      (ix)
+
 ; kwin_call_s target — kwin_call with the storage gate: what k_main uses
 ; to enter the block layer's boot code.
     macro kwin_call_s target

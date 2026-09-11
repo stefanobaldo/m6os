@@ -15,14 +15,15 @@
 ; page 1, restores it from K_PAGE1, which the gate wrote.
 ;
 ; A sector number is 32 bits, DE:HL with DE high. A target is a segment
-; and a 512-byte slot in it (0-31), so that a whole aligned sector goes
-; from the driver into a process page with no copy. One sector per driver
-; call (BLK_PER_CALL): the interrupt-disabled region of the call stays
-; inside one frame.
+; and a 256-byte slot in it (0-62; the sector must not cross the page), so
+; that a whole sector goes from the driver into a process page at any
+; 256-byte boundary — P0_PROG, where a program is loaded, included — with
+; no copy. One sector per driver call (BLK_PER_CALL): the
+; interrupt-disabled region of the call stays inside one frame.
 
 ; blk_rw — one sector of a volume, read or written.
 ; In:  A = volume, CF = 0 read / 1 write, DE:HL = sector relative to the
-;      volume, B = target segment, C = target slot 0-31.
+;      volume, B = target segment, C = target slot 0-62.
 ; Out: CF clear with A = 0; or CF set with A = the errno: E_INVAL (no such
 ;      volume or slot), E_IO (sector >= count, or a driver error), E_NXIO
 ;      (device or LUN not there, not ready), E_ROFS (write protected).
@@ -33,7 +34,7 @@ blk_rw:
         ld      (blk_tgt),bc
         push    af                      ; the volume and CF
         ld      a,c
-        cp      32
+        cp      BLK_SLOTS
         jp      nc,.inval
         pop     af
         push    af
@@ -88,8 +89,7 @@ blk_rw:
         call    blk_desc_set
         ld      a,(blk_tgt+1)           ; the target segment into page 2
         out     (0FEh),a
-        ld      a,(blk_tgt)             ; hl = 8000h + slot * 512
-        add     a,a
+        ld      a,(blk_tgt)             ; hl = 8000h + slot * 256
         add     a,80h
         ld      h,a
         ld      l,0
