@@ -28,14 +28,14 @@
         block   KS_BASE+K_SSLOT-$
         include "kernel/sslot.asm"      ; 0040h: the stub, in place
         ASSERT  $ == KS_TABLE2
-        jp      ks_enosys               ; KS_READ: the filesystem's, given
-        jp      ks_enosys               ; KS_OPEN  their bodies with the
-        jp      ks_enosys               ; KS_CLOSE filesystem
-        jp      ks_enosys               ; KS_LSEEK
-        jp      ks_enosys               ; KS_STAT
-        jp      ks_enosys               ; KS_READDIR
-        jp      ks_enosys               ; KS_CHDIR
-        jp      ks_enosys               ; KS_EXEC
+        jp      ks_read                 ; KS_READ (ks_vfs.asm)
+        jp      ks_open                 ; KS_OPEN
+        jp      ks_close                ; KS_CLOSE
+        jp      ks_lseek                ; KS_LSEEK
+        jp      ks_stat                 ; KS_STAT
+        jp      ks_readdir              ; KS_READDIR
+        jp      ks_chdir                ; KS_CHDIR
+        jp      ks_enosys               ; KS_EXEC: given its body with exec
 
 ; ks_enosys — an entry whose body does not exist yet.
 ks_enosys:
@@ -207,6 +207,8 @@ s_more:     db  "and ",0
 s_more2:    db  " more, not scanned",10,0
 
         include "kernel/ks_blk.asm"
+        include "kernel/ks_fat.asm"
+        include "kernel/ks_vfs.asm"
 
 ks_end:
         ASSERT  ks_end <= KS_BASE+4000h
