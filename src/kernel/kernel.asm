@@ -59,7 +59,8 @@ k_api:
         jp      KS_BREAD_DIRECT         ; API_BREAD_DIRECT
         jp      KS_BWRITE_DIRECT        ; API_BWRITE_DIRECT
         jp      KS_RTC_READ             ; API_RTC_READ
-        DUP     K_API_N-27
+        jp      exec_finish             ; API_EXEC_FINISH
+        DUP     K_API_N-28
         jp      sys_enosys              ; an entry not yet given a routine
         EDUP
         block   K_SYS-$
