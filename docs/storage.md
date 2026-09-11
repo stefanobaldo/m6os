@@ -94,7 +94,41 @@ so does a reading that is not a valid date and time — an unset chip or a
 flat battery, which otherwise offers month 0 or hour 29 for a directory
 entry to keep.
 
+## Files
+
+Every mounted volume is read as a FAT12 or FAT16 filesystem: the type is
+decided by the number of clusters, as the specification says, never by
+the label in the boot sector. The boot volume is `/`; every volume, the
+boot one included, is `/mnt/` and its letter, so `/mnt/b/readme.txt` is a
+file on the second volume and `/mnt` itself lists the letters as
+directories. Inside a volume the paths are the usual ones: components
+separated by `/`, `.` the directory itself, `..` its parent. `..` at the
+root of a volume leads to `/mnt` — or to `/` on the boot volume — and
+`mnt` is a real directory on every volume but at the root of the boot
+volume, where the kernel's `/mnt` shadows it.
+
+Names are FAT's short names: up to eight characters, a dot and up to three
+more, matched without regard to case and listed in lower case. A long
+name a PC wrote is not shown; the short name beside it is what the file
+is called here, and the long-name entries are left as they are. A name
+that does not fit the form names nothing.
+
+Each process has a current directory, inherited by the processes it
+creates and changed with `chdir`; a path that does not begin with `/`
+starts there. A file is read through `open`, `read`, `lseek` and `close`,
+a directory through `open` and `readdir`, and `stat` describes either;
+`exec` starts a program from a file. [`syscalls.md`](syscalls.md) has the
+calls, [`programs.md`](programs.md) the file a program is.
+
+A whole sector read into a buffer that starts on a 256-byte boundary goes
+from the driver straight into the program's memory; every other read goes
+through the kernel's cache and a copy, at about 3.3 ms more per sector on
+an MSX at 3.58 MHz. Sequential reads of whole sectors therefore run at the
+driver's speed less the table lookups — about 90 KB/s through a driver
+that moves a sector in 5.4 ms.
+
 ## Not yet
 
-There is no filesystem yet: no files, directories, `open` or `read` on a
-volume. Those come next, on top of what this document describes.
+Volumes are read only in this version: no `write` to a file, no creating,
+deleting or renaming, no directories made or removed, no timestamps
+written. A card changed while the system runs is not noticed.

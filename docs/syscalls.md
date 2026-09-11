@@ -14,6 +14,7 @@ on a stub that switches the kernel's cold code in for the length of the call.
 
 - **Arguments** go in `A`, `HL`, `DE` and `BC`, as each syscall lists them.
 - **The result** comes back in `HL`, and in `A` too when it fits a byte.
+  One exception: `lseek` returns a 32-bit position in `DE:HL`, `DE` high.
 - **An error** is the carry flag set, with the error number in `A`
   (see *Errors*). On success the carry flag is clear.
 - **Nothing else is preserved.** `BC`, `DE`, `IX`, `IY` and the alternate
@@ -55,7 +56,9 @@ of up to 16 104 bytes (the last 24 are the kernel's, see above).
 
 A process is created by `spawn` from a program image in the memory of the
 process that creates it, or by `fork` or `vfork` as a second copy of the
-one that calls it, and has a process id from 1 to 15 — its parent learns
+one that calls it — and `exec` replaces a process's image with a program
+read from a file (see [`programs.md`](programs.md)). A process has a
+process id from 1 to 15 — its parent learns
 it from `spawn`, `fork` or `vfork` and gets it back from `wait`. The kernel runs at
 most 15 processes at once (`sysconf` says so); a process id is reused
 once its process has exited and its parent has waited for it. A process
@@ -63,6 +66,26 @@ that has exited but not been waited for is a zombie: its memory is free,
 its id and status are held until the parent's `wait`. When a parent exits
 first, its living children are on their own — nobody will wait for them,
 and they disappear entirely when they exit.
+
+## File descriptors
+
+A process has eight file descriptors, 0 to 7. Each is closed, or the
+console, or the keyboard, or an open file — a file or directory on a
+volume, opened with `open` and closed with `close`. A process starts with
+0 the keyboard and 1 and 2 the console, and a child made by `spawn`,
+`fork` or `vfork` inherits its parent's eight, open files included: the
+two share the file's position until one closes it. `exec` keeps them.
+`exit` closes them all. At most 24 files are open in the whole system at
+once (`ENFILE`); a ninth descriptor in one process is `EMFILE`.
+
+A path is a string of at most 127 bytes and a terminator: components
+separated by `/`, each a FAT name of up to eight characters, a dot and up
+to three more, matched without regard to case; `.` is the directory
+itself and `..` its parent. A path that begins with `/` starts at the
+root of the boot volume; any other starts at the process's current
+directory, which `chdir` sets and a child inherits. `/mnt` is the
+directory of every mounted volume, `/mnt/a` to `/mnt/h`, as
+[`storage.md`](storage.md) describes.
 
 ## The console
 
@@ -101,20 +124,33 @@ hidden the rest of the time.
 | n | Name | In | Out | Errors |
 |---|---|---|---|---|
 | 0 | `exit` | `A` = status | does not return | — |
-| 1 | `write` | `A` = fd, `HL` = buffer, `BC` = length | `HL` = bytes written | `EBADF`: fd is not 1 or 2 |
+| 1 | `write` | `A` = fd, `HL` = buffer, `BC` = length | `HL` = bytes written | `EBADF`: fd is not the console |
 | 2 | `getpid` | — | `HL` = the process id | — |
 | 3 | `sysconf` | `HL` = name | `HL` = value | `EINVAL`: not a name |
 | 4 | `spawn` | `HL` = image, `BC` = length, `A` = pages | `HL` = `A` = the child's pid | `EINVAL`: pages not 1–3, length 0, image in page 2, or too long for the pages; `EAGAIN`: 15 processes exist; `ENOMEM`: not enough free segments |
 | 5 | `wait` | — | `H` = pid, `L` = `A` = status | `ECHILD`: no child alive or waiting to be reaped |
 | 6 | `yield` | — | — | — |
-| 7 | `read` | `A` = fd (0), `HL` = buffer, `BC` = length | `HL` = bytes read, 1 to `BC` | `EBADF`: fd is not 0; `EINVAL`: length 0 |
+| 7 | `read` | `A` = fd, `HL` = buffer, `BC` = length | `HL` = bytes read; 0 at the end of a file | `EBADF`: fd closed or the console; `EINVAL`: length 0 on the keyboard; `EISDIR`; `EIO` |
 | 8 | `fork` | — | `HL` = `A` = the child's pid, 0 in the child | `EPERM`: called by process 0; `EAGAIN`: 15 processes exist; `ENOMEM`: not enough free segments |
 | 9 | `vfork` | — | `HL` = `A` = the child's pid, 0 in the child | `EPERM`: called by process 0; `EAGAIN`: 15 processes exist |
-| 10–63 | — | — | — | `ENOSYS` |
+| 10 | `open` | `HL` = path, `A` = flags (0: read only) | `HL` = `A` = the descriptor | `ENOENT`, `ENOTDIR`, `ENAMETOOLONG`, `EMFILE`, `ENFILE`, `EINVAL`: flags not 0, `EIO` |
+| 11 | `close` | `A` = fd | — | `EBADF` |
+| 12 | `lseek` | `A` = fd, `DE:HL` = offset, `B` = whence (0 start, 1 current, 2 end) | `DE:HL` = the position | `EBADF`; `EINVAL`: whence not 0–2, or a negative position |
+| 13 | `stat` | `HL` = path, `DE` = a 24-byte buffer | — | `ENOENT`, `ENOTDIR`, `ENAMETOOLONG`, `EIO` |
+| 14 | `readdir` | `A` = fd (a directory), `HL` = a 24-byte buffer | `HL` = 1 (an entry), 0 (the end) | `EBADF`, `ENOTDIR`, `EIO` |
+| 15 | `chdir` | `HL` = path (a directory) | — | `ENOENT`, `ENOTDIR`, `ENAMETOOLONG`, `EIO` |
+| 16 | `exec` | `HL` = path, `DE` = argv (0: none) | does not return | `EPERM`: process 0; `ENOENT`, `ENOTDIR`, `EISDIR`, `ENOEXEC`, `E2BIG`, `ENOMEM`, `EIO` |
+| 17–47 | — | — | — | `ENOSYS` |
 
-`write` to file descriptor 1 or 2 goes to the screen and `read` from file
-descriptor 0 takes from the keyboard, as *The console* says; `read` blocks
-until at least one byte is there and returns what is there, up to `BC`.
+`write` to a descriptor that is the console goes to the screen and `read`
+from one that is the keyboard takes from it, as *The console* says: that
+`read` blocks until at least one byte is there and returns what is there,
+up to `BC`. `read` from an open file returns the next bytes of the file,
+up to `BC`, advances the position by as many, and returns 0 at the end;
+a whole sector read into a buffer on a 256-byte boundary goes from the
+storage driver straight into the program's memory, and everything else
+through the kernel's cache and a copy. `write` to a file is `EBADF` in
+this version: files are read only.
 `sysconf` names: 0 `SC_PAGESIZE`
 (16384), 1 `SC_SEGMENTS` (16K segments in the memory mapper the kernel runs
 in), 2 `SC_SEGMENTS_USABLE` (the same, or the `mem=` cap), 3
@@ -145,9 +181,42 @@ children are waited for with `wait` like any other. Process 0, the
 kernel's own thread, has no memory of its own to copy or share and gets
 `EPERM` from both.
 
+## Files
+
+`open` names a file or a directory and returns the lowest closed
+descriptor; the flags must be 0 (`O_RDONLY`) in this version. `close`
+closes one. `lseek` moves an open file's position: `whence` 0 sets it to
+the offset, 1 adds the offset to the position, 2 to the file's size; the
+offset is a signed 32-bit number in `DE:HL`, and the new position comes
+back the same way. A position past the end is allowed and a `read` there
+returns 0; a negative one is `EINVAL`.
+
+`stat` and `readdir` fill the same 24-byte record:
+
+| Offset | Size | What |
+|---|---|---|
+| 0 | 13 | the name, `name.ext` in lower case, 0-terminated — `.` and `..` as they are |
+| 13 | 1 | the FAT attributes: `01h` read-only, `02h` hidden, `04h` system, `10h` directory, `20h` archive |
+| 14 | 4 | the size in bytes; 0 for a directory |
+| 18 | 4 | the modification time: the FAT date word, then the time word |
+| 22 | 2 | 0 |
+
+`stat` describes what a path names; a volume's root is named by its
+letter, `/mnt` by `mnt`. `readdir` on a descriptor opened on a directory
+returns its entries one per call, in the order they are stored, skipping
+deleted ones, volume labels and long-name entries, and 0 at the end;
+`lseek` to 0 rewinds it. `/mnt` lists a directory per mounted volume,
+`a` to `h`. `chdir` makes a directory the process's current one. `exec`
+replaces the calling process's image with the program in the file, as
+[`programs.md`](programs.md) describes, and returns only when it could
+not: the caller's image is intact then, whatever the error. A process
+whose parent is waiting in `vfork` gets fresh memory for the new image,
+and the parent wakes as the image starts.
+
 ## Errors
 
-Error numbers are Seventh Edition Unix's, with `ENOSYS` from Linux. In
+Error numbers are Seventh Edition Unix's, with `ENOSYS` and `ENAMETOOLONG`
+from Linux. In
 `kernel.inc` each is `E_` plus the name without its `E`: `E_BADF`, `E_INVAL`.
 
 | Number | Name | Number | Name |
@@ -164,7 +233,7 @@ Error numbers are Seventh Edition Unix's, with `ENOSYS` from Linux. In
 | 10 | `ECHILD` | 30 | `EROFS` |
 | 11 | `EAGAIN` | 32 | `EPIPE` |
 | 12 | `ENOMEM` | 38 | `ENOSYS` |
-| 13 | `EACCES` | | |
+| 13 | `EACCES` | 63 | `ENAMETOOLONG` |
 | 14 | `EFAULT` | | |
 
 ## An example
