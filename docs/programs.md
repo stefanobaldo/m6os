@@ -74,8 +74,9 @@ one-page program's file can be at most 16 102 bytes.
 
 A 16K program is loaded in 31 whole-sector transfers straight from the
 storage driver into the program's page and one through the kernel's cache,
-plus the directory and table sectors the lookup reads — about 200 ms on an
-MSX at 3.58 MHz through a driver that moves a sector in 5.4 ms. During it
-nothing else runs. `exec` from a `vfork` child loads into fresh memory,
-so a one-page shell can start a three-page program without a copy of
-itself in between.
+plus the directory and table sectors the lookup reads. Measured on an MSX2
+at 3.58 MHz: about 200 ms through a driver that moves a sector in 4.8 ms
+and about 220 ms through one that takes 5.4 ms, both to the nearest 60 Hz
+tick, which is 17 ms. During it nothing else runs. `exec` from a `vfork`
+child loads into fresh memory, so a one-page shell can start a three-page
+program without a copy of itself in between.
