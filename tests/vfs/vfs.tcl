@@ -24,7 +24,7 @@ proc firsts {path} {
     set sec0 [sector $fh 0]
     for {set i 0} {$i < 4} {incr i} {
         lassign [entry $sec0 $i] type first count
-        if {$type == 5} {
+        if {$type in {5 15}} {                 ;# 05h CHS, 0Fh LBA
             set ext $first
             set ebr $first
             set n 0
@@ -34,7 +34,7 @@ proc firsts {path} {
                 incr n
                 if {$t in {1 4 6 14} && $f != 0 && $c != 0} { lappend out [expr {$ebr + $f}] }
                 lassign [entry $s 1] lt lf lc
-                if {$lt != 5 || $n >= 9} break
+                if {$lt ni {5 15} || $n >= 9} break
                 set ebr [expr {$ext + $lf}]
             }
         } elseif {$type in {1 4 6 14} && $first != 0 && $count != 0} {
