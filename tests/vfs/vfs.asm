@@ -441,6 +441,14 @@ t_entry:
         ld      a,6
         call    t_listdir
         jp      c,t_fail
+        ; readdir /etc: seventeen entries, so the listing passes the eighth
+        ; of a sector — where an entry's offset in it stops fitting a byte —
+        ; and on into the sector after.
+        ld      hl,p_etc
+        ld      de,etc_names
+        ld      a,17
+        call    t_listdir
+        jp      c,t_fail
         ; The errors.
         ld      hl,p_nope
         xor     a
@@ -839,7 +847,7 @@ t_listdir:
         ret     c
         ld      (t_fd),a
         ld      hl,t_seen
-        ld      b,16
+        ld      b,32
 .clear: ld      (hl),0
         inc     hl
         djnz    .clear
@@ -899,7 +907,9 @@ t_listdir:
         ld      a,0E5h
         scf
         ret
-.twice: ld      a,0E7h
+.twice: ld      hl,t_rec+DE_NAME        ; which name came twice: the two
+        k_call  API_CON_PUTS            ;   lists share no name, so it also
+        ld      a,0E7h                  ;   says which directory it was
         scf
         ret
 
@@ -969,6 +979,7 @@ p_hello:    db  "/bin/hello",0
 p_bin:      db  "/bin",0
 p_root:     db  "/",0
 p_mnt:      db  "/mnt",0
+p_etc:      db  "/etc",0
 p_nope:     db  "/nope",0
 p_hellox:   db  "/bin/hello/x",0
 p_odd:      db  "/data/odd.txt",0
@@ -994,13 +1005,17 @@ n_motd:     db  "m6",10
 root_names: db  "nextor.sys",0,"command2.com",0,"vfs.com",0,"autoexec.bat",0
             db  "bin",0,"data",0,"etc",0,0
 bin_names:  db  ".",0,"..",0,"hello",0,"two",0,"three",0,"big16k",0,0
+etc_names:  db  ".",0,"..",0,"motd",0
+            db  "pad01",0,"pad02",0,"pad03",0,"pad04",0,"pad05",0,"pad06",0
+            db  "pad07",0,"pad08",0,"pad09",0,"pad10",0,"pad11",0,"pad12",0
+            db  "pad13",0,"pad14",0,0
 
 t_step:     db  0
 t_n:        db  0
 t_fd:       db  0
 t_want:     db  0
 t_names:    dw  0
-t_seen:     ds  16
+t_seen:     ds  32
 t_rec:      ds  DIRENT_SIZE
 t_buf:      ds  16
         ENT
