@@ -124,7 +124,7 @@ hidden the rest of the time.
 | n | Name | In | Out | Errors |
 |---|---|---|---|---|
 | 0 | `exit` | `A` = status | does not return | — |
-| 1 | `write` | `A` = fd, `HL` = buffer, `BC` = length | `HL` = bytes written | `EBADF`: fd is not the console |
+| 1 | `write` | `A` = fd, `HL` = buffer, `BC` = length | `HL` = bytes written | `EBADF`: fd closed, the keyboard, or a file not open for writing; `EISDIR`; `ENOSPC`; `EIO`; `EROFS` |
 | 2 | `getpid` | — | `HL` = the process id | — |
 | 3 | `sysconf` | `HL` = name | `HL` = value | `EINVAL`: not a name |
 | 4 | `spawn` | `HL` = image, `BC` = length, `A` = pages | `HL` = `A` = the child's pid | `EINVAL`: pages not 1–3, length 0, image in page 2, or too long for the pages; `EAGAIN`: 15 processes exist; `ENOMEM`: not enough free segments |
@@ -133,13 +133,17 @@ hidden the rest of the time.
 | 7 | `read` | `A` = fd, `HL` = buffer, `BC` = length | `HL` = bytes read; 0 at the end of a file | `EBADF`: fd closed or the console; `EINVAL`: length 0 on the keyboard; `EISDIR`; `EIO` |
 | 8 | `fork` | — | `HL` = `A` = the child's pid, 0 in the child | `EPERM`: called by process 0; `EAGAIN`: 15 processes exist; `ENOMEM`: not enough free segments |
 | 9 | `vfork` | — | `HL` = `A` = the child's pid, 0 in the child | `EPERM`: called by process 0; `EAGAIN`: 15 processes exist |
-| 10 | `open` | `HL` = path, `A` = flags (0: read only) | `HL` = `A` = the descriptor | `ENOENT`, `ENOTDIR`, `ENAMETOOLONG`, `EMFILE`, `ENFILE`, `EINVAL`: flags not 0, `EIO` |
+| 10 | `open` | `HL` = path, `A` = flags (see *Files*) | `HL` = `A` = the descriptor | `ENOENT`, `ENOTDIR`, `ENAMETOOLONG`, `EMFILE`, `ENFILE`, `EINVAL`: a flag that is not one, a name that cannot be made; `EISDIR`; `EACCES`; `EBUSY`; `ENOSPC`; `EIO`; `EROFS` |
 | 11 | `close` | `A` = fd | — | `EBADF` |
 | 12 | `lseek` | `A` = fd, `DE:HL` = offset, `B` = whence (0 start, 1 current, 2 end) | `DE:HL` = the position | `EBADF`; `EINVAL`: whence not 0–2, or a negative position |
 | 13 | `stat` | `HL` = path, `DE` = a 24-byte buffer | — | `ENOENT`, `ENOTDIR`, `ENAMETOOLONG`, `EIO` |
 | 14 | `readdir` | `A` = fd (a directory), `HL` = a 24-byte buffer | `HL` = 1 (an entry), 0 (the end) | `EBADF`, `ENOTDIR`, `EIO` |
 | 15 | `chdir` | `HL` = path (a directory) | — | `ENOENT`, `ENOTDIR`, `ENAMETOOLONG`, `EIO` |
 | 16 | `exec` | `HL` = path, `DE` = argv (0: none) | does not return | `EPERM`: process 0; `ENOENT`, `ENOTDIR`, `EISDIR`, `ENOEXEC`, `E2BIG`, `ENOMEM`, `EIO` |
+| 17 | `unlink` | `HL` = path (a file) | — | `ENOENT`, `ENOTDIR`, `EISDIR`, `EACCES`: read-only; `EBUSY`: open; `EIO`, `EROFS` |
+| 18 | `mkdir` | `HL` = path | — | `ENOENT`: the parent; `ENOTDIR`, `EEXIST`, `EINVAL`: not a name; `ENOSPC`, `EIO`, `EROFS` |
+| 19 | `rmdir` | `HL` = path (an empty directory) | — | `ENOENT`, `ENOTDIR`, `ENOTEMPTY`, `EBUSY`: open, somebody's current directory, a volume's root; `EINVAL`: `.` or `..`; `EIO`, `EROFS` |
+| 20 | `rename` | `HL` = old path, `DE` = new path | — | `ENOENT`, `ENOTDIR`, `EXDEV`: another volume; `EEXIST`: a directory on either side exists; `EINVAL`: not a name, or a directory into itself; `EACCES`, `EBUSY`, `ENOSPC`, `EIO`, `EROFS` |
 | 17–47 | — | — | — | `ENOSYS` |
 
 `write` to a descriptor that is the console goes to the screen and `read`
@@ -149,8 +153,18 @@ up to `BC`. `read` from an open file returns the next bytes of the file,
 up to `BC`, advances the position by as many, and returns 0 at the end;
 a whole sector read into a buffer on a 256-byte boundary goes from the
 storage driver straight into the program's memory, and everything else
-through the kernel's cache and a copy. `write` to a file is `EBADF` in
-this version: files are read only.
+through the kernel's cache and a copy. `write` to a file open for writing
+puts the bytes at the position and advances it; writing past the end
+extends the file, and a position left past the end by `lseek` fills the
+gap with zeros. Every byte a `write` returns is on the disk when it
+returns — the data first, then the allocation table in both its copies,
+then the directory entry — so there is nothing to flush and a card pulled
+after the call has what the call wrote. A whole sector from a buffer on a
+256-byte boundary goes straight to the driver; anything else is read,
+changed and written back, about 10 ms more per sector on an MSX at 3.58
+MHz, so a program writes in the largest pieces it can. A `write` that ran
+out of space or hit an error after writing some bytes returns how many;
+the error comes back from the next call.
 `sysconf` names: 0 `SC_PAGESIZE`
 (16384), 1 `SC_SEGMENTS` (16K segments in the memory mapper the kernel runs
 in), 2 `SC_SEGMENTS_USABLE` (the same, or the `mem=` cap), 3
@@ -184,8 +198,16 @@ kernel's own thread, has no memory of its own to copy or share and gets
 ## Files
 
 `open` names a file or a directory and returns the lowest closed
-descriptor; the flags must be 0 (`O_RDONLY`) in this version. `close`
-closes one. `lseek` moves an open file's position: `whence` 0 sets it to
+descriptor. Bits 0–1 of the flags are the access mode: 0 `O_RDONLY`, 1
+`O_WRONLY`, 2 `O_RDWR`; `O_CREAT` (`40h`) makes the file when it is not
+there, with the archive bit and the time from the clock; `O_TRUNC`
+(`80h`), with a writable mode, empties an existing file first;
+`O_APPEND` (`08h`) puts every write at the end. A file has one writer at
+a time: opening for writing fails with `EBUSY` while anyone has the file
+open, and opening for reading fails while a writer has it. A file whose
+read-only attribute is set cannot be opened for writing, renamed or
+removed (`EACCES`); nothing here clears that attribute. A directory can
+be opened read-only, for `readdir`. `close` closes one descriptor. `lseek` moves an open file's position: `whence` 0 sets it to
 the offset, 1 adds the offset to the position, 2 to the file's size; the
 offset is a signed 32-bit number in `DE:HL`, and the new position comes
 back the same way. A position past the end is allowed and a `read` there
@@ -206,7 +228,23 @@ letter, `/mnt` by `mnt`. `readdir` on a descriptor opened on a directory
 returns its entries one per call, in the order they are stored, skipping
 deleted ones, volume labels and long-name entries, and 0 at the end;
 `lseek` to 0 rewinds it. `/mnt` lists a directory per mounted volume,
-`a` to `h`. `chdir` makes a directory the process's current one. `exec`
+`a` to `h`. `chdir` makes a directory the process's current one.
+
+`unlink` removes a file — its entry first, then its clusters; a file that
+is open cannot be removed. `mkdir` makes an empty directory where the
+last component of the path is missing, with `.` and `..`. `rmdir`
+removes a directory holding nothing but those two; not a volume's root,
+not a directory that is open or is some process's current directory.
+`rename` gives an entry a new name, in the same directory or another one
+of the same volume; a file may take an existing file's name, whose
+contents are then gone; a directory keeps its contents and its `..` is
+made to name the new parent. Names are FAT short names, and a name that
+is not one is `EINVAL` when it has to be made. Long-name entries a PC
+wrote beside a renamed or removed file are left where they are.
+
+The modification time of a file is set when it is created, and on every
+`write`, from the machine's clock; the directory holding it is not
+touched. `exec`
 replaces the calling process's image with the program in the file, as
 [`programs.md`](programs.md) describes, and returns only when it could
 not: the caller's image is intact then, whatever the error. A process
@@ -215,26 +253,28 @@ and the parent wakes as the image starts.
 
 ## Errors
 
-Error numbers are Seventh Edition Unix's, with `ENOSYS` and `ENAMETOOLONG`
-from Linux. In
+Error numbers are Seventh Edition Unix's, with `ENOSYS`, `ENOTEMPTY` and
+`ENAMETOOLONG` from Linux. In
 `kernel.inc` each is `E_` plus the name without its `E`: `E_BADF`, `E_INVAL`.
 
 | Number | Name | Number | Name |
 |---|---|---|---|
-| 1 | `EPERM` | 16 | `EBUSY` |
-| 2 | `ENOENT` | 17 | `EEXIST` |
-| 3 | `ESRCH` | 19 | `ENODEV` |
-| 4 | `EINTR` | 20 | `ENOTDIR` |
-| 5 | `EIO` | 21 | `EISDIR` |
-| 6 | `ENXIO` | 22 | `EINVAL` |
-| 7 | `E2BIG` | 23 | `ENFILE` |
-| 8 | `ENOEXEC` | 24 | `EMFILE` |
-| 9 | `EBADF` | 28 | `ENOSPC` |
-| 10 | `ECHILD` | 30 | `EROFS` |
-| 11 | `EAGAIN` | 32 | `EPIPE` |
-| 12 | `ENOMEM` | 38 | `ENOSYS` |
-| 13 | `EACCES` | 63 | `ENAMETOOLONG` |
-| 14 | `EFAULT` | | |
+| 1 | `EPERM` | | |
+| 2 | `ENOENT` | | |
+| 3 | `ESRCH` | | |
+| 4 | `EINTR` | 18 | `EXDEV` |
+| 5 | `EIO` | 19 | `ENODEV` |
+| 6 | `ENXIO` | 20 | `ENOTDIR` |
+| 7 | `E2BIG` | 21 | `EISDIR` |
+| 8 | `ENOEXEC` | 22 | `EINVAL` |
+| 9 | `EBADF` | 23 | `ENFILE` |
+| 10 | `ECHILD` | 24 | `EMFILE` |
+| 11 | `EAGAIN` | 28 | `ENOSPC` |
+| 12 | `ENOMEM` | 30 | `EROFS` |
+| 13 | `EACCES` | 32 | `EPIPE` |
+| 14 | `EFAULT` | 38 | `ENOSYS` |
+| 16 | `EBUSY` | 39 | `ENOTEMPTY` |
+| 17 | `EEXIST` | 63 | `ENAMETOOLONG` |
 
 ## An example
 
