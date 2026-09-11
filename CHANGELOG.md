@@ -15,6 +15,45 @@ version anyone else is meant to install.
 
 ### Added
 
+- The filesystem, read side (`src/kernel/ks_fat.asm`, `src/kernel/ks_vfs.asm`,
+  `src/kernel/ks_exec.asm`, `docs/storage.md`, `docs/syscalls.md`,
+  `docs/programs.md`): every volume the boot listing shows is mounted as a
+  FAT12 or FAT16 filesystem, the type decided by its cluster count; the
+  boot volume is `/`, every volume `/mnt/` and its letter, and `/mnt`
+  lists them. Paths with `/`, `.` and `..`, FAT short names matched
+  without regard to case and listed in lower case, long-name entries left
+  alone; a current directory per process, inherited and changed with
+  `chdir`. Eight file descriptors per process — the keyboard, the
+  console, or an open file — inherited by `spawn`, `fork` and `vfork`,
+  kept by `exec`, closed by `exit`; 24 open files in the system.
+  System calls `open` (read only), `close`, `read` on a file, `lseek`
+  with a 32-bit position, `stat` and `readdir` filling one 24-byte
+  record, `chdir`, and `exec`: a program read from a file into the
+  process's own pages — or into fresh ones when the caller is a `vfork`
+  child, whose parent wakes as the program starts — with its arguments
+  serialised at the top of its highest page, `BC` = `argc` and `HL` =
+  `argv` on entry. A file without the six-byte header (`jr start`,
+  `"m6"`, the pages wanted, 0) is refused with `ENOEXEC`. A whole sector
+  read into a buffer on a 256-byte boundary goes from the driver straight
+  into the program's memory; everything else through the cache and a
+  copy. `ENAMETOOLONG` joins the errors.
+- The block layer's transfer target is a 256-byte slot in a segment, where
+  it was a 512-byte one, so a program loaded at `0100h` receives whole
+  sectors with no copy.
+- Test `vfs`, on the three emulated machines: the mount table against the
+  boot sectors read from outside the machine, `stat`, `readdir` of the
+  root, of `/mnt` and of a subdirectory, every error, a three-page process
+  reading a 64K file whole through the direct path — one driver call per
+  sector, counted — into pages 0 and 2, unaligned, in odd pieces across a
+  cluster, and after every kind of seek, every byte against the pattern,
+  with the file placed so that its chain crosses a FAT12 entry that
+  straddles two sectors; the current directory; `exec` with arguments
+  from a spawned child, from a `vfork` child into fresh memory, `ENOMEM`
+  on the 128K machine with the segments held, every refusal, and a 16K
+  program timed from the call to its first instruction. A test may ship
+  files (`tests/<name>/files/`), programs (`tests/<name>/progs/`, built
+  with the executable header) and generated data (`tests/<name>/files.tcl`)
+  on its disk image.
 - The block layer (`src/kernel/blk.asm`, `src/kernel/ks_blk.asm`,
   `docs/storage.md`): at boot the kernel enumerates every Nextor driver
   the program that started it recorded — up to four — and each driver's
