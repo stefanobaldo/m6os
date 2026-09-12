@@ -129,8 +129,37 @@ reading a 64K file: about 89 KB/s through a driver that moves a sector in
 4.8 ms, and about 77 KB/s through one that takes 5.4 ms. The kernel's own
 share is about 0.8 ms per sector on either — the rest is the driver.
 
+### Writing
+
+Files are created with `open`, written with `write`, extended by writing
+past their end, emptied with `O_TRUNC`, removed with `unlink` and renamed
+with `rename`; directories are made with `mkdir` and removed, empty, with
+`rmdir`. Every call that changes a volume finishes its work before it
+returns: the data sectors first, then the allocation table — both copies,
+so they never disagree — then the directory entry; a removal writes the
+entry first and frees the clusters after. So a card pulled at any moment
+holds, at worst, clusters that belong to no file, which a FAT checker
+reports and reclaims, never a file pointing at free space, and there is
+no cache to flush before the card is taken out. What one call costs: a
+driver call per data sector (whole sectors from a buffer on a 256-byte
+boundary go straight from the program's memory), two more for the table
+when a cluster is allocated — once per call, however many clusters it
+allocates — and one for the entry. A `write` of a few bytes into a sector
+that already has data reads it, changes it and writes it back. Free
+clusters are handed out next to the file's last one, so a file written in
+one go is laid out contiguously; when the volume is full, `write`
+returns what fitted and `ENOSPC` on the next call.
+
+A file has one writer at a time, and a file that is open cannot be
+removed or renamed; the read-only attribute is honoured and cannot be
+cleared here. The modification time comes from the machine's clock when
+a file is created and on every write; the directory's own time is not
+touched, and long-name entries beside a removed or renamed file stay.
+Making a directory zeroes its whole cluster — 8 sectors on a small
+volume, 128 on a 4 GB one, where `mkdir` takes most of a second.
+
 ## Not yet
 
-Volumes are read only in this version: no `write` to a file, no creating,
-deleting or renaming, no directories made or removed, no timestamps
-written. A card changed while the system runs is not noticed.
+Long names are neither shown nor made; the read-only attribute cannot
+be changed; a file's access date is never written; a `rename` across
+volumes is refused. A card changed while the system runs is not noticed.

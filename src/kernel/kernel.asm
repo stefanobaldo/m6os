@@ -60,7 +60,9 @@ k_api:
         jp      KS_BWRITE_DIRECT        ; API_BWRITE_DIRECT
         jp      KS_RTC_READ             ; API_RTC_READ
         jp      exec_finish             ; API_EXEC_FINISH
-        DUP     K_API_N-28
+        jp      KS_BFLUSH               ; API_BFLUSH: in the switched part
+        jp      KS_BZERO                ; API_BZERO
+        DUP     K_API_N-30
         jp      sys_enosys              ; an entry not yet given a routine
         EDUP
         block   K_SYS-$
@@ -82,6 +84,10 @@ k_sys:
         jp      k_sw_readdir            ; SYS_READDIR
         jp      k_sw_chdir              ; SYS_CHDIR
         jp      k_sw_exec               ; SYS_EXEC
+        jp      k_sw_unlink             ; SYS_UNLINK
+        jp      k_sw_mkdir              ; SYS_MKDIR
+        jp      k_sw_rmdir              ; SYS_RMDIR
+        jp      k_sw_rename             ; SYS_RENAME
         DUP     K_SYS_N-SYS_N
         jp      sys_enosys
         EDUP

@@ -52,7 +52,7 @@ to install.
   by volume, refused past the volume's end, and moved one per driver call,
   through a write-through cache of 24 sectors. The real-time clock is read as a
   FAT date and time. See [`docs/storage.md`](docs/storage.md).
-- Files, read only. Every mounted volume is read as a FAT12 or FAT16
+- Files. Every mounted volume is read as a FAT12 or FAT16
   filesystem: paths with `/`, `.` and `..`, short names matched without regard
   to case, a current directory per process, and eight file descriptors per
   process inherited by its children. A whole sector read into a buffer on a
@@ -62,3 +62,15 @@ to install.
   program read from a file and hands it its arguments; a file without m6's
   six-byte header is refused with `ENOEXEC`. See
   [`docs/programs.md`](docs/programs.md).
+- Writing files. `open` takes `O_WRONLY`, `O_RDWR`, `O_CREAT`, `O_TRUNC` and
+  `O_APPEND`; `write` puts bytes in a file, extends it, and fills with zeros a
+  gap left by `lseek` past the end; `unlink`, `mkdir`, `rmdir` and `rename`
+  (within a volume) join the system calls. Every call finishes on the disk
+  before it returns — data, then both copies of the allocation table, then the
+  directory entry — so a card can be pulled after any call and a FAT checker
+  finds at worst a cluster nobody owns. A file has one writer at a time and
+  cannot be removed while open; the read-only attribute is honoured; the
+  modification time comes from the real-time clock. Whole sectors from a
+  buffer on a 256-byte boundary go straight from the program's memory to the
+  driver. The test suite writes to FAT12 and FAT16 volumes and hands the
+  images to the host's FAT checker afterwards.
