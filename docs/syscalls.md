@@ -71,12 +71,19 @@ and they disappear entirely when they exit.
 
 A process has eight file descriptors, 0 to 7. Each is closed, or the
 console, or the keyboard, or an open file — a file or directory on a
-volume, opened with `open` and closed with `close`. A process starts with
-0 the keyboard and 1 and 2 the console, and a child made by `spawn`,
-`fork` or `vfork` inherits its parent's eight, open files included: the
-two share the file's position until one closes it. `exec` keeps them.
-`exit` closes them all. At most 24 files are open in the whole system at
-once (`ENFILE`); a ninth descriptor in one process is `EMFILE`.
+volume, opened with `open` and closed with `close` — or one end of a pipe
+(see *Pipes*). A process starts with 0 the keyboard and 1 and 2 the
+console, and a child made by `spawn`, `fork` or `vfork` inherits its
+parent's eight, open files and pipe ends included: the two share the
+file's position until one closes it. A child made by `spawnv` gets only
+0, 1 and 2, chosen by the caller; its 3 to 7 start closed. `exec` keeps
+them. `exit` closes them all. At most 24 files are open in the whole
+system at once (`ENFILE`); a ninth descriptor in one process is
+`EMFILE`.
+
+A buffer a system call is to fill must lie below `C000h`, the kernel's
+page: one that reaches it is refused with `EFAULT` and nothing is
+written.
 
 A path is a string of at most 127 bytes and a terminator: components
 separated by `/`, each a FAT name of up to eight characters, a dot and up
@@ -144,7 +151,15 @@ hidden the rest of the time.
 | 18 | `mkdir` | `HL` = path | — | `ENOENT`: the parent; `ENOTDIR`, `EEXIST`, `EINVAL`: not a name; `ENOSPC`, `EIO`, `EROFS` |
 | 19 | `rmdir` | `HL` = path (an empty directory) | — | `ENOENT`, `ENOTDIR`, `ENOTEMPTY`, `EBUSY`: open, somebody's current directory, a volume's root; `EINVAL`: `.` or `..`; `EIO`, `EROFS` |
 | 20 | `rename` | `HL` = old path, `DE` = new path | — | `ENOENT`, `ENOTDIR`, `EXDEV`: another volume; `EEXIST`: a directory on either side exists; `EINVAL`: not a name, or a directory into itself; `EACCES`, `EBUSY`, `ENOSPC`, `EIO`, `EROFS` |
-| 17–47 | — | — | — | `ENOSYS` |
+| 21 | `pipe` | — | `L` = the read end, `H` = the write end | `EMFILE`: fewer than two descriptors free; `ENFILE`: four pipes exist |
+| 22 | `spawnv` | `HL` = path, `DE` = argv (0: none), `BC` = a 3-byte map (see *Processes from files*) | `HL` = `A` = the child's pid | `ENOENT`, `ENOTDIR`, `EISDIR`, `ENAMETOOLONG`, `ENOEXEC`, `E2BIG`, `EBADF`: a map entry is not `FFh` or an open descriptor; `EAGAIN`: 15 processes exist; `ENOMEM`; `EIO` |
+| 23 | `waitpid` | `A` = pid (0: any child), `B` = flags (1: `WNOHANG`) | `H` = pid, `L` = `A` = status; `HL` = 0 with `WNOHANG` and nothing exited | `ECHILD`: no child, or not the caller's |
+| 24 | `sleep` | `HL` = ticks | `HL` = 0 | — |
+| 25 | `procinfo` | `A` = pid, `HL` = a 24-byte buffer | — | `EINVAL`: pid not 0–15; `ESRCH`: no such process; `EFAULT` |
+| 26 | `getcwd` | `HL` = buffer, `BC` = its size | `HL` = the length | `ENAMETOOLONG`: the path or the buffer too short; `EFAULT`; `EIO` |
+| 27 | `time` | — | `HL` = FAT date, `DE` = FAT time | — |
+| 28 | `chmod` | `HL` = path, `A` = attributes | — | `EINVAL`: a bit that is not one; `ENOENT`, `ENOTDIR`, `ENAMETOOLONG`, `EACCES`: a volume's root or `/mnt`; `EROFS`, `EIO` |
+| 29–47 | — | — | — | `ENOSYS` |
 
 `write` to a descriptor that is the console goes to the screen and `read`
 from one that is the keyboard takes from it, as *The console* says: that
@@ -176,9 +191,56 @@ runs at once, 15).
 keeps the CPU until the next tick or its own `yield` or `wait`. The child
 starts as *What a process sees* says. `wait` blocks until one of the
 caller's children exits — or returns at once with a child that already
-has — and reaps it: `H` is its pid, `L` its exit status. `yield` hands the
-CPU to the next runnable process and returns when the caller's turn comes
-round again; with no other process runnable it returns at once.
+has — and reaps it: `H` is its pid, `L` its exit status. `waitpid` does
+the same for one child named by its pid, or for any child when `A` is 0;
+with `WNOHANG` in `B` it does not block: `HL` is 0 when children live and
+none has exited. A pid that is not the caller's child is `ECHILD`.
+`yield` hands the CPU to the next runnable process and returns when the
+caller's turn comes round again; with no other process runnable it
+returns at once. `sleep` gives the CPU up for `HL` ticks of the 60 Hz
+clock — 60 is a second — and returns when they have passed; 0 is a
+`yield`. `procinfo` copies a process's row of the kernel's tables, 24
+bytes as the kernel keeps them: the layout is the kernel's own and moves
+with it, so only a program shipped with the kernel should read it.
+
+## Processes from files
+
+`spawnv` creates a process from a program in a file — the file
+[`programs.md`](programs.md) describes — in one call: it makes the
+process, loads the file into fresh memory, hands it `argv` as `exec`
+does, and returns the child's pid to the caller, which keeps the CPU as
+after `spawn`. `BC` points at three bytes that say what the child's
+descriptors 0, 1 and 2 are: each is one of the caller's descriptors, or
+`FFh` for the caller's own of the same number. The child gets those three
+and nothing else — its 3 to 7 start closed — so a pipe end the caller
+still holds does not leak into a child that must not have it. A
+descriptor named in the map that is closed is `EBADF`, and every refusal
+leaves the caller as it was: the file is loaded into the child's memory,
+never the caller's. This is how the system starts programs; `vfork` and
+`exec` remain for programs written around them.
+
+## Pipes
+
+`pipe` makes a pipe and returns its two ends as descriptors, the read end
+in `L`, the write end in `H` — the two lowest free. Bytes written to the
+write end are read from the read end in the same order. A pipe holds 256
+bytes: `write` delivers every byte it is given, blocking while the pipe
+is full and a reader has yet to take some; `read` returns what is there,
+1 to 256 bytes and at most `BC`, blocking while the pipe is empty and a
+writer still holds the write end. When every write end is closed, `read`
+returns 0 at the end of what was written. A `write` to a pipe whose every
+read end is closed ends the writing process with status 141, before a
+byte moves, as `SIGPIPE` does under Unix — so `yes | head` ends by itself.
+Four pipes exist at once (`ENFILE`). A pipe end is closed with `close`,
+inherited like a file by `spawn`, `fork` and `vfork`, handed to a child by
+`spawnv`'s map, and closed by `exit`: a pipe is gone when nobody holds
+either end. Process 0, the kernel's own thread, may make pipes and hand
+them to children but not read or write them (`EPERM`).
+
+On an MSX at 3.58 MHz, 256 bytes through a pipe cost the two copies —
+about 1.65 ms each — and the two changes of process; a producer that
+writes in pieces of 256, 512 or 1024 bytes pays nothing for the pipe's
+boundaries.
 
 `fork` makes a second process that is a copy of the caller — every page,
 the stack included — and returns twice: in the caller with the child's
@@ -244,7 +306,18 @@ wrote beside a renamed or removed file are left where they are.
 
 The modification time of a file is set when it is created, and on every
 `write`, from the machine's clock; the directory holding it is not
-touched. `exec`
+touched. `time` returns that clock's reading as the same two FAT words,
+the date in `HL` and the time in `DE`. `chmod` sets a file's or a
+directory's attributes to the bits in `A` — `01h` read-only, `02h`
+hidden, `04h` system, `20h` archive, in any combination; `10h`, the
+directory bit, stays as it is and any other bit is `EINVAL` — and is the
+one way to clear a read-only bit from m6; a volume's root and `/mnt`
+have no entry to change (`EACCES`). `getcwd` writes the process's
+current directory as a path into the buffer, 0-terminated, and returns
+its length: `/` for the boot volume's root, `/mnt/b/dir` for a directory
+on another volume, `/mnt` for the directory of volumes — the shortest
+name that reaches it, whatever `chdir` was given; a buffer too small for
+the path and its terminator is `ENAMETOOLONG`. `exec`
 replaces the calling process's image with the program in the file, as
 [`programs.md`](programs.md) describes, and returns only when it could
 not: the caller's image is intact then, whatever the error. A process

@@ -24,9 +24,10 @@ MSX-DOS `.COM` program, which also begins at `0100h`, is never run by
 accident. `tests/m6prog.inc` has a macro that writes the header.
 
 Because the image is what the memory holds, the same file can be started
-two ways: `exec` reads it from a volume; `spawn` copies it from memory, in
-a program that has it embedded or has read it in. `spawn` does not look at
-the header.
+three ways: `spawnv` reads it from a volume into a new process, which is
+how the system starts programs; `exec` reads it from a volume over the
+calling process; `spawn` copies it from memory, in a program that has it
+embedded or has read it in. `spawn` does not look at the header.
 
 The pages byte says how much memory the program gets: one page is 16K from
 `0000h`, three pages the whole 48K a process can have. A program that
@@ -57,18 +58,30 @@ On entry:
   program that ends in `ret` exits with status 0;
 - file descriptors 0, 1 and 2 are the caller's — the keyboard and the
   console unless the caller changed them — and so is the current
-  directory;
+  directory; a program started by `spawnv` gets the three the caller's
+  map named, and its 3 to 7 closed;
 - every other register is 0.
 
 The argument block is at most 256 bytes, table included: a longer one is
 refused with `E2BIG`. A program that reads no arguments need not look at
-it. A program started with `spawn` finds `BC` = 0 and an empty table.
+it. A program started with `spawn`, or with `spawnv` and no vector, finds
+`BC` = 0 and an empty table.
 
 ## How much fits
 
 `0100h` + the file + the argument block + the 24-byte frame must fit the
 pages the header asks for, else `ENOEXEC`. With an empty argument vector a
 one-page program's file can be at most 16 102 bytes.
+
+## What spawnv costs
+
+A one-sector program — a few hundred bytes — is running about 15 ms
+after the call on an MSX2 at 3.58 MHz: the directory and table sectors
+are usually in the kernel's cache, one data sector comes from the driver,
+and the rest is the process's row, its memory and its arguments. In the
+emulator, sixty `spawnv` and `waitpid` of such a program take 61 ticks, a
+hint of about 17 ms each; the figure on the reference machine is the
+gate's.
 
 ## What exec costs
 
