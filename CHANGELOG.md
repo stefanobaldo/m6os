@@ -74,3 +74,30 @@ to install.
   buffer on a 256-byte boundary go straight from the program's memory to the
   driver. The test suite writes to FAT12 and FAT16 volumes and hands the
   images to the host's FAT checker afterwards.
+- Pipes. `pipe` makes one and returns its two ends as descriptors; bytes go
+  in at the write end and come out at the read end in order, 256 at a time
+  at most, with the writer blocking while the pipe is full and the reader
+  while it is empty. A read at the end of a pipe nobody writes any more
+  returns 0; a write to a pipe nobody reads any more ends the writer with
+  status 141, as `SIGPIPE` does. Four pipes at once.
+- Processes from files. `spawnv` creates a process from a program in a
+  file in one call — fresh memory, the arguments, and the child's
+  descriptors 0, 1 and 2 chosen by the caller from its own, so that
+  redirection and pipes need no `dup2` — and returns the child's pid.
+  `waitpid` waits for one child by name, or for any, and with `WNOHANG`
+  does not block. See [`docs/syscalls.md`](docs/syscalls.md).
+- `sleep` for a number of ticks; `time`, the real-time clock as a FAT
+  date and time; `getcwd`, the current directory as a path; `chmod`, the
+  read-only, hidden, system and archive attributes of a file — the one
+  way to clear a read-only bit from m6; `procinfo`, a process's row of the
+  kernel's tables for tools that ship with the kernel.
+
+### Fixed
+
+- A program whose last sector was not a whole one, started by `exec` from
+  a `vfork` child, had that sector written into the parent's memory rather
+  than its own.
+- A `wait` made while every child was blocked ran in a loop instead of
+  idling, and could leave the kernel's count of runnable processes wrong.
+- A `read`, `readdir`, `stat` or `getcwd` given a buffer that reached the
+  kernel's page overwrote the kernel; it is refused with `EFAULT`.
