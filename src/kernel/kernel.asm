@@ -94,6 +94,9 @@ k_sys:
         jp      sys_waitpid             ; SYS_WAITPID (proc.asm)
         jp      sys_sleep               ; SYS_SLEEP (px.asm)
         jp      sys_procinfo            ; SYS_PROCINFO (sys.asm)
+        jp      k_sw_getcwd             ; SYS_GETCWD, in the switched part
+        jp      k_sw_time               ; SYS_TIME, the same
+        jp      k_sw_chmod              ; SYS_CHMOD, the same
         DUP     K_SYS_N-SYS_N
         jp      sys_enosys
         EDUP
