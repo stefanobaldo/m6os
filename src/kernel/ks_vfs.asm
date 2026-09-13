@@ -34,8 +34,9 @@ um_seg:
 ; um_in — BC bytes from user address HL to storage offset DE.
 ; um_out — BC bytes from storage offset HL to user address DE.
 ; A range may cross pages; each page's piece goes directly when the page
-; is 0 or 3 and through k_copy when it is 1 or 2, which the window and the
-; gate have taken. Corrupts everything.
+; is 3, or 0 with the segment VV_SEGP names actually in it, and through
+; k_copy when it is 1 or 2, which the window and the gate have taken, or
+; 0 of another process's image. Corrupts everything.
 um_in:
         xor     a
         jr      um_copy
@@ -72,12 +73,23 @@ um_copy:
         rlca
         rlca
         and     3                       ; the page
-        ld      hl,(SG+VV_U)
-        ld      de,(SG+VV_S)
         cp      1
         jr      z,.remap
         cp      2
         jr      z,.remap
+        or      a
+        jr      nz,.direct              ; page 3: the kernel's, always mapped
+        ; Page 0 is mapped, but is it the page the caller means? An image
+        ; loading into fresh segments — a vfork child's exec, a spawnv —
+        ; names another process's page 0, and a direct copy would land in
+        ; the current one's.
+        call    um_seg                  ; a = the segment meant
+        ld      hl,K_MAP
+        cp      (hl)                    ; the one in page 0 now
+        jr      nz,.remap
+.direct:
+        ld      hl,(SG+VV_U)
+        ld      de,(SG+VV_S)
         set     6,d                     ; the storage side, at 4000h+
         ld      a,(SG+VV_DIR)
         or      a
@@ -87,7 +99,11 @@ um_copy:
         ldir
         pop     bc
         jr      .adv
-.remap: push    bc
+.remap: ld      a,(SG+VV_U+1)
+        rlca
+        rlca
+        and     3                       ; the page again
+        push    bc
         call    um_seg                  ; a = the page's segment
         ld      b,a
         ld      a,(K_REC+KR_SEG64K+2)

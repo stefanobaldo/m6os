@@ -713,16 +713,25 @@ t_entry:
         call    t_run1
         cp      7
         jp      nz,t_fail_status
-        ; A vfork child execs the two-page program: the parent wakes, waits,
-        ; and hands its status on: 33. The parent has three pages, so its
+        ; A one-page vfork child execs the two-page program: the parent
+        ; wakes, waits, and hands its status on: 33.
+        ld      hl,u_execvfh
+        ld      bc,u_execvfh_end-u_execvfh
+        call    t_run1
+        cp      33
+        jp      nz,t_fail_status
+        ; A three-page vfork parent's child execs hello: the parent's
         ; stack — where its frame is rebuilt — is in page 2, the page the
-        ; window takes: a wake that leaves the kernel's pages mapped is
-        ; caught here.
+        ; window takes, so a wake that leaves the kernel's pages mapped is
+        ; caught here; and hello's 210 bytes are one partial sector copied
+        ; through the cache, so a copy that went to the mapped page 0
+        ; instead of the child's fresh one would land on this parent's
+        ; code. It hands hello's status on: 7.
         ld      hl,u_execvf
         ld      bc,u_execvf_end-u_execvf
         ld      a,3
         call    t_run
-        cp      33
+        cp      7
         jp      nz,t_fail_status
         ; Three pages, with three one-page processes holding segments: on
         ; the base machine ENOMEM comes back to the child (112); where the
@@ -1123,9 +1132,14 @@ u_reader_k:
         call    .rewind
         ld      hl,0
         ld      (.off),hl
-        ld      ix,.sizes
-.odd:   ld      c,(ix+0)
-        ld      b,(ix+1)
+        ld      hl,.sizes
+        ld      (.szp),hl               ; the cursor in memory: a syscall
+.odd:   ld      hl,(.szp)               ; keeps no register but the result
+        ld      c,(hl)
+        inc     hl
+        ld      b,(hl)
+        inc     hl
+        ld      (.szp),hl
         ld      a,b
         or      c
         jr      z,.odddone
@@ -1138,17 +1152,15 @@ u_reader_k:
         or      a
         sbc     hl,bc
         jp      nz,.x8                  ; a short read
+        push    bc
         ld      hl,U_BUFU
         ld      de,(.off)
         call    .verify
+        pop     bc
         jp      nz,.x7
-        ld      c,(ix+0)
-        ld      b,(ix+1)
         ld      hl,(.off)
         add     hl,bc
         ld      (.off),hl
-        inc     ix
-        inc     ix
         jr      .odd
 .odddone:
         ; Pass 6: seeks.
@@ -1372,6 +1384,7 @@ u_reader_k:
 .sizes: dw      1,3,511,513,1000,3000,0
 .fd:    db      0
 .off:   dw      0
+.szp:   dw      0
 .cnt:   dw      0
 .bad:   dw      0
 .badb:  db      0
@@ -1399,9 +1412,10 @@ u_exec1_k:
 u_exec1_k_end:
         u_image u_exec1
 
-; u_execvf — vfork; the child execs /bin/two; the parent wakes with the
-; child's pid, waits, and exits with the child's status.
-u_execvf_k:
+; u_execvfh — vfork; the child execs /bin/two; the parent wakes with the
+; child's pid, waits, and exits with the child's status. Run as a
+; one-page process.
+u_execvfh_k:
         DISP    P0_PROG
         sys     SYS_VFORK
         jr      c,.fail
@@ -1421,6 +1435,37 @@ u_execvf_k:
 .fail:  ld      a,90
         sys     SYS_EXIT
 .path:  db      "/bin/two",0
+        ENT
+u_execvfh_k_end:
+        u_image u_execvfh
+
+; u_execvf — vfork; the child execs /bin/hello with its three arguments;
+; the parent wakes, waits, and exits with the child's status — 7 if the
+; parent's own code at 0100h survived the child's load. Run as a
+; three-page process, whose stack is in page 2.
+u_execvf_k:
+        DISP    P0_PROG
+        sys     SYS_VFORK
+        jr      c,.fail
+        ld      a,h
+        or      l
+        jr      nz,.parent
+        ld      hl,.path
+        ld      de,.argv
+        sys     SYS_EXEC
+        add     a,100
+        sys     SYS_EXIT
+.parent:
+        sys     SYS_WAIT
+        jr      c,.fail
+        ld      a,l
+        sys     SYS_EXIT
+.fail:  ld      a,90
+        sys     SYS_EXIT
+.path:  db      "/bin/hello",0
+.argv:  dw      .path,.a1,.a2,0
+.a1:    db      "one",0
+.a2:    db      "two",0
         ENT
 u_execvf_k_end:
         u_image u_execvf
