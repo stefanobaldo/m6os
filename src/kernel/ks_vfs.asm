@@ -137,6 +137,39 @@ um_copy:
         ld      (SG+VV_N),hl
         jp      .piece
 
+; um_check — HL = a user address, BC = a length: CF with E_FAULT when the
+; range reaches page 3, which is the kernel's — unless the caller is
+; process 0, whose own program may lie there. Every syscall that writes
+; into a process's memory calls it first: a wrong buffer must refuse, not
+; overwrite the resident. Preserves A, HL, BC, DE.
+um_check:
+        push    af
+        ld      a,(K_PID)
+        or      a
+        jr      z,.ok                   ; process 0: page 3 is its own
+        ld      a,h
+        cp      0C0h
+        jr      nc,.efault              ; it starts there
+        push    hl
+        push    de
+        ex      de,hl                   ; de = the address
+        ld      hl,0C000h
+        or      a
+        sbc     hl,de                   ; hl = the room before page 3
+        or      a
+        sbc     hl,bc                   ; minus the length: CF when short
+        pop     de
+        pop     hl
+        jr      c,.efault
+.ok:    pop     af
+        and     a                       ; CF clear, A as it came
+        ret
+.efault:
+        pop     af
+        ld      a,E_FAULT
+        scf
+        ret
+
 ; um_peek — HL = a user address: A = the byte there. Preserves HL, DE, BC.
 um_peek:
         push    hl
@@ -1091,6 +1124,11 @@ ks_lseek:
 
 ; ks_stat — SYS_STAT: HL = path, DE = a DIRENT_SIZE buffer.
 ks_stat:
+        ex      de,hl
+        ld      bc,DIRENT_SIZE
+        call    um_check                ; the record's buffer
+        ex      de,hl
+        ret     c
         push    de
         call    vfs_getpath
         jr      c,.err
@@ -1139,6 +1177,9 @@ ks_chdir:
 ; ks_readdir — SYS_READDIR: A = fd (a directory), HL = a DIRENT_SIZE
 ; buffer. Out: HL = 1 with the next entry in the buffer, 0 at the end.
 ks_readdir:
+        ld      bc,DIRENT_SIZE
+        call    um_check
+        ret     c
         push    hl
         call    vfs_begin
         call    fd_row
@@ -1393,6 +1434,8 @@ add32_a:
 ; page 0-2 that does not cross the page goes straight from the driver;
 ; everything else through the cache and the copy.
 ks_read:
+        call    um_check                ; the buffer, before a byte moves
+        ret     c
         push    hl
         push    bc
         call    vfs_begin
