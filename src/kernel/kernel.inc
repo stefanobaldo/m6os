@@ -60,12 +60,40 @@ K_PROC          equ K_BASE+512  ; the process table (sched.asm): NPROC rows
                                 ;     so a row is K_PROC + (pid << 4)
 K_FD            equ K_BASE+768  ; the descriptor table: NPROC rows of NOFILE
                                 ;     bytes, a row at K_FD + (pid << 3); a
-                                ;     byte is FD_NONE, FD_CON, FD_KBD or an
-                                ;     index into the open-file table (ST_OFT)
+                                ;     byte is FD_NONE, FD_CON, FD_KBD, a
+                                ;     pipe end (FD_PIPE_R/W + n) or an index
+                                ;     into the open-file table (ST_OFT)
+K_PX            equ K_BASE+896  ; the per-process extension table: NPROC
+                                ;     rows of PX_SIZE bytes, a row at
+                                ;     K_PX + (pid << 3) — what the 16-byte
+                                ;     process row has no room for
+K_PIPEBUF       equ K_BASE+1024 ; NPIPE pipe buffers of 256 bytes, 256-
+                                ;     aligned: byte i of pipe n is at
+                                ;     (high K_PIPEBUF + n) : i (pipe.asm)
 NOFILE          equ 8
 FD_NONE         equ 0FFh
 FD_CON          equ 0FEh        ; the console: write
 FD_KBD          equ 0FDh        ; the keyboard: read
+FD_PIPE_R       equ 0E0h        ; + n: the read end of pipe n (pipe.asm)
+FD_PIPE_W       equ 0F0h        ; + n: its write end
+NPIPE           equ 4           ; pipes the kernel holds
+PIPE_MAX        equ 256         ; bytes a pipe holds: its whole buffer
+PX_SIZE         equ 8
+PX_WCHAN        equ 0           ; the pipe a PS_PIPE row waits on; FFh none
+PX_WAKE         equ 1           ; 2: the K_TICKS a PS_SLEEP row wakes at
+PX_SIGIGN       equ 3           ; signals ignored (a later phase's)
+PX_SIGPEND      equ 4           ; signals pending (the same)
+                                ; 5-7 spare
+PI_SIZE         equ 8           ; a pipe's row (pipe.asm): free when both
+PI_HEAD         equ 0           ; counts are 0. head = tail means empty,
+PI_TAIL         equ 1           ; or full when PI_FULL says so: the whole
+PI_FULL         equ 2           ; buffer is usable
+PI_READERS      equ 3
+PI_WRITERS      equ 4
+PI_RWAIT        equ 5           ; the pid blocked reading it, FFh none
+PI_WWAIT        equ 6           ; the pid blocked writing it, FFh none
+PI_MANY         equ 7           ; a second waiter on an end: a wake walks
+                                ; the process table instead
 
 ; The jump table's entries. Contracts are the routines' own (con.asm,
 ; abi2.asm, slot.asm, mem.asm).
@@ -185,7 +213,23 @@ SYS_RENAME      equ 20          ; HL = old path, DE = new path, on one
                                 ; volume; a file replaces a file; ENOENT,
                                 ; ENOTDIR, EXDEV, EEXIST, EINVAL, EACCES,
                                 ; EBUSY, ENOSPC, EIO, EROFS
-SYS_N           equ 21          ; entries given a syscall so far
+; The pipeline path (pipe.asm, proc.asm, px.asm) and the small calls.
+SYS_PIPE        equ 21          ; -> L = the read end, H = the write end;
+                                ; EMFILE, ENFILE
+SYS_SPAWNV      equ 22          ; HL = path, DE = argv (0 = none), BC -> 3
+                                ; bytes: the caller's descriptor that is
+                                ; the child's 0, 1, 2, FFh = the caller's
+                                ; own -> HL = A = the child's pid; exec's
+                                ; errors but EPERM, plus EBADF, EAGAIN
+SYS_WAITPID     equ 23          ; A = pid (0 = any child), B = WNOHANG or
+                                ; 0 -> H = pid, L = A = status; HL = 0 with
+                                ; WNOHANG and nothing exited; ECHILD
+SYS_SLEEP       equ 24          ; HL = ticks -> HL = 0, after them
+SYS_PROCINFO    equ 25          ; A = pid, HL = a PROCINFO_SIZE buffer;
+                                ; EINVAL, ESRCH
+SYS_N           equ 26          ; entries given a syscall so far
+WNOHANG         equ 1           ; waitpid: do not block
+PROCINFO_SIZE   equ P_SIZE+PX_SIZE ; the row, then the extension row
 
 O_RDONLY        equ 0           ; open's flags: the access mode in bits 0-1
 O_WRONLY        equ 1           ; (3 is EINVAL), then
@@ -297,6 +341,7 @@ KS_RMDIR        equ KS_TABLE2+33
 KS_RENAME       equ KS_TABLE2+36
 KS_BFLUSH       equ KS_TABLE2+39 ; the cache's write side (ks_blk.asm)
 KS_BZERO        equ KS_TABLE2+42
+KS_SPAWNV       equ KS_TABLE2+45 ; (ks_exec.asm)
 
 ; The window (kwin.asm) and the storage gate: what is in page 2 and page 1
 ; while the switched part of the kernel runs. kwin_enter puts the switched
@@ -368,6 +413,8 @@ PS_WAIT         equ 2           ; blocked in wait
 PS_ZOMBIE       equ 3           ; exited; the status waits for the parent
 PS_KBD          equ 4           ; blocked in read, waiting for a key
 PS_VFORK        equ 5           ; blocked in vfork, until the child exits
+PS_PIPE         equ 6           ; blocked on a pipe: PX_WCHAN says which
+PS_SLEEP        equ 7           ; blocked in sleep, until PX_WAKE
 PP_NONE         equ 0FFh        ; a parent that will never wait
 
 ; The capture record: what the resident needs to know about the machine,
@@ -640,6 +687,13 @@ VV_RSEC         equ ST_VFS+281  ; 4: read: the sector OF_POS is in
 VV_RSIDX        equ ST_VFS+285  ;    its index in the cluster
 VV_RSPC         equ ST_VFS+286  ;    sectors per cluster
 VX_SEC          equ ST_VFS+287  ; 4: exec: the sector being loaded
+VX_SPAWN        equ ST_VFS+292  ; 0 exec: the image replaces the caller;
+                                ; 1 spawnv: it is a new process's
+VX_FDS          equ ST_VFS+293  ; 3: spawnv's descriptor map
+VX_CPID         equ ST_VFS+296  ; spawnv: the child's pid
+VX_OWNER        equ ST_VFS+297  ; whose segments ex_alloc takes: K_PID for
+                                ; exec, the child's for spawnv
+VX_ROW          equ ST_VFS+298  ; 2: spawnv: the child's row
 VK_ENTRY        equ 0           ; VR_KIND: a directory entry (VR_ENT valid)
 VK_ROOT         equ 1           ; the root directory of VR_VOL
 VK_MNT          equ 2           ; the /mnt node

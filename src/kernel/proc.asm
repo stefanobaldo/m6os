@@ -198,6 +198,8 @@ sp_create:
         ld      (hl),0
         ld      a,(sp_pid)
         call    pr_inherit              ; the descriptors and the directory
+        ld      a,(sp_pid)
+        call    px_init                 ; the extension row
         ld      hl,(sp_row)
         ld      (hl),PS_RUN             ; P_STATE, then into the ring
         di
@@ -255,8 +257,8 @@ pr_frame:
 
 ; pr_inherit — A = a child's pid, its row filled: it inherits the current
 ; process's directory and descriptors — the three bytes of P_CWD, the
-; eight of the descriptor row, and a reference on every open file they
-; name. The storage segment is in page 1 for the length of the count and
+; eight of the descriptor row, and a reference on every open file or pipe
+; end they name. The storage segment is in page 1 for the length of the count and
 ; the process's page 1 comes back after: the same remap k_copy makes, safe
 ; because the handler touches page 3 and the VDP only. On the syscall
 ; stack. Corrupts everything.
@@ -297,8 +299,14 @@ pr_inherit:
         ld      b,NOFILE
 .ref:   ld      a,(hl)
         cp      80h
+        jr      c,.oft
+        cp      FD_PIPE_R
+        jr      c,.next
+        cp      FD_PIPE_W+NPIPE
         jr      nc,.next
-        push    hl
+        call    pipe_ref                ; a pipe end: its count up
+        jr      .next
+.oft:   push    hl
         call    fd_oft
         inc     hl                      ; OF_REFS
         inc     (hl)
@@ -310,7 +318,8 @@ pr_inherit:
         ret
 
 ; fd_close_all — every descriptor of the current process closed: a
-; reference off every open file they name, the file's row freed at zero.
+; reference off every open file or pipe end they name, the file's row
+; freed at zero, a pipe's waiters woken.
 ; The same remap as pr_inherit's; on the syscall stack. Corrupts
 ; everything.
 fd_close_all:
@@ -326,8 +335,14 @@ fd_close_all:
 .fd:    ld      a,(hl)
         ld      (hl),FD_NONE
         cp      80h
+        jr      c,.oft
+        cp      FD_PIPE_R
+        jr      c,.next
+        cp      FD_PIPE_W+NPIPE
         jr      nc,.next
-        push    hl
+        call    pipe_unref              ; a pipe end: its count down, its
+        jr      .next                   ; waiters woken
+.oft:   push    hl
         call    fd_oft
         inc     hl                      ; OF_REFS
         dec     (hl)
@@ -557,6 +572,10 @@ exec_finish:
         ld      (SX+VX_SP-ST_VFS),hl
         ld      a,(K_KSEG)
         out     (0FEh),a                ; the window back
+        ld      a,(SX+VX_SPAWN-ST_VFS)
+        or      a
+        jp      nz,spawn_finish         ; a new process's image: its row,
+                                        ; and back to the caller
         ; The row.
         ld      hl,(k_cur)
         push    hl
@@ -637,6 +656,128 @@ exec_finish:
 .go:    ld      hl,(k_cur)
         jp      sched_load
 
+; spawn_finish — exec_finish in spawn mode (VX_SPAWN = 1): the image
+; loaded and framed above is a new process's, whose row is VX_ROW and pid
+; VX_CPID. The row filled as spawn fills one, the caller's directory, the
+; descriptors from the map (VX_FDS), the extension row, into the ring;
+; then back to the switched caller, which returns the pid. The window is
+; back already; the storage segment in page 1 was never touched.
+spawn_finish:
+        ld      hl,(SX+VX_ROW-ST_VFS)
+        push    hl
+        inc     hl
+        ld      de,(SX+VX_SP-ST_VFS)
+        ld      (hl),e                  ; P_SP
+        inc     hl
+        ld      (hl),d
+        inc     hl
+        ld      a,(SX+VX_CPID-ST_VFS)
+        ld      (hl),a                  ; P_PID
+        inc     hl
+        ld      a,(k_pid)
+        ld      (hl),a                  ; P_PPID
+        inc     hl
+        ld      a,(SX+VX_PAGES-ST_VFS)
+        ld      (hl),a                  ; P_NPAGES
+        inc     hl
+        ex      de,hl
+        ld      hl,SX+VX_SEG-ST_VFS
+        ld      bc,3
+        ldir                            ; P_SEG
+        pop     hl
+        push    hl
+        ld      de,P_STATUS
+        add     hl,de
+        ld      (hl),0
+        pop     hl
+        push    hl
+        ld      de,P_CWD
+        add     hl,de
+        ex      de,hl
+        ld      hl,(k_cur)
+        ld      bc,P_CWD
+        add     hl,bc
+        ld      bc,3
+        ldir                            ; P_CWD: the caller's
+        ld      a,(SX+VX_CPID-ST_VFS)
+        call    px_init
+        ld      a,(SX+VX_CPID-ST_VFS)
+        ld      hl,SX+VX_FDS-ST_VFS
+        call    pr_setfds
+        pop     hl
+        ld      (hl),PS_RUN             ; P_STATE, then into the ring
+        di
+        call    sched_link
+        ei
+        ret
+
+; pr_setfds — A = a child's pid, HL -> three bytes: the caller's
+; descriptor that becomes the child's 0, 1 and 2, or FFh for the caller's
+; own of the same number. The child's eight descriptors: those three,
+; the other five closed; a reference on every open file or pipe end they
+; name. The storage segment must be in page 1. Corrupts everything.
+pr_setfds:
+        ld      (sf_map),hl
+        add     a,a
+        add     a,a
+        add     a,a
+        ld      e,a
+        ld      d,high K_FD             ; de -> the child's row
+        push    de
+        ld      h,d
+        ld      l,e
+        ld      b,NOFILE
+.none:  ld      (hl),FD_NONE
+        inc     hl
+        djnz    .none
+        ld      a,(k_pid)
+        add     a,a
+        add     a,a
+        add     a,a
+        ld      l,a
+        ld      h,high K_FD             ; hl -> the caller's row
+        pop     de
+        ld      b,3
+        ld      c,0                     ; c = the child's descriptor
+.fd:    push    hl
+        ld      hl,(sf_map)
+        ld      a,(hl)
+        inc     hl
+        ld      (sf_map),hl
+        pop     hl
+        cp      0FFh
+        jr      nz,.named
+        ld      a,c                     ; the caller's own
+.named: push    hl
+        add     a,l                     ; the row is 8-aligned, a < 8
+        ld      l,a
+        ld      a,(hl)                  ; the caller's byte
+        pop     hl
+        ld      (de),a
+        cp      FD_NONE
+        jr      z,.next
+        cp      80h
+        jr      c,.oft
+        cp      FD_PIPE_R
+        jr      c,.next
+        cp      FD_PIPE_W+NPIPE
+        jr      nc,.next
+        push    de
+        call    pipe_ref
+        pop     de
+        jr      .next
+.oft:   push    hl
+        push    de
+        call    fd_oft
+        inc     hl                      ; OF_REFS
+        inc     (hl)
+        pop     de
+        pop     hl
+.next:  inc     de
+        inc     c
+        djnz    .fd
+        ret
+
 ; vf_resume — HL = the row of a parent blocked in vfork: the frame it will
 ; resume on, on the pages it shares with the exiting child — every
 ; register zero but HL = the child's pid, and the return address the row
@@ -676,10 +817,20 @@ vf_resume:
         pop     hl
         ret
 
-; sys_wait — SYS_WAIT. Out: H = the pid of a child that has exited, L = A
-; = its status, the row free; CF and E_CHILD with no child alive or dead.
-; Blocks while children live and none has exited.
+; sys_waitpid — SYS_WAITPID: A = pid (0 = any child), B = flags. Out: H =
+; the pid of a child that has exited, L = A = its status, the row free;
+; HL = 0 with WNOHANG when children pass the filter and none has exited;
+; CF and E_CHILD when none passes — no child alive or dead, or a pid that
+; is not the caller's child. Blocks otherwise, while children live.
+; sys_wait — SYS_WAIT: waitpid(0, 0).
 sys_wait:
+        xor     a
+        ld      b,a
+sys_waitpid:
+        ld      ixl,a                   ; the pid and the flags travel in IX
+        ld      ixh,b                   ; across a block: the frame saves it,
+                                        ; and a variable would be another
+                                        ; process's by the time this resumes
 .again: ld      a,(k_pid)
         ld      c,a
         ld      d,0                     ; d = living children seen
@@ -700,7 +851,17 @@ sys_wait:
         pop     hl
         cp      c
         jr      nz,.next
-        ld      a,(hl)
+        ld      a,ixl
+        or      a
+        jr      z,.mine                 ; any child
+        push    hl
+        inc     hl
+        inc     hl
+        inc     hl                      ; P_PID
+        cp      (hl)
+        pop     hl
+        jr      nz,.next
+.mine:  ld      a,(hl)
         cp      PS_ZOMBIE
         jr      z,.reap
         inc     d
@@ -708,6 +869,9 @@ sys_wait:
         ld      a,d
         or      a
         jr      z,.nochild
+        ld      a,ixh
+        and     WNOHANG
+        jr      nz,.nohang
         ld      hl,(k_cur)
         ld      (hl),PS_WAIT
         di
@@ -717,7 +881,8 @@ sys_wait:
         push    hl
         push    af
         push    hl
-        jp      sched_save_switch
+        jp      sched_save_block        ; the ring may be empty now: every
+                                        ; child may be blocked itself
 .reap:  ld      (hl),PS_FREE
         push    hl
         ld      de,P_STATUS
@@ -730,6 +895,10 @@ sys_wait:
         ld      h,(hl)                  ; P_PID
         ld      l,a
         or      a                       ; CF clear
+        ret
+.nohang:
+        ld      hl,0
+        xor     a                       ; CF clear
         ret
 .nochild:
         ld      a,E_CHILD
@@ -888,6 +1057,8 @@ fk_create:
         ld      (hl),0
         ld      a,(sp_pid)
         call    pr_inherit              ; the descriptors and the directory
+        ld      a,(sp_pid)
+        call    px_init                 ; the extension row
         ld      hl,(sp_row)
         ld      (hl),PS_RUN             ; P_STATE, then into the ring
         di
@@ -972,6 +1143,13 @@ sys_vfork:
         rrca
         and     0Fh                     ; the child's pid
         call    pr_inherit
+        ld      a,(sp_row)
+        rrca
+        rrca
+        rrca
+        rrca
+        and     0Fh
+        call    px_init                 ; the extension row
         ld      sp,(k_usp)
         ; The parent's row: asleep, its frame's place, its return address.
         ld      hl,(k_cur)
@@ -1014,3 +1192,4 @@ sp_sp:          dw 0            ;   its initial stack pointer
 sp_src:         dw 0            ;   the next byte of the image
 sp_dst:         dw 0            ;   where it goes, in the child's addresses
 sp_rem:         dw 0            ;   bytes left
+sf_map:         dw 0            ; pr_setfds: the cursor over the map

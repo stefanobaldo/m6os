@@ -285,23 +285,34 @@ kbd_pop:
 ; that is the keyboard reads here: HL = bytes read, 1 to BC, blocking
 ; while the queue is empty, on the process's stack; E_INVAL for a length
 ; of 0. A descriptor that is an open file goes to the switched read
-; (ks_vfs.asm) with A = its row's index. CF and E_BADF for the console or
-; a closed descriptor.
+; (ks_vfs.asm) with A = its row's index; a pipe's read end to pipe_read
+; (pipe.asm). CF and E_BADF for the console, a pipe's write end or a
+; closed descriptor.
 sys_read:
         call    fd_code
         cp      FD_KBD
         jr      z,.kbd
         cp      80h
         jp      c,k_sw_read             ; an open file: A = its row
+        cp      FD_PIPE_R
+        jr      c,.badf
+        cp      FD_PIPE_R+NPIPE
+        jp      c,pipe_read             ; a pipe's read end (pipe.asm)
 .badf:  ld      a,E_BADF
         scf
         ret
 .kbd:   ld      a,b
         or      c
         jr      z,.inval
-        ld      (rd_buf),hl
-        ld      (rd_len),bc
-.again: ld      a,(kbd_count)
+        push    hl
+        pop     ix                      ; the buffer and the length travel
+        push    bc                      ; in IX and IY across a block: the
+        pop     iy                      ; frame saves them, and a variable
+                                        ; would be another reader's by the
+                                        ; time this one resumes
+.again: ld      (rd_buf),ix
+        ld      (rd_len),iy
+        ld      a,(kbd_count)
         or      a
         jr      nz,.have
         ; Block: the cursor on, the row out of the ring — then a last look

@@ -65,6 +65,18 @@ sched_init:
         ld      a,FD_CON
         ld      (K_FD+1),a
         ld      (K_FD+2),a
+        ; The extension table: zero, every row waiting on no pipe.
+        ld      hl,K_PX
+        ld      b,NPROC
+.px:    ld      (hl),0FFh               ; PX_WCHAN
+        inc     hl
+        xor     a
+        ld      c,PX_SIZE-1
+.pxz:   ld      (hl),a
+        inc     hl
+        dec     c
+        jr      nz,.pxz
+        djnz    .px
         ret
 
 ; sched_release_boot — once the switched image is loaded: the boot

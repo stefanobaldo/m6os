@@ -1,22 +1,24 @@
-; exec, in the switched part: the file found and checked, the argument
-; block gathered, the segments chosen, the image loaded sector by sector
-; — straight from the driver where a whole sector lands inside a page,
-; through the cache and the copy where it crosses one or is the last —
-; and the resident's exec_finish (proc.asm) called to build the frame and
-; enter the new image. Every check that can fail runs before the first
-; sector is written, so a refused exec returns to a caller whose image is
-; intact; an I/O error while a reused image is being overwritten ends the
-; process, because there is nothing left to return to.
+; exec and spawnv, in the switched part: the file found and checked, the
+; argument block gathered, the segments chosen, the image loaded sector
+; by sector — straight from the driver where a whole sector lands inside
+; a page, through the cache and the copy where it crosses one or is the
+; last — and the resident's exec_finish (proc.asm) called to build the
+; frame and the row: exec's replaces the caller and enters the new image,
+; spawnv's is a new process's and returns to the caller with its pid.
+; Every check that can fail runs before the first sector is written, so a
+; refused exec returns to a caller whose image is intact; an I/O error
+; while a reused image is being overwritten ends the process, because
+; there is nothing left to return to. spawnv never writes the caller's
+; pages, so its every failure returns.
 
-; ks_exec — SYS_EXEC: HL = path, DE = argv (0 = an empty vector). Does not
-; return on success. E_PERM from process 0; E_NOENT, E_NOTDIR, E_ISDIR;
-; E_NOEXEC without the header, or when the image, the block and the frame
-; do not fit the pages asked for; E_2BIG above ARGV_MAX bytes of block;
-; E_NOMEM; E_IO.
-ks_exec:
-        ld      a,(K_PID)
-        or      a
-        jp      z,.perm
+; ex_prepare — HL = a path, DE = argv (0 = an empty vector): everything
+; exec and spawnv check before anything is allocated — the file found,
+; not a directory, below 64K and at least the header, the header read
+; through the cache and checked, the argument block gathered into
+; ST_ARGV, the fit of image + block + frame in the pages asked for. CF
+; with E_NOENT, E_NOTDIR, E_ISDIR, E_NOEXEC, E_2BIG, E_NAMETOOLONG, E_IO.
+; Corrupts everything.
+ex_prepare:
         ld      (SG+VX_ARGV),de
         call    vfs_getpath
         ret     c
@@ -82,6 +84,28 @@ ks_exec:
         ld      de,(SG+VX_SIZE)
         sbc     hl,de
         jp      c,.noexec
+        or      a
+        ret
+.isdir: ld      a,E_ISDIR
+        scf
+        ret
+.noexec:
+        ld      a,E_NOEXEC
+        scf
+        ret
+
+; ks_exec — SYS_EXEC: HL = path, DE = argv (0 = an empty vector). Does not
+; return on success. E_PERM from process 0; ex_prepare's errors; E_NOMEM;
+; E_IO.
+ks_exec:
+        ld      a,(K_PID)
+        or      a
+        jp      z,.perm
+        ld      (SG+VX_OWNER),a         ; the segments are the caller's
+        xor     a
+        ld      (SG+VX_SPAWN),a         ; the image replaces the caller
+        call    ex_prepare
+        ret     c
         ; The segments.
         call    ex_segs
         ret     c
@@ -104,11 +128,100 @@ ks_exec:
 .perm:  ld      a,E_PERM
         scf
         ret
-.isdir: ld      a,E_ISDIR
+
+; ks_spawnv — SYS_SPAWNV: HL = path, DE = argv (0 = an empty vector), BC
+; -> three bytes: the caller's descriptor that becomes the child's 0, 1
+; and 2, FFh for the caller's own of the same number. Out: HL = A = the
+; child's pid. ex_prepare's errors; E_BADF (a map entry that is not FFh or
+; an open descriptor); E_AGAIN (no row); E_NOMEM (a segment short); E_IO
+; (the load) — every failure leaves the caller intact and nothing taken:
+; the image goes into the child's segments and never touches the
+; caller's. Process 0 may call it: the path and the vector are in page 3,
+; which um_in reads directly.
+ks_spawnv:
+        ld      a,1
+        ld      (SG+VX_SPAWN),a
+        push    bc
+        call    ex_prepare
+        pop     hl
+        ret     c
+        ; The descriptor map, from the caller.
+        ld      de,VX_FDS
+        ld      bc,3
+        call    um_in
+        call    ex_fdcheck
+        ret     c
+        ; A row.
+        ld      hl,K_PROC
+        ld      b,NPROC-1
+.row:   ld      a,l
+        add     a,P_SIZE
+        ld      l,a
+        ld      a,(hl)
+        or      a                       ; PS_FREE
+        jr      z,.got
+        djnz    .row
+        ld      a,E_AGAIN
         scf
         ret
-.noexec:
-        ld      a,E_NOEXEC
+.got:   ld      (SG+VX_ROW),hl
+        ld      a,l
+        rrca
+        rrca
+        rrca
+        rrca                            ; the pid: the row's index
+        ld      (SG+VX_CPID),a
+        ld      (SG+VX_OWNER),a         ; the segments are the child's
+        ; Fresh segments, every page a new one.
+        ld      a,1
+        ld      (SG+VX_FRESH),a
+        xor     a
+        ld      (SG+VX_OLDN),a
+        ld      (SG+VX_NEW),a
+        call    ex_alloc
+        ret     c                       ; E_NOMEM, nothing kept
+        call    ex_load
+        jr      c,.loadfail
+        k_call  API_EXEC_FINISH         ; spawn mode: returns
+        ld      a,(SG+VX_CPID)
+        ld      l,a
+        ld      h,0
+        or      a                       ; CF clear
+        ret
+.loadfail:
+        push    af
+        call    ex_free_new             ; the child's segments back; the
+        pop     af                      ; row was never marked
+        ret
+
+; ex_fdcheck — VX_FDS: each byte FFh, or a descriptor below NOFILE that
+; the caller has open. CF with E_BADF otherwise. Corrupts everything.
+ex_fdcheck:
+        ld      hl,SG+VX_FDS
+        ld      b,3
+.fd:    ld      a,(hl)
+        cp      0FFh
+        jr      z,.next
+        cp      NOFILE
+        jr      nc,.badf
+        push    hl
+        ld      e,a
+        ld      a,(K_PID)
+        add     a,a
+        add     a,a
+        add     a,a
+        add     a,e
+        ld      l,a
+        ld      h,high K_FD
+        ld      a,(hl)
+        pop     hl
+        cp      FD_NONE
+        jr      z,.badf
+.next:  inc     hl
+        djnz    .fd
+        or      a
+        ret
+.badf:  ld      a,E_BADF
         scf
         ret
 
@@ -217,11 +330,11 @@ ex_args:
         scf
         ret
 
-; ex_segs — VX_SEG: the segments the image loads into. A vfork child —
-; its parent is in PS_VFORK, which it is exactly while this child runs —
-; gets VX_PAGES fresh ones (VX_FRESH = 1); a process on its own pages keeps
-; them, taking more or marking the surplus. CF with E_NOMEM, nothing kept.
-; Corrupts everything.
+; ex_segs — exec's VX_SEG: the segments the image loads into. A vfork
+; child — its parent is in PS_VFORK, which it is exactly while this child
+; runs — gets VX_PAGES fresh ones (VX_FRESH = 1); a process on its own
+; pages keeps them, taking more or marking the surplus. Both through
+; ex_alloc below. CF with E_NOMEM, nothing kept. Corrupts everything.
 ex_segs:
         xor     a
         ld      (SG+VX_NEW),a
@@ -257,7 +370,13 @@ ex_segs:
         ld      (SG+VX_FRESH),a
         xor     a
         ld      (SG+VX_OLDN),a          ; nothing of the child's to keep
-.own:   ld      a,(SG+VX_PAGES)
+.own:   jr      ex_alloc
+
+; ex_alloc — VX_PAGES - VX_OLDN segments allocated to VX_OWNER, into
+; VX_SEG from slot VX_OLDN on; VX_NEW counts them. CF with E_NOMEM,
+; nothing kept. Corrupts everything.
+ex_alloc:
+        ld      a,(SG+VX_PAGES)
         ld      hl,SG+VX_OLDN
         sub     (hl)
         ret     c                       ; fewer pages: the surplus is freed
@@ -269,7 +388,7 @@ ex_segs:
         ld      l,a                     ; hl -> the first slot to fill
 .alloc: push    bc
         push    hl
-        ld      a,(K_PID)
+        ld      a,(SG+VX_OWNER)
         ld      b,a
         k_call  API_MEM_ALLOC
         pop     hl
@@ -288,8 +407,8 @@ ex_segs:
         scf
         ret
 
-; ex_free_new — the VX_NEW segments this exec allocated, from VX_OLDN on,
-; back to the allocator. Corrupts everything.
+; ex_free_new — the VX_NEW segments ex_alloc took for VX_OWNER, from
+; VX_OLDN on, back to the allocator. Corrupts everything.
 ex_free_new:
         ld      a,(SG+VX_NEW)
         or      a
@@ -303,7 +422,7 @@ ex_free_new:
         push    hl
         ld      a,(hl)
         ld      c,a
-        ld      a,(K_PID)
+        ld      a,(SG+VX_OWNER)
         ld      b,a
         ld      a,c
         k_call  API_MEM_FREE

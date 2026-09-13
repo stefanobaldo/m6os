@@ -43,6 +43,7 @@
         jp      ks_rename               ; KS_RENAME
         jp      ks_bflush               ; KS_BFLUSH (ks_blk.asm)
         jp      ks_bzero                ; KS_BZERO
+        jp      ks_spawnv               ; KS_SPAWNV (ks_exec.asm)
 
 ; ks_enosys — an entry whose body does not exist yet.
 ks_enosys:
