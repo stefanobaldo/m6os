@@ -7,6 +7,7 @@
 ;                       wants (1-3), a zero. The program's first
 ;                       instruction is at the label start.
 ;   m6_puts str         write the 0-terminated string at str to fd 1
+;   m6_dec16, m6_atoi   a number out in decimal, digits in (in m6_proglib)
 ;   m6_proglib          the routines the macros call: put it after the
 ;                       program's code, before its data
 ;
@@ -59,6 +60,28 @@ m6_dec16:
         ex      de,hl
         jp      m6_puts_hl
 m6_decbuf:      ds 6
+
+; m6_atoi — HL -> decimal digits: HL = their value, DE -> the first byte
+; that is not a digit. No sign, no overflow check. Corrupts AF, BC.
+m6_atoi:
+        ex      de,hl
+        ld      hl,0
+.next:  ld      a,(de)
+        sub     '0'
+        ret     c
+        cp      10
+        ret     nc
+        ld      b,h
+        ld      c,l
+        add     hl,hl
+        add     hl,hl
+        add     hl,bc
+        add     hl,hl                   ; * 10
+        ld      c,a
+        ld      b,0
+        add     hl,bc
+        inc     de
+        jr      .next
 
 ; m6_div16 — HL = HL / BC, A = the remainder (BC < 256). Preserves BC, DE.
 m6_div16:
