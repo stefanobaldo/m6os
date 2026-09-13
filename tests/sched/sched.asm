@@ -259,8 +259,8 @@ nx_ramslot1 equ RAMAD1
         include "nextor/capture.asm"
 ld_image    equ kimage
 ld_rec      equ REC
-ld_block    equ tblock
-ld_block_len equ tblock_end-tblock
+ld_block    equ 0                   ; nothing above the image: the block
+ld_block_len equ 0                  ; runs where it lies, in page 1
         include "loader/takeover.asm"
 
 ; Everything above runs, or is read, while a driver call or an inter-slot
@@ -276,11 +276,12 @@ ksimage:
 ksimage_end:
 
 
-; The second half, assembled for K_IMAGE_END (build/kernel.exp), where the
-; loader copies it: the test's code and data, and the user images after
+; The second half, in page 1 of the loader's memory, which the kernel
+; keeps as process 0's page 1 so the block runs where it lies: the test's code and data, and the user images after
 ; them. It runs as process 0.
 tblock:
-        DISP    K_IMAGE_END
+        ASSERT  tblock >= 4000h         ; in page 1: the loader's boot segment,
+                                        ; which the kernel keeps as process 0's
 t_entry:
 ; --- step 5: process 0 and the kernel's memory ------------------------------
         ld      a,5
@@ -308,6 +309,12 @@ t_entry:
         cp      (hl)
         ld      a,0E1h
         jp      nz,t_fail_status        ; page 0 is not the switched image
+        inc     c
+        ld      a,(K_REC+KR_SEG64K+1)   ; this block runs in page 1, so
+        ld      hl,K_PROC+P_SEG+1       ; process 0's page 1 is the
+        cp      (hl)                    ; loader's boot segment, kept
+        ld      a,0E1h
+        jp      nz,t_fail_status        ; page 1 is not the block's page
         inc     c
         ld      a,(K_INTRPT)
         cp      0C3h
@@ -338,8 +345,8 @@ t_entry:
         k_call  API_CON_PUTS
         k_call  API_MEM_INFO
         ld      (t_free0),bc            ; free now: usable - page 3 - the
-        ld      hl,-3                   ; switched image - the scratch page
-        add     hl,de
+        ld      hl,-4                   ; switched image - the scratch page
+        add     hl,de                   ; - this block's page
         or      a
         sbc     hl,bc
         ld      a,0E1h
@@ -348,31 +355,17 @@ t_entry:
         k_call  API_CON_DEC16
         ld      hl,t_k5d
         k_call  API_CON_PUTS
-        ; The two released boot segments are on the free stack: the next
-        ; two allocations return them, in either order.
+        ; The released boot segment of page 0 is on the free stack: the
+        ; next allocation returns it. Page 1's is this block's, kept.
         ld      b,2
         k_call  API_MEM_ALLOC
         ld      c,a
         ld      a,0E1h
         jp      c,t_fail
-        ld      b,2
-        k_call  API_MEM_ALLOC
-        ld      b,a
-        ld      a,0E1h
-        jp      c,t_fail                ; b, c = the two segments
         ld      a,(K_REC+KR_SEG64K+0)
-        cp      b
-        jr      z,.b0
         cp      c
         ld      a,0E1h
         jp      nz,t_fail               ; page 0's boot segment not released
-        ld      a,(K_REC+KR_SEG64K+1)
-        cp      b
-        jr      .other
-.b0:    ld      a,(K_REC+KR_SEG64K+1)
-        cp      c
-.other: ld      a,0E1h
-        jp      nz,t_fail               ; page 1's boot segment not released
         ld      b,2
         k_call  API_MEM_FREE_ALL
         ld      hl,t_ok
@@ -861,7 +854,7 @@ t_halt:
 t_k5:       db  "5 process 0: ",0
 t_k5b:      db  "page 0 is segment ",0
 t_k5c:      db  ", ",0
-t_k5d:      db  " free, boot pages released: ",0
+t_k5d:      db  " free, boot page 0 released: ",0
 t_ok:       db  "ok",10,0
 t_k6:       db  "6 ",0
 t_k6b:      db  "  exit 42 from pid 1, segments freed, ECHILD; ret, jp 0: ",0
@@ -897,7 +890,6 @@ t_t0:       dw  0
 t_ctl:      dw  0
 t_pair:     dw  0
 t_count:    dw  0
-        ENT
 
 ; The user programs, each assembled for P0_PROG and copied there by spawn.
 ; They call the kernel through K_SYS — and read the tick counter straight
@@ -907,7 +899,7 @@ t_count:    dw  0
 
 ; u_image name — the two addresses of an image, after its u_name_k_end.
     macro u_image name
-name        equ K_IMAGE_END+(name_k-tblock)
+name        equ name_k
 name_end    equ name+(name_k_end-name_k)
     endm
 
