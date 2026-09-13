@@ -765,6 +765,13 @@ t_entry:
         ld      hl,t_want
         cp      (hl)
         jp      nz,t_fail_status
+        ; A buffer that reaches page 3, the kernel's, on a read: refused
+        ; with EFAULT, from a child: 0.
+        ld      hl,u_badbuf
+        ld      bc,u_badbuf_end-u_badbuf
+        call    t_run1
+        or      a
+        jp      nz,t_fail_status
         ; Every refusal, from a child: 0.
         ld      hl,u_execerr
         ld      bc,u_execerr_end-u_execerr
@@ -1442,6 +1449,34 @@ u_execvfh_k:
         ENT
 u_execvfh_k_end:
         u_image u_execvfh
+
+; u_badbuf — read into a buffer that ends in page 3, where the kernel is:
+; EFAULT, and nothing written. Exits 0, or 1 when the kernel accepted it,
+; 2 when the file could not be opened.
+u_badbuf_k:
+        DISP    P0_PROG
+        ld      hl,.path
+        xor     a
+        sys     SYS_OPEN
+        jr      c,.x2
+        ld      hl,0BFF0h               ; 16 bytes before the kernel's page
+        ld      bc,100
+        sys     SYS_READ
+        jr      nc,.x1
+        cp      E_FAULT
+        jr      nz,.x1
+        xor     a
+        sys     SYS_EXIT
+.x1:    ld      a,1
+        sys     SYS_EXIT
+.x2:    ld      a,2
+        sys     SYS_EXIT
+.path:  db      "/data/big.bin",0
+        ENT
+u_badbuf_k_end:
+
+u_badbuf      equ K_IMAGE_END+(u_badbuf_k-tblock)
+u_badbuf_end  equ u_badbuf+(u_badbuf_k_end-u_badbuf_k)
 
 ; u_execvf — vfork; the child execs /bin/hello with its three arguments;
 ; the parent wakes, waits, and exits with the child's status — 7 if the
