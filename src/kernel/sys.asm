@@ -3,8 +3,9 @@
 ; SPDX-License-Identifier: BSD-3-Clause
 ;
 ; The resident syscalls: the ones on the hot path, whose K_SYS entry jumps
-; straight to the body. exit, spawn, wait, yield, fork and vfork are in
-; proc.asm, read in kbd.asm; sysconf is in the switched part (kseg.asm). Convention as kernel.inc states it: arguments in A, HL,
+; straight to the body. exit, spawn, wait, waitpid, yield, fork and vfork
+; are in proc.asm, read in kbd.asm, pipe in pipe.asm, sleep in px.asm;
+; sysconf is in the switched part (kseg.asm). Convention as kernel.inc states it: arguments in A, HL,
 ; DE, BC; result in HL; CF set with the errno in A; nothing else preserved.
 
 ; fd_code — A = a descriptor: A = its byte in the current process's row of
@@ -27,25 +28,94 @@ fd_code:
         ret
 
 ; sys_write — SYS_WRITE: A = fd, HL = buffer, BC = length. A descriptor
-; that is the console writes there, without leaving the resident; one that
-; names an open file goes to the switched part with A = the open-file
-; row's index. Out: HL = bytes written; CF and E_BADF for the keyboard or
-; a closed descriptor.
+; that is the console writes there, without leaving the resident, and so
+; does a pipe's write end (pipe.asm); one that names an open file goes to
+; the switched part with A = the open-file row's index. Out: HL = bytes
+; written; CF and E_BADF for the keyboard, a pipe's read end or a closed
+; descriptor.
 sys_write:
         call    fd_code
         cp      FD_CON
         jr      z,.con
         cp      80h
-        jr      nc,.badf
-        ld      ix,KS_WRITE
-        jp      k_sw_s
+        jr      c,.file
+        cp      FD_PIPE_W
+        jr      c,.badf
+        cp      FD_PIPE_W+NPIPE
+        jp      c,pipe_write            ; a pipe's write end (pipe.asm)
 .badf:  ld      a,E_BADF
         scf
         ret
+.file:  ld      ix,KS_WRITE
+        jp      k_sw_s
 .con:   push    bc
         call    con_write               ; the whole buffer, scrolled once
         pop     hl                      ; the length, all of it written
         or      a                       ; CF clear
+        ret
+
+; sys_close — SYS_CLOSE: A = fd. A pipe end is closed here — the slot
+; freed, the pipe's count down, its waiters woken — and everything else
+; in the switched part (ks_close), which owns the open-file table.
+sys_close:
+        ld      c,a
+        call    fd_code                 ; a = the byte, de -> it
+        cp      FD_PIPE_R
+        jr      c,.sw
+        cp      FD_PIPE_W+NPIPE
+        jr      nc,.sw
+        ex      de,hl
+        ld      (hl),FD_NONE
+        call    pipe_unref
+        xor     a                       ; CF clear
+        ret
+.sw:    ld      a,c
+        k_sw_stub KS_CLOSE
+
+; sys_procinfo — SYS_PROCINFO: A = pid, HL = a PROCINFO_SIZE buffer: the
+; process's row, then its extension row, copied as they are — the
+; kernel's own layout, which ps follows and nothing else should. E_INVAL
+; past NPROC, E_SRCH for a free row, E_FAULT for a buffer reaching page 3.
+sys_procinfo:
+        cp      NPROC
+        jr      nc,.inval
+        ld      d,a
+        ld      a,(k_pid)
+        or      a
+        ld      a,d
+        jr      z,.ok                   ; process 0's buffer may be anywhere
+        ld      a,h
+        cp      0C0h-1                  ; the 24 bytes must end below C000h
+        jr      c,.ok2
+        ld      a,E_FAULT
+        scf
+        ret
+.ok2:   ld      a,d
+.ok:    ex      de,hl                   ; de = the buffer
+        push    af
+        add     a,a
+        add     a,a
+        add     a,a
+        add     a,a
+        ld      l,a
+        ld      h,high K_PROC
+        ld      a,(hl)
+        or      a                       ; PS_FREE
+        jr      z,.srch
+        ld      bc,P_SIZE
+        ldir
+        pop     af
+        call    px_row
+        ld      bc,PX_SIZE
+        ldir
+        xor     a                       ; CF clear
+        ret
+.srch:  pop     af
+        ld      a,E_SRCH
+        scf
+        ret
+.inval: ld      a,E_INVAL
+        scf
         ret
 
 ; sys_getpid — SYS_GETPID. Out: HL = pid.
@@ -88,3 +158,5 @@ k_sw_rmdir:
         k_sw_stub KS_RMDIR
 k_sw_rename:
         k_sw_stub KS_RENAME
+k_sw_spawnv:
+        k_sw_stub KS_SPAWNV

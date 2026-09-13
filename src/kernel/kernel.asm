@@ -82,7 +82,8 @@ k_sys:
         jp      sys_fork                ; SYS_FORK
         jp      sys_vfork               ; SYS_VFORK
         jp      k_sw_open               ; SYS_OPEN, in the switched part
-        jp      k_sw_close              ; SYS_CLOSE
+        jp      sys_close               ; SYS_CLOSE: a pipe end here, the
+                                        ; rest in the switched part
         jp      k_sw_lseek              ; SYS_LSEEK
         jp      k_sw_stat               ; SYS_STAT
         jp      k_sw_readdir            ; SYS_READDIR
@@ -92,6 +93,11 @@ k_sys:
         jp      k_sw_mkdir              ; SYS_MKDIR
         jp      k_sw_rmdir              ; SYS_RMDIR
         jp      k_sw_rename             ; SYS_RENAME
+        jp      sys_pipe                ; SYS_PIPE (pipe.asm)
+        jp      k_sw_spawnv             ; SYS_SPAWNV, in the switched part
+        jp      sys_waitpid             ; SYS_WAITPID (proc.asm)
+        jp      sys_sleep               ; SYS_SLEEP (px.asm)
+        jp      sys_procinfo            ; SYS_PROCINFO (sys.asm)
         DUP     K_SYS_N-SYS_N
         jp      sys_enosys
         EDUP
@@ -111,6 +117,9 @@ k_pid:  dw      0                       ; the current pid; the high byte stays 0
         block   K_PROC-$
 k_proc: ds      NPROC*P_SIZE            ; the process table, one aligned page
 k_fd:   ds      NPROC*NOFILE            ; the descriptor table (proc.asm)
+k_px:   ds      NPROC*PX_SIZE           ; the extension table (px.asm)
+k_pipebuf:
+        ds      NPIPE*256               ; the pipe buffers (pipe.asm)
         ASSERT  k_ticks == K_TICKS
         ASSERT  k_probe == K_PROBE
         ASSERT  k_probe_slot == K_PROBE_SLOT
@@ -129,6 +138,8 @@ k_fd:   ds      NPROC*NOFILE            ; the descriptor table (proc.asm)
         ASSERT  k_pid == K_PID
         ASSERT  k_proc == K_PROC
         ASSERT  k_fd == K_FD
+        ASSERT  k_px == K_PX
+        ASSERT  k_pipebuf == K_PIPEBUF
 
 ; The driver module's two external needs, supplied by this image: its own
 ; slot switch, and the RAM slot for page 1 as captured.
@@ -148,6 +159,8 @@ nx_ramslot1     equ K_REC+KR_RAMAD+1
         include "kernel/blk.asm"
         include "kernel/sched.asm"
         include "kernel/proc.asm"
+        include "kernel/px.asm"
+        include "kernel/pipe.asm"
         include "kernel/sys.asm"
         include "kernel/main.asm"
 
@@ -160,9 +173,12 @@ k_stack:
         ds      512
 k_end:
 
-; Exported for programs that assemble a block to run at K_END, and for a
-; harness that wants to know when the kernel idles.
+; Exported for programs that assemble a block to run at K_END, for a
+; harness that wants to know when the kernel idles, and for a test that
+; looks at the pipe table.
 K_IMAGE_END     equ k_end
 K_IDLE_HALT     equ sched_idle_halt
+K_PIPE_TAB      equ k_pipe
         EXPORT  K_IMAGE_END
         EXPORT  K_IDLE_HALT
+        EXPORT  K_PIPE_TAB

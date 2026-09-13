@@ -51,6 +51,7 @@ k_isr_in:
         ld      (K_TICKS),hl
         call    kbd_tick                ; the keyboard: a scan when due,
                                         ; readers woken into the ring
+        call    sleep_tick              ; sleepers whose tick this is
         ld      a,(k_nrun)
         cp      2
         jr      c,.ret                  ; nobody else to run
