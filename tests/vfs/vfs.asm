@@ -214,8 +214,8 @@ nx_ramslot1 equ RAMAD1
 
 ld_image    equ kimage
 ld_rec      equ REC
-ld_block    equ tblock
-ld_block_len equ tblock_end-tblock
+ld_block    equ 0                   ; nothing above the image: the block
+ld_block_len equ 0                  ; runs where it lies, in page 1
         include "loader/takeover.asm"
 
 ; Everything above runs, or is read, while a driver call or an inter-slot
@@ -231,14 +231,15 @@ ksimage:
 ksimage_end:
         ASSERT  ksimage_end < 8000h
 
-; The second half, assembled for K_IMAGE_END (build/kernel.exp), where the
-; loader copies it, above the image in page 3. It runs once the kernel has
+; The second half, in page 1 of the loader's memory, which the kernel
+; keeps as process 0's page 1 so the block runs where it lies. It runs once the kernel has
 ; booted and mounted the volumes, as process 0, whose page 2 is the storage
 ; segment — the mount table is at 8000h+ST_MNT here — and it calls the
 ; kernel the way a program does, through K_SYS. Its paths and buffers are
 ; in page 3, which every process sees.
 tblock:
-        DISP    K_IMAGE_END
+        ASSERT  tblock >= 4000h         ; in page 1: the loader's boot segment,
+                                        ; which the kernel keeps as process 0's
 
 t_entry:
 ; --- step 8: the volumes and the mount table ------------------------------
@@ -726,7 +727,8 @@ t_entry:
         ; caught here; and hello's 210 bytes are one partial sector copied
         ; through the cache, so a copy that went to the mapped page 0
         ; instead of the child's fresh one would land on this parent's
-        ; code. It hands hello's status on: 7.
+        ; code. It hands hello's status on: 7. (Three pages and one is what
+        ; the base machine has room for beside this test's own page.)
         ld      hl,u_execvf
         ld      bc,u_execvf_end-u_execvf
         ld      a,3
@@ -1034,13 +1036,12 @@ t_names:    dw  0
 t_seen:     ds  32
 t_rec:      ds  DIRENT_SIZE
 t_buf:      ds  16
-        ENT
 
 ; The user programs, assembled for P0_PROG and copied there by spawn. They
 ; live in the block, in page 3 once the loader has copied it, where
 ; process 0 reads them.
     macro u_image name
-name        equ K_IMAGE_END+(name_k-tblock)
+name        equ name_k
 name_end    equ name+(name_k_end-name_k)
     endm
 
@@ -1470,9 +1471,7 @@ u_badbuf_k:
 .path:  db      "/data/big.bin",0
         ENT
 u_badbuf_k_end:
-
-u_badbuf      equ K_IMAGE_END+(u_badbuf_k-tblock)
-u_badbuf_end  equ u_badbuf+(u_badbuf_k_end-u_badbuf_k)
+        u_image u_badbuf
 
 ; u_execvf — vfork; the child execs /bin/hello with its three arguments;
 ; the parent wakes, waits, and exits with the child's status — 7 if the

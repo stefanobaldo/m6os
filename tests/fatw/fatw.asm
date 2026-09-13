@@ -212,8 +212,8 @@ nx_ramslot1 equ RAMAD1
 
 ld_image    equ kimage
 ld_rec      equ REC
-ld_block    equ tblock
-ld_block_len equ tblock_end-tblock
+ld_block    equ 0                   ; nothing above the image: the block
+ld_block_len equ 0                  ; runs where it lies, in page 1
         include "loader/takeover.asm"
 
 ; Everything above runs, or is read, while a driver call or an inter-slot
@@ -229,13 +229,14 @@ ksimage:
 ksimage_end:
         ASSERT  ksimage_end < 8000h
 
-; The second half, assembled for K_IMAGE_END (build/kernel.exp), where the
-; loader copies it, above the image in page 3. It runs once the kernel has
+; The second half, in page 1 of the loader's memory, which the kernel
+; keeps as process 0's page 1 so the block runs where it lies. It runs once the kernel has
 ; booted and mounted the volumes, as process 0, whose page 2 is the storage
 ; segment — the cache headers are at 8000h+ST_HDR here — and it calls the
 ; kernel the way a program does, through K_SYS.
 tblock:
-        DISP    K_IMAGE_END
+        ASSERT  tblock >= 4000h         ; in page 1: the loader's boot segment,
+                                        ; which the kernel keeps as process 0's
 
 O_CW        equ O_CREAT|O_WRONLY
 
@@ -1371,11 +1372,10 @@ t_calls:    dw  0
 t_seen:     ds  8
 t_rec:      ds  DIRENT_SIZE
 t_buf:      ds  512
-        ENT
 
 ; The user programs, assembled for P0_PROG and copied there by spawn.
     macro u_image name
-name        equ K_IMAGE_END+(name_k-tblock)
+name        equ name_k
 name_end    equ name+(name_k_end-name_k)
     endm
 
@@ -1837,6 +1837,3 @@ u_filler_k_end:
 
 tblock_end:
         ASSERT  $ < 8000h
-        ; The block lands above the image in page 3, under the wall the
-        ; loader read; the emulator's is F1A3h.
-        ASSERT  K_IMAGE_END+(tblock_end-tblock) < 0F100h

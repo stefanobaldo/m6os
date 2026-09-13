@@ -6,10 +6,11 @@
 ;   ld_image      where the resident image (build/kernel.bin) sits in the
 ;                 program
 ;   ld_rec        the KREC_SIZE-byte record the program has filled
-;   ld_block      a block to copy to K_END, above the image — the program's
-;                 own code to run once the kernel has booted, entered
-;                 through KR_TEST
-;   ld_block_len  its length, 0 for none
+;   ld_block      a block to copy to K_END, above the image; 0 with
+;   ld_block_len  its length 0 — what every test does since the room
+;                 above the image ran out: the program the record's
+;                 KR_TEST names then lies in the program's own page 1,
+;                 which the kernel keeps as process 0's, and runs in place
 ;
 ; Both expect a stack outside page 3 (the DOS stack sits under DOSHIM,
 ; which the takeover overwrites) and interrupts enabled on entry.
