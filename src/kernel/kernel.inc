@@ -231,7 +231,13 @@ SYS_WAITPID     equ 23          ; A = pid (0 = any child), B = WNOHANG or
 SYS_SLEEP       equ 24          ; HL = ticks -> HL = 0, after them
 SYS_PROCINFO    equ 25          ; A = pid, HL = a PROCINFO_SIZE buffer;
                                 ; EINVAL, ESRCH
-SYS_N           equ 26          ; entries given a syscall so far
+SYS_GETCWD      equ 26          ; HL = buffer, BC = its size -> HL = the
+                                ; length; ENAMETOOLONG, EIO
+SYS_TIME        equ 27          ; -> HL = FAT date, DE = FAT time
+SYS_CHMOD       equ 28          ; HL = path, A = DA_RDONLY|DA_HIDDEN|
+                                ; DA_SYSTEM|DA_ARCHIVE; EINVAL, ENOENT,
+                                ; ENOTDIR, EACCES, EROFS, EIO
+SYS_N           equ 29          ; entries given a syscall so far
 WNOHANG         equ 1           ; waitpid: do not block
 PROCINFO_SIZE   equ P_SIZE+PX_SIZE ; the row, then the extension row
 
@@ -346,6 +352,8 @@ KS_RENAME       equ KS_TABLE2+36
 KS_BFLUSH       equ KS_TABLE2+39 ; the cache's write side (ks_blk.asm)
 KS_BZERO        equ KS_TABLE2+42
 KS_SPAWNV       equ KS_TABLE2+45 ; (ks_exec.asm)
+KS_GETCWD       equ KS_TABLE2+48 ; (ks_vfs.asm)
+KS_CHMOD        equ KS_TABLE2+51 ; (ks_vfsw.asm)
 
 ; The window (kwin.asm) and the storage gate: what is in page 2 and page 1
 ; while the switched part of the kernel runs. kwin_enter puts the switched

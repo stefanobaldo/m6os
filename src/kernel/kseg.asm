@@ -48,6 +48,8 @@
         jp      ks_bflush               ; KS_BFLUSH (ks_blk.asm)
         jp      ks_bzero                ; KS_BZERO
         jp      ks_spawnv               ; KS_SPAWNV (ks_exec.asm)
+        jp      ks_getcwd               ; KS_GETCWD (ks_vfs.asm)
+        jp      ks_chmod                ; KS_CHMOD (ks_vfsw.asm)
 
 ; ks_enosys — an entry whose body does not exist yet.
 ks_enosys:

@@ -1178,6 +1178,222 @@ ks_chdir:
         scf
         ret
 
+; ks_getcwd — SYS_GETCWD: HL = a buffer, BC = its size. Out: HL = the
+; length of the path written, 0-terminated: /mnt when the process's
+; directory is /mnt, / for the boot volume's root, /mnt/<letter> for
+; another volume's, else the directory's canonical name — / and the
+; components from the root down, /mnt/<letter> in front when the volume
+; is not the boot one. Built from the end of VV_PATH backwards: each
+; directory's own .. entry names its parent, and a scan of the parent for
+; the entry whose cluster is the directory's gives its name. E_NAMETOOLONG
+; when the path or the buffer is too short, E_IO.
+ks_getcwd:
+        call    um_check
+        ret     c
+        ld      (SG+VV_RBUF),hl
+        ld      (SG+VV_RLEFT),bc
+        call    vfs_begin
+        ld      hl,SG+VV_PATH+PATH_MAX-1
+        ld      (hl),0                  ; the terminator; the path grows down
+        ld      (SG+VV_P),hl
+        ld      hl,(K_CUR)
+        ld      de,P_CWD
+        add     hl,de
+        ld      a,(hl)
+        ld      (SG+VV_VOL),a
+        inc     hl
+        ld      e,(hl)
+        inc     hl
+        ld      d,(hl)
+        ld      (SG+VV_CLUS),de
+        cp      VOL_NONE
+        jr      nz,.walk
+        ld      hl,s_slashmnt           ; /mnt itself
+        ld      bc,4
+        call    .prepend
+        jp      .out
+.walk:  ld      hl,(SG+VV_CLUS)
+        ld      a,h
+        or      l
+        jp      z,.root                 ; at the volume's root
+        ; The directory's .. entry: its first sector, entry 1.
+        call    dir_scan_start
+        ret     c
+        call    dir_scan_next
+        ret     c
+        jp      z,.io                   ; a directory with no sector
+        ld      a,(SG+VV_VOL)
+        k_call  API_BGET
+        ret     c
+        ld      de,FE_SIZEOF+FE_CLUS
+        add     hl,de
+        ld      e,(hl)
+        inc     hl
+        ld      d,(hl)                  ; de = the parent's cluster
+        ld      hl,(SG+VV_CLUS)
+        ld      (SG+VV_T+6),hl          ; the cluster to find in the parent
+        ld      (SG+VV_CLUS),de
+        call    dir_find_clus           ; VR_ENT = this directory's entry
+        ret     c
+        ld      hl,SG+VR_ENT+FE_NAME
+        ld      de,SG+VV_REC
+        call    fe_name_out             ; "name.ext", 0-terminated
+        ld      hl,SG+VV_REC
+        ld      bc,0
+.len:   ld      a,(hl)
+        or      a
+        jr      z,.gotlen
+        inc     hl
+        inc     bc
+        jr      .len
+.gotlen:
+        ld      hl,SG+VV_REC
+        call    .prepend
+        ret     c
+        ld      hl,s_slash
+        ld      bc,1
+        call    .prepend
+        ret     c
+        jp      .walk
+.root:  ld      a,(SG+VV_VOL)
+        ld      hl,K_BLK_ROOT
+        cp      (hl)
+        jr      z,.boot
+        add     a,'a'
+        ld      (SG+VV_REC),a           ; /mnt/<letter>
+        ld      hl,SG+VV_REC
+        ld      bc,1
+        call    .prepend
+        ret     c
+        ld      hl,s_slashmnt
+        ld      bc,5                    ; "/mnt/"
+        call    .prepend
+        ret     c
+        jr      .out
+.boot:  ld      hl,(SG+VV_P)
+        ld      de,SG+VV_PATH+PATH_MAX-1
+        or      a
+        sbc     hl,de
+        jr      nz,.out                 ; something was built
+        ld      hl,s_slash              ; the root alone: /
+        ld      bc,1
+        call    .prepend
+.out:   ; The result to the caller: length + 1 bytes from VV_P.
+        ld      hl,SG+VV_PATH+PATH_MAX-1
+        ld      de,(SG+VV_P)
+        or      a
+        sbc     hl,de                   ; hl = the length
+        push    hl
+        inc     hl                      ; with the terminator
+        ld      de,(SG+VV_RLEFT)
+        ex      de,hl
+        or      a
+        sbc     hl,de                   ; size - (length + 1)
+        jr      c,.long
+        ld      b,d
+        ld      c,e                     ; bc = length + 1
+        ld      hl,(SG+VV_P)
+        ld      de,-SG
+        add     hl,de                   ; the storage offset
+        ld      de,(SG+VV_RBUF)
+        call    um_out
+        pop     hl
+        or      a
+        ret
+.long:  pop     hl
+        ld      a,E_NAMETOOLONG
+        scf
+        ret
+.io:    ld      a,E_IO
+        scf
+        ret
+; .prepend — HL -> BC bytes: copied in front of what is built, VV_P moved
+; down. CF with E_NAMETOOLONG when VV_PATH is full. Corrupts everything.
+.prepend:
+        ld      de,(SG+VV_P)
+        ex      de,hl
+        or      a
+        sbc     hl,bc                   ; the new start
+        ex      de,hl
+        push    de
+        push    hl
+        ld      hl,SG+VV_PATH
+        ex      de,hl
+        or      a
+        sbc     hl,de                   ; new start - the area's start
+        pop     hl
+        pop     de
+        jr      c,.full
+        ld      (SG+VV_P),de
+        ldir
+        or      a
+        ret
+.full:  ld      a,E_NAMETOOLONG
+        scf
+        ret
+s_slashmnt:     db  "/mnt/"
+s_slash:        db  "/"
+
+; dir_find_clus — the node (VV_VOL, VV_CLUS) and VV_T+6 = a cluster: the
+; directory entry in that node whose first cluster it is and whose
+; attribute has DA_DIR, copied to VR_ENT, VR_DSEC/VR_DIDX where it is —
+; dir_find with the cluster for the name. CF with E_NOENT or E_IO.
+; Corrupts everything.
+dir_find_clus:
+        call    dir_scan_start
+        ret     c
+.sector:
+        call    dir_scan_next
+        ret     c
+        jp      z,.noent
+        ld      (SG+VR_DSEC),hl
+        ld      (SG+VR_DSEC+2),de
+        ld      a,(SG+VV_VOL)
+        k_call  API_BGET
+        ret     c
+        ld      b,16
+        ld      c,0
+.entry: ld      a,(hl)
+        or      a
+        jr      z,.noent                ; FE_END
+        cp      FE_FREE
+        jr      z,.skip
+        push    hl
+        ld      de,FE_ATTR
+        add     hl,de
+        bit     3,(hl)                  ; DA_LABEL: a label or an LFN entry
+        jr      nz,.pop
+        bit     4,(hl)                  ; DA_DIR
+        jr      z,.pop
+        ld      de,FE_CLUS-FE_ATTR
+        add     hl,de
+        ld      a,(SG+VV_T+6)
+        cp      (hl)
+        jr      nz,.pop
+        inc     hl
+        ld      a,(SG+VV_T+7)
+        cp      (hl)
+        jr      nz,.pop
+        pop     hl
+        ld      a,c
+        ld      (SG+VR_DIDX),a
+        ld      de,SG+VR_ENT
+        ld      bc,FE_SIZEOF
+        ldir
+        ld      a,1
+        ld      (SG+VV_HASENT),a
+        or      a
+        ret
+.pop:   pop     hl
+.skip:  ld      de,FE_SIZEOF
+        add     hl,de
+        inc     c
+        djnz    .entry
+        jr      .sector
+.noent: ld      a,E_NOENT
+        scf
+        ret
+
 ; ks_readdir — SYS_READDIR: A = fd (a directory), HL = a DIRENT_SIZE
 ; buffer. Out: HL = 1 with the next entry in the buffer, 0 at the end.
 ks_readdir:

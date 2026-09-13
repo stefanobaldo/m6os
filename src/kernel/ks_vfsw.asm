@@ -1148,6 +1148,37 @@ ks_write:
 ; ---------------------------------------------------------------------
 ; unlink, mkdir, rmdir, rename
 
+; ks_chmod — SYS_CHMOD: HL = a path, A = the attributes to set — any of
+; DA_RDONLY, DA_HIDDEN, DA_SYSTEM, DA_ARCHIVE; another bit is E_INVAL.
+; The entry's attribute byte becomes those bits with DA_DIR as it was;
+; the timestamp is not touched. A volume's root and /mnt have no entry:
+; E_ACCES. The only writer of the attribute byte after creation, and the
+; only way to clear a read-only bit from m6.
+ks_chmod:
+        ld      (SG+VW_NATTR),a
+        and     ~(DA_RDONLY|DA_HIDDEN|DA_SYSTEM|DA_ARCHIVE) & 0FFh
+        jr      nz,.inval
+        call    vfs_getpath
+        ret     c
+        call    vfs_lookup
+        ret     c
+        ld      a,(SG+VR_KIND)
+        or      a                       ; VK_ENTRY
+        jr      nz,.acces
+        ld      a,(SG+VR_ENT+FE_ATTR)
+        and     DA_DIR
+        ld      hl,SG+VW_NATTR
+        or      (hl)
+        ld      (SG+VR_ENT+FE_ATTR),a
+        call    dir_put_entry
+        jp      wr_finish
+.inval: ld      a,E_INVAL
+        scf
+        ret
+.acces: ld      a,E_ACCES
+        scf
+        ret
+
 ; ks_unlink — SYS_UNLINK: HL = a file's path: its entry deleted, then its
 ; chain freed.
 ks_unlink:
