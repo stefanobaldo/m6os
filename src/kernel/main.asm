@@ -5,9 +5,9 @@
 ; loader's memory released, the storage enumerated and listed and the
 ; cache emptied, the summary of the memory printed from the switched
 ; part. Then, if the record names an address, jump there — a
-; program the loader put above the image, which runs as process 0 — else
-; halt with interrupts on, so the tick keeps counting for anyone watching
-; it.
+; program in the loader's page 1, which sched_release_boot kept as
+; process 0's, so it runs as process 0 where it lies — else halt with
+; interrupts on, so the tick keeps counting for anyone watching it.
 
 k_main:
         call    k_irq_init
