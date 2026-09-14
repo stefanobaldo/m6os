@@ -313,10 +313,12 @@ kbd_pop:
 ; sys_read — SYS_READ: A = fd, HL = buffer, BC = length. A descriptor
 ; that is the keyboard reads here: HL = bytes read, 1 to BC, blocking
 ; while the queue is empty, on the process's stack; E_INVAL for a length
-; of 0. In canonical mode the line discipline (tty.asm) reads instead. A descriptor that is an open file goes to the switched read
-; (ks_vfs.asm) with A = its row's index; a pipe's read end to pipe_read
-; (pipe.asm). CF and E_BADF for the console, a pipe's write end or a
-; closed descriptor.
+; of 0, E_FAULT for a buffer reaching page 3 (process 0's may be
+; anywhere), both before either mode reads a key. In canonical mode the
+; line discipline (tty.asm) reads instead. A descriptor that is an open
+; file goes to the switched read (ks_vfs.asm) with A = its row's index; a
+; pipe's read end to pipe_read (pipe.asm). CF and E_BADF for the console,
+; a pipe's write end or a closed descriptor.
 sys_read:
         call    fd_code
         cp      FD_KBD
@@ -333,6 +335,19 @@ sys_read:
 .kbd:   ld      a,b
         or      c
         jp      z,.inval
+        ld      a,(k_pid)
+        or      a
+        jr      z,.inpage               ; process 0's buffer may be anywhere
+        push    hl
+        ld      de,0C000h
+        ex      de,hl
+        or      a
+        sbc     hl,de                   ; the room before page 3
+        jr      c,.room
+        sbc     hl,bc                   ; minus the length
+.room:  pop     hl
+        jp      c,pi_fault              ; refused, not written through
+.inpage:
         ld      a,(tty_mode)
         or      a
         jp      z,tty_read              ; canonical: the line discipline

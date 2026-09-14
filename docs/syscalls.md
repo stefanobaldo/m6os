@@ -158,7 +158,7 @@ hidden the rest of the time.
 | 4 | `spawn` | `HL` = image, `BC` = length, `A` = pages | `HL` = `A` = the child's pid | `EINVAL`: pages not 1–3, length 0, image in page 2, or too long for the pages; `EAGAIN`: 15 processes exist; `ENOMEM`: not enough free segments |
 | 5 | `wait` | — | `H` = pid, `L` = `A` = status | `ECHILD`: no child alive or waiting to be reaped |
 | 6 | `yield` | — | — | — |
-| 7 | `read` | `A` = fd, `HL` = buffer, `BC` = length | `HL` = bytes read; 0 at the end of a file | `EBADF`: fd closed or the console; `EINVAL`: length 0 on the keyboard; `EISDIR`; `EIO` |
+| 7 | `read` | `A` = fd, `HL` = buffer, `BC` = length | `HL` = bytes read; 0 at the end of a file | `EBADF`: fd closed or the console; `EINVAL`: length 0 on the keyboard; `EFAULT`; `EISDIR`; `EIO` |
 | 8 | `fork` | — | `HL` = `A` = the child's pid, 0 in the child | `EPERM`: called by process 0; `EAGAIN`: 15 processes exist; `ENOMEM`: not enough free segments |
 | 9 | `vfork` | — | `HL` = `A` = the child's pid, 0 in the child | `EPERM`: called by process 0; `EAGAIN`: 15 processes exist |
 | 10 | `open` | `HL` = path, `A` = flags (see *Files*) | `HL` = `A` = the descriptor | `ENOENT`, `ENOTDIR`, `ENAMETOOLONG`, `EMFILE`, `ENFILE`, `EINVAL`: a flag that is not one, a name that cannot be made; `EISDIR`; `EACCES`; `EBUSY`; `ENOSPC`; `EIO`; `EROFS` |
