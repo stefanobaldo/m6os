@@ -136,7 +136,7 @@ start:
         ld      (REC+KR_TEST),hl
         ld      hl,ksimage              ; the switched part of the kernel
         ld      (REC+KR_KSEG_SRC),hl
-        ld      hl,ksimage_end-ksimage
+        ld      hl,tblock_end-ksimage   ; the image and, after it, the block
         ld      (REC+KR_KSEG_LEN),hl
         call    ld_takeover
         jp      fail                    ; it returns only with A = F3h
@@ -388,8 +388,8 @@ nx_ramslot1 equ RAMAD1
         include "nextor/capture.asm"
 ld_image    equ kimage
 ld_rec      equ REC
-ld_block    equ tblock
-ld_block_len equ tblock_end-tblock
+ld_block    equ 0                   ; nothing above the image: the block
+ld_block_len equ 0                  ; rides in the switched image's segment
         include "loader/takeover.asm"
 
 ; Everything above runs, or is read, while a driver call or an inter-slot
@@ -408,8 +408,14 @@ ksimage_end:
 ; The second half, assembled for K_IMAGE_END (build/kernel.exp), where the
 ; loader copies it. Pages 1 and 2 are free windows here; the test's own
 ; data lives in this block, in page 3, so switching page 2 never hides it.
+; The block follows the switched image in this file and is copied with it
+; into the image's segment (KR_KSEG_LEN covers both), which is process 0's
+; page 0: it runs there, at its offset in that segment, where neither the
+; storage gate nor a switch of page 1 can take it away — and it costs no
+; segment and no room in page 3, which the resident has outgrown.
 tblock:
-        DISP    K_IMAGE_END
+        ASSERT  tblock == ksimage_end
+        DISP    tblock-ksimage
 t_entry:
 ; --- step 5: the count, against what Nextor saw ------------------------
         ld      a,5
