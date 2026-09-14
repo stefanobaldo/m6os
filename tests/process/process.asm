@@ -115,7 +115,7 @@ start:
         ld      (REC+KR_MEMCAP),a       ; no cap
         ld      hl,ksimage              ; the switched part of the kernel
         ld      (REC+KR_KSEG_SRC),hl
-        ld      hl,ksimage_end-ksimage
+        ld      hl,tblock_end-ksimage   ; the image and, after it, the block
         ld      (REC+KR_KSEG_LEN),hl
         call    ld_takeover
         jp      fail                    ; it returns only with A = F3h
@@ -248,8 +248,8 @@ nx_ramslot1 equ RAMAD1
         include "nextor/capture.asm"
 ld_image    equ kimage
 ld_rec      equ REC
-ld_block    equ tblock
-ld_block_len equ tblock_end-tblock
+ld_block    equ 0                   ; nothing above the image: the block
+ld_block_len equ 0                  ; rides in the switched image's segment
         include "loader/takeover.asm"
 
 ; Everything above runs, or is read, while a driver call or an inter-slot
@@ -265,11 +265,17 @@ ksimage:
 ksimage_end:
 
 
-; The second half, assembled for K_IMAGE_END (build/kernel.exp), where the
+; The second half, assembled for its place in the switched image's segment
+; — process 0's page 0 — where the
 ; loader copies it: the test's code and data, and the user images after
 ; them. It runs as process 0.
+; The block follows the switched image in this file and is copied with it
+; into the image's segment (KR_KSEG_LEN covers both), which is process 0's
+; page 0: it runs there, at its offset in that segment, costing no segment
+; and no room in page 3, which the resident has outgrown.
 tblock:
-        DISP    K_IMAGE_END
+        ASSERT  tblock == ksimage_end
+        DISP    tblock-ksimage
 t_entry:
 ; --- step 5: the window, kernel-side ---------------------------------------
         ld      a,5
@@ -647,7 +653,7 @@ u_hello_k:
 .digit: db      "?",10
         ENT
 u_hello_k_end:
-u_hello      equ K_IMAGE_END+(u_hello_k-tblock)
+u_hello      equ (tblock-ksimage)+(u_hello_k-tblock)
 u_hello_end  equ u_hello+(u_hello_k_end-u_hello_k)
 
 ; u_ret — a program that simply returns: status 0 through P0_EXIT.
@@ -656,7 +662,7 @@ u_ret_k:
         ret
         ENT
 u_ret_k_end:
-u_ret      equ K_IMAGE_END+(u_ret_k-tblock)
+u_ret      equ (tblock-ksimage)+(u_ret_k-tblock)
 u_ret_end  equ u_ret+(u_ret_k_end-u_ret_k)
 
 ; u_jp0 — a program that jumps to 0: the same.
@@ -665,7 +671,7 @@ u_jp0_k:
         jp      0
         ENT
 u_jp0_k_end:
-u_jp0      equ K_IMAGE_END+(u_jp0_k-tblock)
+u_jp0      equ (tblock-ksimage)+(u_jp0_k-tblock)
 u_jp0_end  equ u_jp0+(u_jp0_k_end-u_jp0_k)
 
 ; u_stack3 — three pages: the stack starts at BFFEh, in the page the window
@@ -704,7 +710,7 @@ u_stack3_k:
 .msglen equ     $-.msg
         ENT
 u_stack3_k_end:
-u_stack3      equ K_IMAGE_END+(u_stack3_k-tblock)
+u_stack3      equ (tblock-ksimage)+(u_stack3_k-tblock)
 u_stack3_end  equ u_stack3+(u_stack3_k_end-u_stack3_k)
 
 ; The three timing loops: T_ITER iterations of push bc, sixteen argument
@@ -731,7 +737,7 @@ u_ctl_k:
         sys     SYS_EXIT
         ENT
 u_ctl_k_end:
-u_ctl      equ K_IMAGE_END+(u_ctl_k-tblock)
+u_ctl      equ (tblock-ksimage)+(u_ctl_k-tblock)
 u_ctl_end  equ u_ctl+(u_ctl_k_end-u_ctl_k)
 
 u_res_k:
@@ -751,7 +757,7 @@ u_res_k:
         sys     SYS_EXIT
         ENT
 u_res_k_end:
-u_res      equ K_IMAGE_END+(u_res_k-tblock)
+u_res      equ (tblock-ksimage)+(u_res_k-tblock)
 u_res_end  equ u_res+(u_res_k_end-u_res_k)
 
 u_sw_k:
@@ -771,7 +777,7 @@ u_sw_k:
         sys     SYS_EXIT
         ENT
 u_sw_k_end:
-u_sw      equ K_IMAGE_END+(u_sw_k-tblock)
+u_sw      equ (tblock-ksimage)+(u_sw_k-tblock)
 u_sw_end  equ u_sw+(u_sw_k_end-u_sw_k)
 
 tblock_end:

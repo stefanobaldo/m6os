@@ -146,7 +146,7 @@ start:
         ld      (REC+KR_MEMCAP),a       ; no cap
         ld      hl,ksimage              ; the switched part of the kernel
         ld      (REC+KR_KSEG_SRC),hl
-        ld      hl,ksimage_end-ksimage
+        ld      hl,tblock_end-ksimage   ; the image and, after it, the block
         ld      (REC+KR_KSEG_LEN),hl
         call    ld_takeover
         jp      fail                    ; it returns only with A = F3h
@@ -281,8 +281,8 @@ nx_ramslot1 equ RAMAD1
         include "nextor/capture.asm"
 ld_image    equ kimage
 ld_rec      equ REC
-ld_block    equ tblock
-ld_block_len equ tblock_end-tblock
+ld_block    equ 0                   ; nothing above the image: the block
+ld_block_len equ 0                  ; rides in the switched image's segment
         include "loader/takeover.asm"
 
 ; Everything above runs, or is read, while a driver call or an inter-slot
@@ -298,11 +298,17 @@ ksimage:
 ksimage_end:
 
 
-; The second half, assembled for K_IMAGE_END (build/kernel.exp), where the
+; The second half, assembled for its place in the switched image's segment
+; — process 0's page 0 — where the
 ; loader copies it: the test's code and data, and the user images after
 ; them. It runs as process 0.
+; The block follows the switched image in this file and is copied with it
+; into the image's segment (KR_KSEG_LEN covers both), which is process 0's
+; page 0: it runs there, at its offset in that segment, costing no segment
+; and no room in page 3, which the resident has outgrown.
 tblock:
-        DISP    K_IMAGE_END
+        ASSERT  tblock == ksimage_end
+        DISP    tblock-ksimage
 t_entry:
 ; --- step 5: the boot: TEXT2, the record, the screen kept --------------------
         ld      a,5
@@ -743,10 +749,10 @@ t_buf:      ds  4
         ENT
 
 ; The user programs, each assembled for P0_PROG and copied there by spawn.
-; u_x is where an image is after the loader's copy, u_x_k where it is
-; here.
+; u_x is where an image is once the block rides in the switched image's
+; segment (its offset from ksimage, in page 0), u_x_k where it is here.
     macro u_image name
-name        equ K_IMAGE_END+(name_k-tblock)
+name        equ (tblock-ksimage)+(name_k-tblock)
 name_end    equ name+(name_k_end-name_k)
     endm
 

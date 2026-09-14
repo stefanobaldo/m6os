@@ -91,7 +91,9 @@ sched_init:
 ; segment of page 1 is kept instead, as process 0's page 1: the program
 ; is there, where the loader's memory had it, and runs in place — a test
 ; whose block outgrew the room above the image in page 3, which is where
-; a smaller one still goes. With no switched image nothing changes hands.
+; a smaller one still goes. A program below page 1 was copied in with the
+; switched image (KR_KSEG_LEN covers it) and runs in process 0's page 0,
+; so nothing is kept for it. With no switched image nothing changes hands.
 ; Corrupts everything.
 sched_release_boot:
         ld      a,(K_KSEG)
@@ -109,6 +111,9 @@ sched_release_boot:
         or      l
         jr      z,.rel                  ; nothing to run
         ld      a,h
+        cp      40h
+        jr      c,.rel                  ; a program in page 0: it rides in the
+                                        ; switched image's segment
         cp      0C0h
         jr      c,.keep                 ; a program in page 1
 .rel:   ld      a,(K_REC+KR_SEG64K+1)
