@@ -179,8 +179,8 @@ k_end:
 
 ; Exported for programs that assemble a block to run at K_END, for a
 ; harness that wants to know when the kernel idles, and for a test that
-; looks at the pipe table, the signal flag, the blocked-row counts and
-; the terminal's line.
+; looks at the pipe table, the signal flag, the blocked-row counts, the
+; terminal's line and the keyboard queue.
 K_IMAGE_END     equ k_end
 K_IDLE_HALT     equ sched_idle_halt
 K_PIPE_TAB      equ k_pipe
@@ -190,6 +190,7 @@ K_NSLEEP        equ k_nsleep
 K_PWAIT         equ k_pwait
 K_TTY_MODE      equ tty_mode
 K_LD_LEN        equ ld_len
+K_KBCOUNT       equ kbd_count
         EXPORT  K_IMAGE_END
         EXPORT  K_IDLE_HALT
         EXPORT  K_PIPE_TAB
@@ -198,4 +199,5 @@ K_LD_LEN        equ ld_len
         EXPORT  K_NSLEEP
         EXPORT  K_PWAIT
         EXPORT  K_TTY_MODE
+        EXPORT  K_KBCOUNT
         EXPORT  K_LD_LEN

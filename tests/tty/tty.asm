@@ -530,8 +530,16 @@ t_entry:
         k_call  API_CON_PUTS
 
 ; --- step 16: the handler's stack, and the byte a ^C nobody took becomes -------
+; The figure is a measurement only if the ^C came while wm spun: the queue
+; must be empty when wm starts and hold the ^C's 03h when it ends, else
+; the depth is the plain tick handler's and the step fails rather than
+; print it as a pass.
         t_begin 16, t_k16
         t_cue   16                      ; ^C while wm spins, ignoring it
+        ld      a,(K_KBCOUNT)
+        or      a
+        ld      a,0E2h
+        jp      nz,t_fail               ; a key before wm said ^C now
         t_exec  p_wm, av_none, m_inh
         ld      (t_n),a                 ; the watermark
         ld      l,a
@@ -539,6 +547,10 @@ t_entry:
         k_call  API_CON_DEC16
         ld      hl,t_bytes
         k_call  API_CON_PUTS
+        ld      a,(K_KBCOUNT)
+        or      a
+        ld      a,0E3h
+        jp      z,t_fail                ; no ^C while wm spun: nothing measured
         ld      a,(t_n)
         cp      T_WM_MAX+1
         ld      c,a
