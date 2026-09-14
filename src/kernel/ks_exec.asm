@@ -135,7 +135,10 @@ ks_exec:
 
 ; ks_spawnv — SYS_SPAWNV: HL = path, DE = argv (0 = an empty vector), BC
 ; -> three bytes: the caller's descriptor that becomes the child's 0, 1
-; and 2, FFh for the caller's own of the same number. Out: HL = A = the
+; and 2, FFh for the caller's own of the same number; A = the SIGIGN_*
+; bits of the signals the child takes by default though the caller
+; ignores them — so that a shell never lowers its own guard to start a
+; command that ^C must reach. Out: HL = A = the
 ; child's pid. ex_prepare's errors; E_BADF (a map entry that is not FFh or
 ; an open descriptor); E_AGAIN (no row); E_NOMEM (a segment short); E_IO
 ; (the load) — every failure leaves the caller intact and nothing taken:
@@ -143,6 +146,7 @@ ks_exec:
 ; caller's. Process 0 may call it: the path and the vector are in page 3,
 ; which um_in reads directly.
 ks_spawnv:
+        ld      (SG+VX_SIGDEF),a
         ld      a,1
         ld      (SG+VX_SPAWN),a
         push    bc

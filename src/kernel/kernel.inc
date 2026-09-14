@@ -223,7 +223,10 @@ SYS_PIPE        equ 21          ; -> L = the read end, H = the write end;
 SYS_SPAWNV      equ 22          ; HL = path, DE = argv (0 = none), BC -> 3
                                 ; bytes: the caller's descriptor that is
                                 ; the child's 0, 1, 2, FFh = the caller's
-                                ; own -> HL = A = the child's pid; exec's
+                                ; own; A = SIGIGN_* bits of the signals the
+                                ; child takes by default though the caller
+                                ; ignores them (0 = all as the caller's)
+                                ; -> HL = A = the child's pid; exec's
                                 ; errors but EPERM, plus EBADF, EAGAIN
 SYS_WAITPID     equ 23          ; A = pid (0 = any child), B = WNOHANG or
                                 ; 0 -> H = pid, L = A = status; HL = 0 with
@@ -739,6 +742,7 @@ VX_CPID         equ ST_VFS+296  ; spawnv: the child's pid
 VX_OWNER        equ ST_VFS+297  ; whose segments ex_alloc takes: K_PID for
                                 ; exec, the child's for spawnv
 VX_ROW          equ ST_VFS+298  ; 2: spawnv: the child's row
+VX_SIGDEF       equ ST_VFS+300  ; spawnv: SIGIGN_* bits the child drops
 VK_ENTRY        equ 0           ; VR_KIND: a directory entry (VR_ENT valid)
 VK_ROOT         equ 1           ; the root directory of VR_VOL
 VK_MNT          equ 2           ; the /mnt node

@@ -191,9 +191,9 @@ sig_stub:
 ; sig_owed — HL -> a row's PX_SIGPEND. Out: A = the signal the row owes
 ; and has not been planted with (bit 7 clear), NZ; or A = 0, Z — owing
 ; nothing, armed already, or owing a signal it has come to ignore since it
-; was sent, in which case the byte is cleared: a shell drops its guard
-; around a foreground spawnv and raises it again, and a ^C that landed
-; while spawnv ran must not kill it on the next tick. Preserves HL;
+; was sent, in which case the byte is cleared: a ^C that lands while a
+; process is inside the signal call that makes it ignore SIGINT must not
+; kill it when that call returns. Preserves HL;
 ; corrupts F, DE.
 sig_owed:
         ld      a,(hl)

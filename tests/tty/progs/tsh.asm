@@ -4,9 +4,9 @@
 ;
 ; tsh — the test shell, the shape of the shell to come: it ignores SIGINT,
 ; puts the terminal in canonical mode and prints "$ " before every line,
-; and runs each line as /bin/<name> in the foreground — dropping its own
-; guard against SIGINT around spawnv, so that the child is born with the
-; default and a ^C kills it, and raising it again after — then waits and
+; and runs each line as /bin/<name> in the foreground — asking spawnv for
+; a child that takes SIGINT by default, so that a ^C kills the command
+; while the shell, whose guard never comes down, reads on — then waits and
 ; prints "[status]". An empty line prints "!" (what a ^C nobody took turns
 ; into); a name that does not run prints "?"; "q" exits 9; an end of file
 ; exits 8.
@@ -56,18 +56,11 @@ start:
         inc     de
         or      a
         jr      nz,.cp
-        ld      a,SIGINT
-        ld      b,SIG_DFL
-        sys     SYS_SIGNAL              ; the child inherits the default
         ld      hl,path
         ld      de,argv
         ld      bc,m_inh
-        sys     SYS_SPAWNV
-        push    af
-        ld      a,SIGINT
-        ld      b,SIG_IGN
-        sys     SYS_SIGNAL              ; on guard again
-        pop     af
+        ld      a,SIGIGN_INT            ; the child takes ^C; the shell keeps
+        sys     SYS_SPAWNV              ; ignoring it throughout the load
         jp      c,.what
         ld      b,0
         sys     SYS_WAITPID

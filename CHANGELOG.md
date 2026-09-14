@@ -83,7 +83,8 @@ to install.
 - Processes from files. `spawnv` creates a process from a program in a
   file in one call — fresh memory, the arguments, and the child's
   descriptors 0, 1 and 2 chosen by the caller from its own, so that
-  redirection and pipes need no `dup2` — and returns the child's pid.
+  redirection and pipes need no `dup2`, and the signals it takes by default
+  though the caller ignores them — and returns the child's pid.
   `waitpid` waits for one child by name, or for any, and with `WNOHANG`
   does not block. See [`docs/syscalls.md`](docs/syscalls.md).
 - `sleep` for a number of ticks; `time`, the real-time clock as a FAT
@@ -100,7 +101,9 @@ to install.
   that does not ignore `SIGINT`, so a shell ignores it and the commands
   it runs do not — and discards what was typed ahead of it; `kill` sends
   `SIGINT`, `SIGTERM`, `SIGKILL` or `SIGPIPE` to a process by pid,
-  `signal` makes a process ignore one, and a child inherits that. A
+  `signal` makes a process ignore one, and a child inherits that unless
+  `spawnv` is asked to give it the default, which is how a shell keeps
+  ignoring ^C while the command it starts does not. A
   signal ends a process at the end of the system call it is in, never
   inside it; a process that ignores `SIGPIPE` gets `EPIPE` from a write
   to a pipe nobody reads, instead of ending. A process a signal ended

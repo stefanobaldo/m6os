@@ -663,7 +663,8 @@ exec_finish:
 ; spawn_finish — exec_finish in spawn mode (VX_SPAWN = 1): the image
 ; loaded and framed above is a new process's, whose row is VX_ROW and pid
 ; VX_CPID. The row filled as spawn fills one, the caller's directory, the
-; descriptors from the map (VX_FDS), the extension row, into the ring;
+; descriptors from the map (VX_FDS), the extension row with the caller's
+; ignored signals less those VX_SIGDEF names, into the ring;
 ; then back to the switched caller, which returns the pid. The window is
 ; back already; the storage segment in page 1 was never touched.
 spawn_finish:
@@ -704,7 +705,11 @@ spawn_finish:
         ld      bc,3
         ldir                            ; P_CWD: the caller's
         ld      a,(SX+VX_CPID-ST_VFS)
-        call    px_init
+        call    px_init                 ; hl -> its PX_SIGIGN, b = the mask
+        ld      a,(SX+VX_SIGDEF-ST_VFS)
+        cpl
+        and     b
+        ld      (hl),a                  ; less what the caller named
         ld      a,(SX+VX_CPID-ST_VFS)
         ld      hl,SX+VX_FDS-ST_VFS
         call    pr_setfds
