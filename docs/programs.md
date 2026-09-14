@@ -60,7 +60,14 @@ On entry:
   console unless the caller changed them — and so is the current
   directory; a program started by `spawnv` gets the three the caller's
   map named, and its 3 to 7 closed;
+- the signals the caller ignores are ignored, until the program says
+  otherwise with `signal` (`syscalls.md`, *Signals*);
 - every other register is 0.
+
+The terminal's mode — canonical or raw, see `syscalls.md` — is not the
+program's: it is whatever the last program left, so a program that reads
+lines sets canonical first, and a program that put the terminal in raw
+mode is expected to put it back.
 
 The argument block is at most 256 bytes, table included: a longer one is
 refused with `E2BIG`. A program that reads no arguments need not look at

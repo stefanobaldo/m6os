@@ -91,6 +91,20 @@ to install.
   read-only, hidden, system and archive attributes of a file — the one
   way to clear a read-only bit from m6; `procinfo`, a process's row of the
   kernel's tables for tools that ship with the kernel.
+- Line editing on the keyboard. `read` from the keyboard returns whole
+  lines by default, echoed as they are typed and edited with BS, DEL and
+  ^U, TAB kept, ^D the end of input; `ttymode` switches to the raw
+  byte-per-key reading of before, for a program that draws its own
+  screen, and back. The mode is the terminal's, not a process's.
+- Signals. ^C or STOP ends the program in the foreground — every process
+  that does not ignore `SIGINT`, so a shell ignores it and the commands
+  it runs do not — and discards what was typed ahead of it; `kill` sends
+  `SIGINT`, `SIGTERM`, `SIGKILL` or `SIGPIPE` to a process by pid,
+  `signal` makes a process ignore one, and a child inherits that. A
+  signal ends a process at the end of the system call it is in, never
+  inside it; a process that ignores `SIGPIPE` gets `EPIPE` from a write
+  to a pipe nobody reads, instead of ending. A process a signal ended
+  reports 128 plus the signal to `wait`.
 
 ### Fixed
 
