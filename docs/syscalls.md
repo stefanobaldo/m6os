@@ -21,9 +21,10 @@ on a stub that switches the kernel's cold code in for the length of the call.
   register set are undefined after a call; save what you need before it.
 
 Interrupts stay enabled inside a syscall. A syscall that blocks — `read`
-with nothing typed, `wait` with no child exited, `vfork` until the child
-exits — gives the CPU to other processes and returns when what it waited
-for has happened.
+with nothing typed, `wait` with no child exited, `sleep`, a pipe with
+nothing to move, `vfork` until the child exits — gives the CPU to other
+processes and returns when what it waited for has happened, or never
+returns at all when a signal ends the process meanwhile (see *Signals*).
 
 **A process may lose the CPU at any instruction and get it back later with
 every register as it left it** — the kernel switches between processes on
@@ -106,14 +107,34 @@ screen and puts the cursor at the top, CR (13) to the start of the row.
 Every other byte below 20h does nothing. There are no escape sequences.
 A write of many lines scrolls once, by all of them, not once per line.
 
-File descriptor 0 is the keyboard. `read` returns bytes as keys go down,
-one byte per key with the modifiers in effect at that moment — nothing is
-echoed, nothing waits for RET, and a key that means nothing on its own
-(SHIFT, F1) produces nothing. Keys typed before any process reads are kept
-— sixteen of them at most — and a key held down repeats after half a
-second, twelve times a second. Letters follow SHIFT and CAPS LOCK; CTRL
-with a letter gives 1 to 26; the keypad gives its digits and operators.
-The special keys give one byte each:
+File descriptor 0 is the keyboard, and the kernel edits what is typed
+before a program sees it. In **canonical mode**, the default, `read`
+returns a line: every character typed is echoed to the screen as it
+arrives, BS and DEL rub out the last one, ^U the whole line, TAB is kept;
+RET closes the line and becomes its last byte, LF (10). A `read` that asks
+for fewer bytes than the line holds gets that many, and the rest waits for
+the next `read`, so a program reading a byte at a time gets the line
+without waiting again. ^D at the start of a line makes `read` return 0,
+once, as at the end of a file; ^D in the middle of one closes it without
+an LF. A line holds 127 bytes; what is typed past that is dropped. Keys
+that are not bytes of a line — the arrows, HOME, INS, ESC, SELECT, the
+function keys — are dropped without echo, and ^C and STOP are never
+bytes: they are the interrupt (see *Signals*). The line being edited
+belongs to the terminal, not to the process reading it.
+
+`ttymode` (29) switches the keyboard to **raw mode** and back, for a
+pager or an editor that draws its own screen: `read` then returns bytes as
+keys go down, one byte per key with the modifiers in effect at that
+moment — nothing is echoed, nothing waits for RET, and a key that means
+nothing on its own (SHIFT, F1) produces nothing. The mode is the
+terminal's, not the process's: a program that sets raw sets it for
+whoever reads next, so a program that reads lines sets canonical first
+rather than trust what the last one left. In either mode, keys typed
+before any process reads are kept — sixteen of them at most — and a key
+held down repeats after half a second, twelve times a second. Letters
+follow SHIFT and CAPS LOCK; CTRL with a letter gives 1 to 26; the keypad
+gives its digits and operators. In raw mode the special keys give one
+byte each:
 
 | Key | Byte | Key | Byte | Key | Byte |
 |---|---|---|---|---|---|
@@ -121,7 +142,7 @@ The special keys give one byte each:
 | TAB | 9 | RIGHT | 28 | UP | 30 |
 | RET | 13 | HOME | 11 | DOWN | 31 |
 | INS | 18 | SHIFT+HOME | 12 | DEL | 127 |
-| SELECT | 24 | STOP | 3 | | |
+| SELECT | 24 | STOP | — the interrupt, never a byte | | |
 
 A cursor is shown on the screen while a process is waiting in `read` and
 hidden the rest of the time.
@@ -159,7 +180,10 @@ hidden the rest of the time.
 | 26 | `getcwd` | `HL` = buffer, `BC` = its size | `HL` = the length | `ENAMETOOLONG`: the path or the buffer too short; `EFAULT`; `EIO` |
 | 27 | `time` | — | `HL` = FAT date, `DE` = FAT time | — |
 | 28 | `chmod` | `HL` = path, `A` = attributes | — | `EINVAL`: a bit that is not one; `ENOENT`, `ENOTDIR`, `ENAMETOOLONG`, `EACCES`: a volume's root or `/mnt`; `EROFS`, `EIO` |
-| 29–47 | — | — | — | `ENOSYS` |
+| 29 | `ttymode` | `A` = 0 canonical, 1 raw | `L` = the mode that was | `EINVAL`: not 0 or 1 |
+| 30 | `kill` | `A` = pid, `B` = signal | — | `EPERM`: pid 0; `EINVAL`: pid past 15, or a signal that is none of the four; `ESRCH`: no such process |
+| 31 | `signal` | `A` = signal, `B` = 0 (the default) or 1 (ignore) | `L` = the action that was | `EINVAL`: `SIGKILL`, or not a signal |
+| 32–47 | — | — | — | `ENOSYS` |
 
 `write` to a descriptor that is the console goes to the screen and `read`
 from one that is the keyboard takes from it, as *The console* says: that
@@ -230,8 +254,9 @@ is full and a reader has yet to take some; `read` returns what is there,
 writer still holds the write end. When every write end is closed, `read`
 returns 0 at the end of what was written. A `write` to a pipe whose every
 read end is closed ends the writing process with status 141, before a
-byte moves, as `SIGPIPE` does under Unix — so `yes | head` ends by itself.
-Four pipes exist at once (`ENFILE`). A pipe end is closed with `close`,
+byte moves, as `SIGPIPE` does under Unix — so `yes | head` ends by itself;
+a process that has chosen to ignore `SIGPIPE` (see *Signals*) gets `EPIPE`
+from the `write` instead and goes on. Four pipes exist at once (`ENFILE`). A pipe end is closed with `close`,
 inherited like a file by `spawn`, `fork` and `vfork`, handed to a child by
 `spawnv`'s map, and closed by `exit`: a pipe is gone when nobody holds
 either end. Process 0, the kernel's own thread, may make pipes and hand
@@ -256,6 +281,41 @@ it was born with, because the parent resumes on that same stack. Both
 children are waited for with `wait` like any other. Process 0, the
 kernel's own thread, has no memory of its own to copy or share and gets
 `EPERM` from both.
+
+## Signals
+
+Four signals, each of which ends the process it reaches unless that
+process has chosen to ignore it; no signal runs a handler. **`SIGINT`**
+(2) is what ^C or STOP on the keyboard sends — to every process that does
+not ignore it, there being no process groups: a shell ignores it and the
+command it runs in the foreground does not, so the command dies and the
+shell reads on, and a shell that wants a job to survive ^C makes the
+child inherit the ignore. **`SIGPIPE`** (13) is what a `write` to a pipe
+with no reader delivers to the writer (see *Pipes*). **`SIGTERM`** (15)
+is `kill`'s ordinary request to end. **`SIGKILL`** (9) cannot be ignored.
+A process a signal ended reports 128 plus the signal to `wait` and
+`waitpid`: 130 after ^C, 137, 141, 143.
+
+`kill` sends the signal in `B` to the process whose pid is in `A`; a
+process may end itself this way, and does so at once. `kill` of a zombie,
+or of a process that ignores the signal, succeeds and does nothing.
+`signal` makes the caller take the signal in `A` by default (`B` = 0) or
+ignore it (`B` = 1) and returns what it did before; a child inherits its
+parent's choices, and `exec` keeps them.
+
+A signal never interrupts a system call. A process blocked in `read`,
+`wait`, `waitpid`, `sleep` or on a pipe ends at once; one inside a call
+that is running — a `read` or `write` of a file, an `exec` — ends when
+that call returns, a one-page program without fail, a two- or three-page
+one at the next tick that finds it between calls. A `write` of 64 KB to a
+file therefore ends the process at its end, several hundred milliseconds
+after the ^C on an MSX at 3.58 MHz. The process's open files and pipe
+ends are closed as at any `exit`. A ^C also discards what was typed ahead
+and the line being edited; and when it ended nobody — every process
+ignores it, or only a shell at its prompt is running — the byte 3 is
+queued in their place, which a canonical `read` delivers as an empty
+line and a raw one as itself, so that a shell prints a fresh prompt and
+an editor that ignores `SIGINT` sees the key.
 
 ## Files
 
