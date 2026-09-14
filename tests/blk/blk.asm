@@ -297,7 +297,7 @@ start:
         ld      (REC+KR_MEMCAP),a
         ld      hl,ksimage
         ld      (REC+KR_KSEG_SRC),hl
-        ld      hl,ksimage_end-ksimage
+        ld      hl,tblock_end-ksimage   ; the image and, after it, the block
         ld      (REC+KR_KSEG_LEN),hl
         call    ld_takeover
         jp      fail                    ; it returns only with A = F3h
@@ -556,8 +556,8 @@ nx_ramslot1 equ RAMAD1
 
 ld_image    equ kimage
 ld_rec      equ REC
-ld_block    equ tblock
-ld_block_len equ tblock_end-tblock
+ld_block    equ 0                   ; nothing above the image: the block
+ld_block_len equ 0                  ; rides in the switched image's segment
         include "loader/takeover.asm"
 
 ; Everything above runs, or is read, while a driver call has switched page
@@ -579,8 +579,14 @@ ksimage_end:
 ; here. The block layer's entries are called under the window and the
 ; storage gate, which the block enters and leaves around each call; the
 ; test's own data lives in page 3, where neither hides it.
+; The block follows the switched image in this file and is copied with it
+; into the image's segment (KR_KSEG_LEN covers both), which is process 0's
+; page 0: it runs there, at its offset in that segment, where neither the
+; storage gate nor a switch of page 1 can take it away — and it costs no
+; segment and no room in page 3, which the resident has outgrown.
 tblock:
-        DISP    K_IMAGE_END
+        ASSERT  tblock == ksimage_end
+        DISP    tblock-ksimage
 
     macro t_enter
         kwin_enter
