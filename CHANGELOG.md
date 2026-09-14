@@ -116,5 +116,6 @@ to install.
   than its own.
 - A `wait` made while every child was blocked ran in a loop instead of
   idling, and could leave the kernel's count of runnable processes wrong.
-- A `read`, `readdir`, `stat` or `getcwd` given a buffer that reached the
-  kernel's page overwrote the kernel; it is refused with `EFAULT`.
+- A `read` from a file or the keyboard, `readdir`, `stat` or `getcwd`
+  given a buffer that reached the kernel's page overwrote the kernel; it
+  is refused with `EFAULT`.
