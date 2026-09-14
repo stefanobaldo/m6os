@@ -101,6 +101,9 @@ k_sys:
         jp      k_sw_getcwd             ; SYS_GETCWD, in the switched part
         jp      k_sw_time               ; SYS_TIME, the same
         jp      k_sw_chmod              ; SYS_CHMOD, the same
+        jp      sys_ttymode             ; SYS_TTYMODE (tty.asm)
+        jp      sys_kill                ; SYS_KILL (sig.asm)
+        jp      sys_signal              ; SYS_SIGNAL (sig.asm)
         DUP     K_SYS_N-SYS_N
         jp      sys_enosys
         EDUP
@@ -164,6 +167,8 @@ nx_ramslot1     equ K_REC+KR_RAMAD+1
         include "kernel/proc.asm"
         include "kernel/px.asm"
         include "kernel/pipe.asm"
+        include "kernel/sig.asm"
+        include "kernel/tty.asm"
         include "kernel/sys.asm"
         include "kernel/main.asm"
 
@@ -178,10 +183,23 @@ k_end:
 
 ; Exported for programs that assemble a block to run at K_END, for a
 ; harness that wants to know when the kernel idles, and for a test that
-; looks at the pipe table.
+; looks at the pipe table, the signal flag, the blocked-row counts and
+; the terminal's line.
 K_IMAGE_END     equ k_end
 K_IDLE_HALT     equ sched_idle_halt
 K_PIPE_TAB      equ k_pipe
+K_SIGFLAG       equ k_sigflag
+K_KBWAIT        equ k_kbwait
+K_NSLEEP        equ k_nsleep
+K_PWAIT         equ k_pwait
+K_TTY_MODE      equ tty_mode
+K_LD_LEN        equ ld_len
         EXPORT  K_IMAGE_END
         EXPORT  K_IDLE_HALT
         EXPORT  K_PIPE_TAB
+        EXPORT  K_SIGFLAG
+        EXPORT  K_KBWAIT
+        EXPORT  K_NSLEEP
+        EXPORT  K_PWAIT
+        EXPORT  K_TTY_MODE
+        EXPORT  K_LD_LEN

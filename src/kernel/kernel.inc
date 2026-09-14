@@ -85,8 +85,8 @@ PIPE_MAX        equ 256         ; bytes a pipe holds: its whole buffer
 PX_SIZE         equ 8
 PX_WCHAN        equ 0           ; the pipe a PS_PIPE row waits on; FFh none
 PX_WAKE         equ 1           ; 2: the K_TICKS a PS_SLEEP row wakes at
-PX_SIGIGN       equ 3           ; signals ignored (a later phase's)
-PX_SIGPEND      equ 4           ; signals pending (the same)
+PX_SIGIGN       equ 3           ; signals ignored: SIGIGN_* bits (sig.asm)
+PX_SIGPEND      equ 4           ; a signal pending, its number; 0 none
                                 ; 5-7 spare
 PI_SIZE         equ 8           ; a pipe's row (pipe.asm): free when both
 PI_HEAD         equ 0           ; counts are 0. head = tail means empty,
@@ -237,9 +237,42 @@ SYS_TIME        equ 27          ; -> HL = FAT date, DE = FAT time
 SYS_CHMOD       equ 28          ; HL = path, A = DA_RDONLY|DA_HIDDEN|
                                 ; DA_SYSTEM|DA_ARCHIVE; EINVAL, ENOENT,
                                 ; ENOTDIR, EACCES, EROFS, EIO
-SYS_N           equ 29          ; entries given a syscall so far
+; The terminal and signals (tty.asm, sig.asm).
+SYS_TTYMODE     equ 29          ; A = TTY_CANON or TTY_RAW -> L = the mode
+                                ; that was; EINVAL. The mode is the
+                                ; terminal's, not the process's
+SYS_KILL        equ 30          ; A = pid, B = a signal: it terminates the
+                                ; process, or is ignored; EPERM (pid 0),
+                                ; EINVAL (pid >= NPROC, a bad signal),
+                                ; ESRCH (a free row)
+SYS_SIGNAL      equ 31          ; A = a signal, B = SIG_DFL or SIG_IGN ->
+                                ; L = the action that was; EINVAL
+SYS_N           equ 32          ; entries given a syscall so far
 WNOHANG         equ 1           ; waitpid: do not block
 PROCINFO_SIZE   equ P_SIZE+PX_SIZE ; the row, then the extension row
+
+; Signals (sig.asm). Four, terminate or ignore, never a handler; a process
+; a signal ended reports 128 + the signal through waitpid. The numbers are
+; Unix's; SIGKILL cannot be ignored.
+SIGINT          equ 2           ; ^C or STOP from the keyboard, or kill
+SIGKILL         equ 9           ; kill only, never ignorable
+SIGPIPE         equ 13          ; a write to a pipe with no reader
+SIGTERM         equ 15          ; kill's default ask to end
+SIGIGN_INT      equ 1           ; the PX_SIGIGN bit of each ignorable signal
+SIGIGN_PIPE     equ 2
+SIGIGN_TERM     equ 4
+SIG_DFL         equ 0           ; signal's action: terminate
+SIG_IGN         equ 1           ;   or ignore
+SF_INT          equ 1           ; k_sigflag: a ^C is to be broadcast
+SF_PEND         equ 2           ;   the current process owes a signal
+SF_PLANT        equ 4           ;   some process owes one not yet planted:
+                                ;   sched_load looks before it loads
+
+; The line discipline (tty.asm). Canonical by default: read on the keyboard
+; returns edited lines; raw is byte for byte, no echo, as 2.4 left it.
+TTY_CANON       equ 0
+TTY_RAW         equ 1
+TTY_LINE        equ 128         ; bytes of the terminal's line buffer
 
 O_RDONLY        equ 0           ; open's flags: the access mode in bits 0-1
 O_WRONLY        equ 1           ; (3 is EINVAL), then

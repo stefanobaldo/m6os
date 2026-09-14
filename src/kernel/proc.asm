@@ -785,7 +785,9 @@ pr_setfds:
 ; vf_resume — HL = the row of a parent blocked in vfork: the frame it will
 ; resume on, on the pages it shares with the exiting child — every
 ; register zero but HL = the child's pid, and the return address the row
-; kept back at the top. Preserves HL; corrupts AF, BC, DE.
+; kept back at the top — unless the parent owes a signal (sig.asm), in
+; which case it resumes into sig_stub and dies. Preserves HL; corrupts
+; AF, BC, DE.
 vf_resume:
         push    hl
         push    hl
@@ -819,6 +821,31 @@ vf_resume:
         ld      a,(hl)
         ld      (de),a
         pop     hl
+        ; A signal owed: sig_stub in place of the return address, armed.
+        push    hl
+        ld      a,l
+        rrca
+        add     a,low K_PX+PX_SIGPEND
+        ld      e,a
+        ld      d,high K_PX
+        ld      a,(de)
+        or      a
+        jr      z,.nosig
+        bit     7,a
+        jr      nz,.nosig
+        or      80h
+        ld      (de),a
+        inc     hl
+        ld      e,(hl)
+        inc     hl
+        ld      d,(hl)                  ; de = P_SP
+        ld      hl,20
+        add     hl,de
+        ld      de,sig_stub
+        ld      (hl),e
+        inc     hl
+        ld      (hl),d
+.nosig: pop     hl
         ret
 
 ; sys_waitpid — SYS_WAITPID: A = pid (0 = any child), B = flags. Out: H =

@@ -18,7 +18,8 @@
 ; read blocks while the pipe is empty and a writer exists, and returns 0
 ; when it is empty and none does; write delivers every byte, blocking when
 ; the pipe is full, and a write to a pipe with no reader ends the writer
-; with status 141 before a byte moves. A process that blocks leaves the
+; with status 141 before a byte moves — or, when it ignores SIGPIPE, gets
+; EPIPE (sig.asm). A process that blocks leaves the
 ; ring (PS_PIPE, the pipe's index in its PX_WCHAN) and the other end runs
 ; at once; every change to a pipe wakes what waits on it — the row
 ; remembers one waiter per end, and walks the process table only when a
@@ -343,8 +344,17 @@ pipe_write:
         or      a                       ; CF clear
         ret
 .noreader:
-        ld      a,141                   ; 128 + SIGPIPE
+        ld      a,(k_pid)
+        call    px_row
+        ld      de,PX_SIGIGN
+        add     hl,de
+        bit     1,(hl)                  ; SIGIGN_PIPE: EPIPE instead
+        jr      nz,.epipe
+        ld      a,128+SIGPIPE
         jp      sys_exit
+.epipe: ld      a,E_PIPE
+        scf
+        ret
 
 pi_inval:
         ld      a,E_INVAL

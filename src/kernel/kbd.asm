@@ -35,6 +35,8 @@ KBD_REP_DELAY   equ 30          ; ticks before the first repeat
 KBD_REP_RATE    equ 5           ; ticks between repeats
 KBD_MODROW      equ 6           ; the row of SHIFT, CTRL, GRAPH, CAPS, CODE
 KBD_CAPS_BIT    equ 3
+KBD_KEY_C       equ 3*8+0       ; the 'c' key: row 3, bit 0
+KBD_KEY_STOP    equ 7*8+4       ; STOP: row 7, bit 4
 
 ; kbd_init — the LED off, the scan's baseline "nothing pressed".
 kbd_init:
@@ -170,20 +172,47 @@ kbd_key:
         ld      (kbd_repdue),a
         ; falls into kbd_queue
 
-; kbd_queue — E = a key: into the ring with the modifier row as it reads
-; now, unless the ring is full. Preserves D; corrupts AF, BC, E, HL.
+; kbd_queue — E = a key going down: with the modifier row as it reads
+; now, into the ring — unless it is ^C (the 'c' key with CTRL) or STOP,
+; which is a SIGINT and never a byte: the typeahead and the line being
+; edited are dropped, the repeat cancelled, and the handler broadcasts
+; the signal once the scan is over (sig_isr, irq.asm). Preserves D;
+; corrupts AF, BC, E, HL.
 kbd_queue:
-        ld      a,(kbd_count)
-        cp      KBD_RING_N
-        ret     nc                      ; full: dropped
-        ld      hl,kbd_count
-        inc     (hl)
         in      a,(PPI_C)
         and     0F0h
         or      KBD_MODROW
         out     (PPI_C),a
         in      a,(PPI_B)
         ld      c,a                     ; c = the modifiers, 0 = down
+        ld      a,e
+        cp      KBD_KEY_STOP
+        jr      z,.intr
+        cp      KBD_KEY_C
+        jr      nz,kbd_enqueue
+        bit     1,c                     ; CTRL down?
+        jr      nz,kbd_enqueue          ; a plain 'c'
+.intr:  ld      a,0FFh
+        ld      (kbd_held),a            ; no repeat of a ^C
+        xor     a
+        ld      (kbd_count),a
+        ld      (kbd_head),a
+        ld      (kbd_tail),a            ; the typeahead, dropped
+        ld      (ld_len),a
+        ld      (ld_pos),a              ; the line being edited, too
+        ld      hl,k_sigflag
+        set     0,(hl)                  ; SF_INT: broadcast after the scan
+        ret
+
+; kbd_enqueue — E = a key, C = its modifier byte (0 = down): into the ring
+; unless it is full, and a reader is to be woken. Preserves DE; corrupts
+; AF, BC, HL.
+kbd_enqueue:
+        ld      a,(kbd_count)
+        cp      KBD_RING_N
+        ret     nc                      ; full: dropped
+        ld      hl,kbd_count
+        inc     (hl)
         ld      a,(kbd_head)
         add     a,a
         ld      l,a
@@ -288,7 +317,7 @@ kbd_pop:
 ; sys_read — SYS_READ: A = fd, HL = buffer, BC = length. A descriptor
 ; that is the keyboard reads here: HL = bytes read, 1 to BC, blocking
 ; while the queue is empty, on the process's stack; E_INVAL for a length
-; of 0. A descriptor that is an open file goes to the switched read
+; of 0. In canonical mode the line discipline (tty.asm) reads instead. A descriptor that is an open file goes to the switched read
 ; (ks_vfs.asm) with A = its row's index; a pipe's read end to pipe_read
 ; (pipe.asm). CF and E_BADF for the console, a pipe's write end or a
 ; closed descriptor.
@@ -307,7 +336,10 @@ sys_read:
         ret
 .kbd:   ld      a,b
         or      c
-        jr      z,.inval
+        jp      z,.inval
+        ld      a,(tty_mode)
+        or      a
+        jp      z,tty_read              ; canonical: the line discipline
         push    hl
         pop     ix                      ; the buffer and the length travel
         push    bc                      ; in IX and IY across a block: the

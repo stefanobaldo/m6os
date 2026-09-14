@@ -10,7 +10,8 @@
 ; until status register 0 is read, so reading S#0 is the acknowledgement.
 ; Then the tick is counted and the keyboard scanned when it is due — a
 ; reader woken by a key counts as runnable for the decision that follows —
-; and the CPU changes hands when it may: another
+; and a ^C, or a signal the running process still owes, is dealt with
+; (sig.asm) — and the CPU changes hands when it may: another
 ; process is runnable, and the one interrupted was in user space — its PC
 ; and its stack pointer both below page 3. A PC in page 3 is the resident,
 ; a syscall body or a stub; a stack pointer in page 3 is the switched image
@@ -52,7 +53,18 @@ k_isr_in:
         call    kbd_tick                ; the keyboard: a scan when due,
                                         ; readers woken into the ring
         call    sleep_tick              ; sleepers whose tick this is
-        ld      a,(k_nrun)
+        ld      a,(k_sigflag)           ; a ^C to broadcast, or a signal
+        or      a                       ; the current process still owes
+        jr      z,.sched
+        ld      hl,4
+        add     hl,sp                   ; [L][H][F][A][PCl][PCh]: hl -> PCl
+        ld      (sig_fpc),hl
+        push    bc                      ; sig_isr corrupts what kbd_tick and
+        push    de                      ; sleep_tick save for themselves
+        call    sig_isr                 ; may link rows: k_nrun read below
+        pop     de
+        pop     bc
+.sched: ld      a,(k_nrun)
         cp      2
         jr      c,.ret                  ; nobody else to run
         ld      hl,5
