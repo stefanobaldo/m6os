@@ -69,6 +69,7 @@ start:
         ld      hl,p_nap
         ld      de,av_nap
         ld      bc,m_inh
+        xor     a                       ; the child's signals: the caller's
         sys     SYS_SPAWNV
         jp      c,fail
         ld      (pid),a
@@ -89,6 +90,7 @@ start:
         ld      hl,p_tiny
         ld      de,av_none
         ld      bc,m_inh
+        xor     a                       ; the child's signals: the caller's
         sys     SYS_SPAWNV
         jp      c,fail
         ld      (pid),a
@@ -109,6 +111,7 @@ start:
         ld      hl,p_ignall
         ld      de,av_none
         ld      bc,m_inh
+        xor     a                       ; the child's signals: the caller's
         sys     SYS_SPAWNV
         jp      c,fail
         ld      (pid),a
@@ -145,6 +148,7 @@ start:
         ld      hl,p_mask
         ld      de,av_none
         ld      bc,m_inh
+        xor     a                       ; the child's signals: the caller's
         sys     SYS_SPAWNV
         jp      c,fail
         ld      b,0
@@ -153,10 +157,30 @@ start:
         ld      a,l
         and     SIGIGN_TERM
         jp      z,fail
+        check   13                      ; spawnv's A: SIGTERM taken by default,
+        ld      a,SIGINT                ; SIGINT still ignored
+        ld      b,SIG_IGN
+        sys     SYS_SIGNAL
+        ld      hl,p_mask
+        ld      de,av_none
+        ld      bc,m_inh
+        ld      a,SIGIGN_TERM
+        sys     SYS_SPAWNV
+        jp      c,fail
+        ld      b,0
+        sys     SYS_WAITPID
+        jp      c,fail
+        ld      a,l
+        and     SIGIGN_INT|SIGIGN_TERM
+        cp      SIGIGN_INT
+        jp      nz,fail
+        ld      a,SIGINT
+        ld      b,SIG_DFL
+        sys     SYS_SIGNAL
         ld      a,SIGTERM
         ld      b,SIG_DFL
         sys     SYS_SIGNAL
-        check   13                      ; kill of oneself: never returns
+        check   14                      ; kill of oneself: never returns
         sys     SYS_GETPID
         ld      a,l
         ld      b,SIGTERM

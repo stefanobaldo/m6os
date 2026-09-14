@@ -60,8 +60,9 @@ On entry:
   console unless the caller changed them — and so is the current
   directory; a program started by `spawnv` gets the three the caller's
   map named, and its 3 to 7 closed;
-- the signals the caller ignores are ignored, until the program says
-  otherwise with `signal` (`syscalls.md`, *Signals*);
+- the signals the caller ignores are ignored, but for those the caller
+  asked `spawnv` to give it by default, until the program says otherwise
+  with `signal` (`syscalls.md`, *Signals*);
 - every other register is 0.
 
 The terminal's mode — canonical or raw, see `syscalls.md` — is not the

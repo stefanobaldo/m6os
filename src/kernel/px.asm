@@ -2,9 +2,9 @@
 ;
 ; K_PX holds, per process, what the 16-byte row in K_PROC has no room
 ; for: the pipe a blocked row waits on, the tick a sleeping row wakes at,
-; and the signal bytes a later phase fills. A row is K_PX + (pid << 3),
-; the same trick as the descriptor table's; the kernel's own thread has
-; row 0 like everyone else.
+; and the signals it ignores and owes (sig.asm). A row is
+; K_PX + (pid << 3), the same trick as the descriptor table's; the
+; kernel's own thread has row 0 like everyone else.
 ;
 ; sleep puts the process out of the ring until K_TICKS reaches the value
 ; its row holds. The interrupt handler wakes sleepers by equality, not by
@@ -24,7 +24,8 @@ px_row:
 
 ; px_init — A = a new process's pid: its extension row — waiting on no
 ; pipe, no wake tick, the current process's ignored signals, nothing
-; pending, the spare bytes 0. Corrupts AF, BC, DE, HL.
+; pending, the spare bytes 0. Out: HL -> the new row's PX_SIGIGN, B = the
+; mask copied into it (spawn_finish narrows it). Corrupts AF, C, DE.
 px_init:
         ld      c,a
         call    px_row
