@@ -28,7 +28,9 @@
 ; The save and the scan run with interrupts enabled; the load — the pages
 ; and the stack pointer — is one DI region closed by the resume's EI, so
 ; that a tick never finds the stack pointer in one process's pages and the
-; mapper in another's.
+; mapper in another's. The load is also where a signal owed by the process
+; coming in is planted in its frame (sig.asm): the frame is in the
+; process's own pages, and this is the one place they are known to be in.
 
 ; sched_init — row 0 and the scalars, before anything runs. Corrupts
 ; everything.
@@ -300,7 +302,13 @@ sched_load:
         ld      (k_map+2),a
         out     (0FEh),a
         ex      de,hl
-        ld      sp,hl
+        ld      sp,hl                   ; the process's stack, at its frame
+        ; A signal it owes and has not been planted with (sig.asm): now that
+        ; its pages are in, the stub goes into the frame — on this stack,
+        ; below the frame, never on the outgoing process's.
+        ld      a,(k_sigflag)
+        and     SF_PLANT
+        call    nz,sig_load
 
 ; sched_resume — the frame off the current stack, and back to the process.
 sched_resume:

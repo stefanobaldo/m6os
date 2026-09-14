@@ -306,6 +306,16 @@ tblock:
         ASSERT  tblock == ksimage_end
         DISP    tblock-ksimage
 t_entry:
+        ; The keyboard as it was when this test was written: raw, and ^C a
+        ; byte. The line discipline is canonical by default now and ^C a
+        ; signal, so the terminal is put in raw mode and SIGINT ignored —
+        ; the mask is inherited by every reader spawned below, and a ^C
+        ; that nobody takes is queued as the byte 3 the sums expect.
+        ld      a,TTY_RAW
+        sys     SYS_TTYMODE
+        ld      a,SIGINT
+        ld      b,SIG_IGN
+        sys     SYS_SIGNAL
 ; --- step 5: the boot: TEXT2, the record, the screen kept --------------------
         ld      a,5
         ld      (t_step),a
