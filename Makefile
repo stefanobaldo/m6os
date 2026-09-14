@@ -38,6 +38,10 @@ SRC_FILES := $(wildcard src/*/*.asm src/*/*.inc)
 # only once there is a src/ to point at.
 INCLUDES  := -Itests $(if $(wildcard src),-Isrc)
 
+# An assembler that fails still writes its output; without this make would
+# take that half-built file as up to date on the next run and never say so.
+.DELETE_ON_ERROR:
+
 .PHONY: all check check-sjasmplus check-openmsx check-tools fetch sizes clean distclean
 
 all: check-sjasmplus $(KERNEL) $(KSEG) $(TEST_BINS) $(PROG_BINS) sizes
