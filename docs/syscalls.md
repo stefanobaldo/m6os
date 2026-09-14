@@ -173,7 +173,7 @@ hidden the rest of the time.
 | 19 | `rmdir` | `HL` = path (an empty directory) | — | `ENOENT`, `ENOTDIR`, `ENOTEMPTY`, `EBUSY`: open, somebody's current directory, a volume's root; `EINVAL`: `.` or `..`; `EIO`, `EROFS` |
 | 20 | `rename` | `HL` = old path, `DE` = new path | — | `ENOENT`, `ENOTDIR`, `EXDEV`: another volume; `EEXIST`: a directory on either side exists; `EINVAL`: not a name, or a directory into itself; `EACCES`, `EBUSY`, `ENOSPC`, `EIO`, `EROFS` |
 | 21 | `pipe` | — | `L` = the read end, `H` = the write end | `EMFILE`: fewer than two descriptors free; `ENFILE`: four pipes exist |
-| 22 | `spawnv` | `HL` = path, `DE` = argv (0: none), `BC` = a 3-byte map (see *Processes from files*) | `HL` = `A` = the child's pid | `ENOENT`, `ENOTDIR`, `EISDIR`, `ENAMETOOLONG`, `ENOEXEC`, `E2BIG`, `EBADF`: a map entry is not `FFh` or an open descriptor; `EAGAIN`: 15 processes exist; `ENOMEM`; `EIO` |
+| 22 | `spawnv` | `HL` = path, `DE` = argv (0: none), `BC` = a 3-byte map, `A` = signals the child takes by default (see *Processes from files*) | `HL` = `A` = the child's pid | `ENOENT`, `ENOTDIR`, `EISDIR`, `ENAMETOOLONG`, `ENOEXEC`, `E2BIG`, `EBADF`: a map entry is not `FFh` or an open descriptor; `EAGAIN`: 15 processes exist; `ENOMEM`; `EIO` |
 | 23 | `waitpid` | `A` = pid (0: any child), `B` = flags (1: `WNOHANG`) | `H` = pid, `L` = `A` = status; `HL` = 0 with `WNOHANG` and nothing exited | `ECHILD`: no child, or not the caller's |
 | 24 | `sleep` | `HL` = ticks | `HL` = 0 | — |
 | 25 | `procinfo` | `A` = pid, `HL` = a 24-byte buffer | — | `EINVAL`: pid not 0–15; `ESRCH`: no such process; `EFAULT` |
@@ -240,8 +240,12 @@ and nothing else — its 3 to 7 start closed — so a pipe end the caller
 still holds does not leak into a child that must not have it. A
 descriptor named in the map that is closed is `EBADF`, and every refusal
 leaves the caller as it was: the file is loaded into the child's memory,
-never the caller's. This is how the system starts programs; `vfork` and
-`exec` remain for programs written around them.
+never the caller's. `A` names signals the child takes by default even
+though the caller ignores them, as the bits `SIGIGN_INT` (1), `SIGIGN_PIPE`
+(2) and `SIGIGN_TERM` (4); every other signal the caller ignores, the child
+ignores too, and `A` = 0 gives the child exactly the caller's. This is how
+the system starts programs; `vfork` and `exec` remain for programs written
+around them.
 
 ## Pipes
 
@@ -287,11 +291,15 @@ kernel's own thread, has no memory of its own to copy or share and gets
 Four signals, each of which ends the process it reaches unless that
 process has chosen to ignore it; no signal runs a handler. **`SIGINT`**
 (2) is what ^C or STOP on the keyboard sends — to every process that does
-not ignore it, there being no process groups: a shell ignores it and the
-command it runs in the foreground does not, so the command dies and the
-shell reads on, and a shell that wants a job to survive ^C makes the
-child inherit the ignore. **`SIGPIPE`** (13) is what a `write` to a pipe
-with no reader delivers to the writer (see *Pipes*). **`SIGTERM`** (15)
+not ignore it, there being no process groups: a shell ignores it and
+starts a foreground command with `spawnv`'s `A` = `SIGIGN_INT`, so the
+command takes the default and dies while the shell reads on, and a job
+meant to survive ^C is started with `A` = 0 and inherits the ignore. The
+shell never lowers its own guard to start a command: a ^C that lands while
+it does would end the shell. A ^C that lands while `spawnv` is still
+loading a command reaches nobody, the command not being a process yet, so
+the command runs; a second ^C ends it. **`SIGPIPE`** (13) is what a
+`write` to a pipe with no reader delivers to the writer (see *Pipes*). **`SIGTERM`** (15)
 is `kill`'s ordinary request to end. **`SIGKILL`** (9) cannot be ignored.
 A process a signal ended reports 128 plus the signal to `wait` and
 `waitpid`: 130 after ^C, 137, 141, 143.

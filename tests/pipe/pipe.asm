@@ -553,6 +553,7 @@ t_entry:
         ld      hl,p_tiny
         ld      de,av_none
         ld      bc,t_map
+        xor     a                       ; the child's signals: the caller's
         sys     SYS_SPAWNV
         ld      b,E_BADF
         ld      c,0ECh
@@ -569,6 +570,7 @@ t_entry:
         ld      hl,p_none
         ld      de,av_none
         ld      bc,m_inh
+        xor     a                       ; the child's signals: the caller's
         sys     SYS_SPAWNV
         ld      b,E_NOENT
         ld      c,0EEh
@@ -576,6 +578,7 @@ t_entry:
         ld      hl,p_notm6
         ld      de,av_none
         ld      bc,m_inh
+        xor     a                       ; the child's signals: the caller's
         sys     SYS_SPAWNV
         ld      b,E_NOEXEC
         ld      c,0F0h
@@ -602,6 +605,7 @@ t_entry:
         ld      hl,p_nap
         ld      de,av_nap30
         ld      bc,m_inh
+        xor     a                       ; the child's signals: the caller's
         sys     SYS_SPAWNV
         ld      a,(t_want)
         ld      b,a
@@ -997,6 +1001,7 @@ t_fail_status:
 ; t_spawn_hl — HL = a path, DE = argv, BC -> the map: spawnv; A = the
 ; pid. A refusal is a failure of the test.
 t_spawn_hl:
+        xor     a                       ; the child's signals: the caller's
         sys     SYS_SPAWNV
         jp      c,t_fail
         ret

@@ -9,6 +9,7 @@ start:
         ld      hl,p_slp
         ld      de,av_slp
         ld      bc,m_inh
+        xor     a                       ; the child's signals: the caller's
         sys     SYS_SPAWNV
         jr      c,.no
         ld      b,0

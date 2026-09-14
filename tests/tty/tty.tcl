@@ -73,6 +73,10 @@ proc typeline {t keys} {
     return [expr {$t + 0.15}]
 }
 
+# Cue 11's first ^C, at 1.35 s, lands inside bigspin's load: against a
+# shell that lowers its guard around spawnv, a ^C from 1.31 to 1.40 s kills
+# the shell on both machines, so a shell that survives this one passes for
+# the right reason.
 proc cue {c} {
     puts stderr "tty.tcl: cue $c at [format %.2f [machine_info time]] s"
     switch $c {
@@ -84,7 +88,7 @@ proc cue {c} {
         8  { ack; ctap 0.3 d ; typeline 1.0 {z} }
         9  { ack; tap 0.3 esc ; tap 0.5 right ; tap 0.7 x }
         10 { ack; tap 0.3 esc ; tap 0.5 right ; tap 0.7 x ; tap 0.9 ret }
-        11 { ack; typeline 0.3 {s p i n} ; ctap 1.7 c ; typeline 2.4 {q} }
+        11 { ack; typeline 0.3 {b i g s p i n} ; ctap 1.35 c ; ctap 2.3 c ; typeline 3.2 {q} }
         12 { ack; ctap 0.4 c }
         13 { ack; ctap 0.4 c }
         14 { ack; ctap 0.4 c }
@@ -113,9 +117,10 @@ proc post_verdict {} {
     # The echo of the edited lines was checked while it was on the screen
     # (cues 5 and 6); by now it has scrolled off.
     # The test shell: the command echoed at its prompt, the killed one
-    # reported, the survivor reported, two empty lines from the two ^Cs
-    # nobody took, and nothing typed ahead of them run as a command.
-    if {![has_row {$ spin}]} { problem "the shell did not echo spin at its prompt" }
+    # reported — by the second ^C, the first having landed in its load —
+    # the survivor reported, two empty lines from the two ^Cs nobody took,
+    # and nothing typed ahead of them run as a command.
+    if {![has_row {$ bigspin}]} { problem "the shell did not echo bigspin at its prompt" }
     if {![has_row {[130]}]} { problem "the shell did not report the command killed by ^C" }
     if {![has_row {[5]}]} { problem "the shell did not report the survivor's status" }
     if {[count_rows "!"] < 2} { problem "fewer than two empty lines reached the shell from the ^Cs nobody took" }

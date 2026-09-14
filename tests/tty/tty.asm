@@ -395,8 +395,11 @@ t_entry:
         k_call  API_CON_PUTS
 
 ; --- step 11: the gate: ^C kills the foreground command, the shell reads on ---
+; The first ^C lands while the shell is still loading bigspin: nobody takes
+; it — the command is not a process yet and the shell ignores SIGINT
+; throughout — so the shell must survive it; the second kills the command.
         t_begin 11, t_k11
-        t_cue   11                      ; spin RET, ^C, q RET
+        t_cue   11                      ; bigspin RET, ^C, ^C, q RET
         t_exec  p_tsh, av_tsh, m_inh
         t_status 9                      ; tsh read q after the kill
         ld      hl,t_ok
@@ -732,6 +735,7 @@ t_cue_a:
 ; t_spawn_hl — HL = a path, DE = argv, BC -> the map: spawnv; A = the
 ; pid. A refusal is a failure of the test.
 t_spawn_hl:
+        xor     a                       ; the child's signals: the caller's
         sys     SYS_SPAWNV
         jp      c,t_fail
         ret
@@ -847,7 +851,7 @@ t_k7:       db  "7 three bytes, then the rest: hello RET",10,0
 t_k8:       db  "8 ^D, then z RET",10,0
 t_k9:       db  "9 ttymode; raw: ESC RIGHT x",10,0
 t_k10:      db  "10 canonical drops ESC RIGHT: x RET",10,0
-t_k11:      db  "11 shell: spin RET, ^C, q RET",10,0
+t_k11:      db  "11 shell: bigspin RET, ^C, ^C, q RET",10,0
 t_k12:      db  "12 ^C on a reader: ",0
 t_k13:      db  "13 ^C on a sleeper: ",0
 t_k14:      db  "14 ^C on a pipe writer: ",0
