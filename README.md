@@ -32,9 +32,10 @@ loader prints its version, takes the machine over, lists the volumes it
 mounts and the memory it finds, runs `/etc/rc` if there is one, and gives
 you a shell. `M6 mem=128` caps the memory at 128K on a larger machine.
 
-At the prompt, [`docs/shell.md`](docs/shell.md) is the language; the
-commands in this version are `echo`, `cat`, `wc`, `true` and `false`.
-`exit` at the prompt starts a fresh shell.
+At the prompt, [`docs/shell.md`](docs/shell.md) is the language and
+[`docs/commands.md`](docs/commands.md) the commands: `cat`, `chmod`, `cp`,
+`echo`, `false`, `head`, `ls`, `mkdir`, `mv`, `pwd`, `rm`, `rmdir`,
+`tail`, `true` and `wc`. `exit` at the prompt starts a fresh shell.
 
 ## Documents
 
@@ -44,6 +45,8 @@ commands in this version are `echo`, `cat`, `wc`, `true` and `false`.
   the machine, from boot.
 - [`docs/shell.md`](docs/shell.md) — the shell: its lines, pipelines,
   redirection, jobs and wildcards.
+- [`docs/commands.md`](docs/commands.md) — the commands in `/bin`, one
+  section each.
 - [`docs/programs.md`](docs/programs.md) — what a program in a file looks like,
   what it finds when the kernel starts it, and how the commands in `/bin`
   are written.
