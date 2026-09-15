@@ -7,8 +7,9 @@
 ; program uses after its code, and end with m6_bss and the program's own
 ; buffers. Each include is a subject — out.inc the buffered output, in.inc
 ; the buffered input, err.inc the messages, args.inc the arguments and
-; options, str.inc the string routines — and a program pays only for the
-; ones it includes.
+; options, str.inc the string routines, path.inc the last component of a
+; path and the join of a directory and a name — and a program pays only
+; for the ones it includes.
 ;
 ;   m6_prog pages   the header the kernel checks (jr start, "m6", the
 ;                   pages the program wants, a zero) and start:, which
@@ -122,5 +123,9 @@ __bss   =       $
       ifdef IN_INC
         bss_align
         bss     in_buf,512
+      endif
+      ifdef PATH_INC
+        bss     path_buf,PATH_MAX
+        bss     path_ent,DIRENT_SIZE
       endif
     endm
