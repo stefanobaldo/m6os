@@ -42,7 +42,9 @@ KSEG      := build/kseg.bin
 BIN_SRCS  := $(wildcard src/bin/*.asm)
 BIN_BINS  := $(patsubst src/bin/%.asm,build/bin/%,$(BIN_SRCS))
 PAGE_MAX  := 16102
-SRC_FILES := $(wildcard src/*/*.asm src/*/*.inc)
+# The product: src/loader/m6.asm with both kernel images embedded.
+M6COM     := build/m6.com
+SRC_FILES := $(wildcard src/*.inc src/*/*.asm src/*/*.inc)
 # sjasmplus rejects an include path that does not exist, so -Isrc is passed
 # only once there is a src/ to point at.
 INCLUDES  := -Itests $(if $(wildcard src),-Isrc)
@@ -53,7 +55,7 @@ INCLUDES  := -Itests $(if $(wildcard src),-Isrc)
 
 .PHONY: all check check-sjasmplus check-openmsx check-tools fetch sizes clean distclean
 
-all: check-sjasmplus $(KERNEL) $(KSEG) $(BIN_BINS) $(TEST_BINS) $(PROG_BINS) sizes
+all: check-sjasmplus $(KERNEL) $(KSEG) $(M6COM) $(BIN_BINS) $(TEST_BINS) $(PROG_BINS) sizes
 
 build:
 	mkdir -p build
@@ -84,6 +86,9 @@ build/$(1).progs/$(2): tests/$(1)/progs/$(2).asm tests/m6prog.inc $$(SRC_FILES) 
 endef
 $(foreach p,$(PROG_SRCS),$(eval $(call prog_rule,$(word 2,$(subst /, ,$(p))),$(basename $(notdir $(p))))))
 
+$(M6COM): src/loader/m6.asm $(SRC_FILES) src/version.inc $(KERNEL) $(KSEG) | build
+	$(SJASMPLUS) --nologo --msg=war $(INCLUDES) --raw=$@ --lst=build/m6.lst $<
+
 # One rule per utility, with the one-page check.
 define bin_rule
 build/bin/$(1): src/bin/$(1).asm $$(SRC_FILES) | build
@@ -98,8 +103,8 @@ $(foreach b,$(patsubst src/bin/%.asm,%,$(BIN_SRCS)),$(eval $(call bin_rule,$(b))
 # and what size limits are later checked against. kernel.bin is the resident
 # image, the number the 16K target is measured against; kseg.bin the
 # switched part, against the window's 16K.
-sizes: $(KERNEL) $(KSEG) $(BIN_BINS) $(TEST_BINS) $(PROG_BINS)
-	@for f in $(KERNEL) $(KSEG) $(BIN_BINS) $(TEST_BINS) $(PROG_BINS); do \
+sizes: $(KERNEL) $(KSEG) $(M6COM) $(BIN_BINS) $(TEST_BINS) $(PROG_BINS)
+	@for f in $(KERNEL) $(KSEG) $(M6COM) $(BIN_BINS) $(TEST_BINS) $(PROG_BINS); do \
 	    printf 'SIZE %s %s\n' "$$(basename $$f)" "$$(wc -c < $$f | tr -d ' ')"; \
 	done
 
@@ -125,6 +130,7 @@ fetch:
 # failure, summary.
 check: fetch
 	@$(MAKE) --no-print-directory all check-tools
+	@tools/check-version.sh
 	@set -e; n=0; for t in $(TESTS); do \
 	    echo "TEST $$t"; tools/run-test.sh $$t; n=$$((n + 1)); \
 	done; echo "OK: $$n test(s) passed"
