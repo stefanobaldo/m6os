@@ -47,11 +47,18 @@ Every download is pinned by version and checksum in `tools/fetch-*.sh`. Tools
 land in `.tools/` (ignored by git) and the ROMs in `tools/openmsx/systemroms/`;
 `make distclean` removes both, `make clean` only the build output.
 
-`make` alone assembles the test programs into `build/` and prints one
-`SIZE <name> <bytes>` line per binary. `tools/run-test.sh <name>` runs a single
+`make` alone assembles everything into `build/` and prints one
+`SIZE <name> <bytes>` line per binary: the two kernel images, the product
+`build/m6.com`, the commands in `build/bin/` — each refused above one page —
+and the test programs. `tools/run-test.sh <name>` runs a single
 test: it builds a disk image with the Nextor system files, the program and an
 `AUTOEXEC.BAT` that runs it, boots it in headless openMSX on an MSX2 with a
-128K mapper, and reads the program's verdict from memory. The harness's exit
+128K mapper, and reads the program's verdict from memory. A test directory
+holding a `product` marker boots `M6.COM` itself, with every command in
+`BIN/`, and its `<name>.tcl` gives the verdict from the screen and from the
+files the run left on the image. `make check` also runs
+`tools/check-version.sh`, which requires the version in `src/version.inc`
+and the headings of `CHANGELOG.md` to agree. The harness's exit
 code is 0 for a pass, 1 for a fail and 2 when no verdict arrived in time; its
 messages go to stderr, and stdout carries what the program wrote through the
 emulator's debug device. `build/<name>.lst` is the assembler listing, and

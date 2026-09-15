@@ -13,9 +13,28 @@ subsystem.
 Said aloud, "m6" is "MSiX": MSX + Unix. The name also points at Sixth Edition
 Unix, the small, readable Unix that left Bell Labs and seeded everything after it.
 
-m6 is under active development and has not been released yet. The kernel boots,
-owns the machine's memory and runs processes, and reads files from FAT12 and
-FAT16 volumes; the documents below describe what exists today.
+m6 is under active development and has not been released yet. The kernel
+boots from a Nextor volume to a shell, runs processes and pipelines of the
+commands in `/bin`, and reads and writes FAT12 and FAT16 volumes; the
+documents below describe what exists today.
+
+## Running m6
+
+m6 boots from a Nextor volume, in place of the MSX-DOS 2 shell. On a card or
+disk that already boots Nextor, put:
+
+- `M6.COM` in the root — `make` builds it as `build/m6.com`;
+- the commands in `BIN/` — `make` builds them as `build/bin/*`;
+- optionally `ETC/RC`, a script the shell runs once at boot.
+
+Then type `M6` at the Nextor prompt, or have `AUTOEXEC.BAT` do it. The
+loader prints its version, takes the machine over, lists the volumes it
+mounts and the memory it finds, runs `/etc/rc` if there is one, and gives
+you a shell. `M6 mem=128` caps the memory at 128K on a larger machine.
+
+At the prompt, [`docs/shell.md`](docs/shell.md) is the language; the
+commands in this version are `echo`, `cat`, `wc`, `true` and `false`.
+`exit` at the prompt starts a fresh shell.
 
 ## Documents
 
@@ -23,8 +42,11 @@ FAT16 volumes; the documents below describe what exists today.
   has to the kernel.
 - [`docs/storage.md`](docs/storage.md) — what m6 does with the storage devices in
   the machine, from boot.
+- [`docs/shell.md`](docs/shell.md) — the shell: its lines, pipelines,
+  redirection, jobs and wildcards.
 - [`docs/programs.md`](docs/programs.md) — what a program in a file looks like,
-  and what it finds when the kernel starts it.
+  what it finds when the kernel starts it, and how the commands in `/bin`
+  are written.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — how to build and test, and how issues,
   pull requests and commits work here.
 - [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md)
