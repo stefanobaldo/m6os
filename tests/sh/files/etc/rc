@@ -22,8 +22,48 @@ false; echo 15 > /t/r15
 nofile > /t/r16 2> /t/r16e
 sh < /t/inner > /t/r17
 echo 18 > /t/r18 &
+# The file commands. What they make lives under /t/d and on the second
+# volume, and is gone again before the listing of /t that ends the block;
+# the checks that must fail run in a nested script, so their reports are
+# files too and the screen keeps its rows.
+mkdir /t/d
+cp /t/r1 /t/d
+cp /t/r14 /t/r15 /t/d
+cp /t/d/r1 /t/d/c1
+mv /t/d/c1 /t/d/m1
+mkdir /t/d/sub
+mv /t/d/r14 /t/d/r15 /t/d/sub
+ls /t/d > /t/r20
+ls /t/d/r1 > /t/r21
+ls /t/d/sub /t/d > /t/r22
+ls /mnt > /t/r23
+ls -l /t/d > /t/r24
+cp /t/r1 /mnt/b/x
+ls /mnt/b > /t/r25
+mv /mnt/b/x /mnt/b/y
+ls /mnt/b >> /t/r25
+rm /mnt/b/y
+head -n 2 /t/r4 > /t/r26
+head -n 1 /t/r1 /t/r2 > /t/r27
+tail -n 1 /t/r4 > /t/r28
+cat /t/r4 | tail -n 1 > /t/r29
+tail -n 1 /t/r3 > /t/r30
+chmod +r /t/d/r1
+ls -l /t/d/r1 > /t/r31
+sh < /t/fails > /t/r32 2> /t/r32e
+chmod -r /t/d/r1
+cd /t/d
+pwd > /t/r33
+cd /
+rm /t/d/m1 /t/d/r1 /t/d/sub/r14 /t/d/sub/r15
+rmdir /t/d/sub /t/d
+ls /t > /t/r34
 sh < /etc/bench1
 sh < /etc/bench2
 cat /big > /t/copy &
 /t/maxgap 300 > /t/gap
+# The same gap beside a cp: the measuring program must be in its loop
+# before the copy starts, or it runs only after the copy ends and reads
+# an idle machine; the two one-sector commands between give it the CPU.
+/t/tick > /t/t1; /t/maxgap 300 > /t/gap2 & true; true; cp /big /t/copy2; /t/tick > /t/t2
 echo rc done

@@ -141,21 +141,39 @@ proc post_verdict {} {
     # The files against their expected contents.
     set expdir [file join $::env(M6_TEST_DIR) expect]
     foreach f [lsort [glob -directory $expdir -tails *]] {
+        set want [slurp [file join $expdir $f]]
+        # A file whose expected contents end in .re holds one pattern
+        # per line, each matched whole against the line it stands for:
+        # the form for a listing whose time is the host clock's.
+        set pat [string match *.re $f]
+        if {$pat} { set f [file rootname $f] }
         set path [exported $dir $f]
         if {$path eq ""} { return "/t/$f was not written" }
-        set want [slurp [file join $expdir $f]]
         set got [slurp $path]
-        if {$got ne $want} {
-            return "/t/$f holds \"[string map {\n \\n} $got]\", not \"[string map {\n \\n} $want]\""
+        if {!$pat} {
+            if {$got ne $want} {
+                return "/t/$f holds \"[string map {\n \\n} $got]\", not \"[string map {\n \\n} $want]\""
+            }
+            continue
+        }
+        set gl [split [string trimright $got \n] \n]
+        set wl [split [string trimright $want \n] \n]
+        if {[llength $gl] != [llength $wl]} {
+            return "/t/$f has [llength $gl] lines, not [llength $wl]: \"[string map {\n \\n} $got]\""
+        }
+        foreach g $gl p $wl {
+            if {![regexp -- "^(?:$p)\$" $g]} { return "/t/$f line \"$g\" does not match \"$p\"" }
         }
     }
     puts stderr "harness: $::test: [llength [glob -directory $expdir -tails *]] files under /t hold what the script should have written"
-    # The copy the background cat made.
-    set path [exported $dir copy]
-    if {$path eq ""} { return "/t/copy was not written" }
-    set data [slurp $path]
-    if {[string length $data] != 65536} { return "/t/copy is [string length $data] bytes, not 65536" }
-    if {$data ne [string repeat [binary format c 0x5A] 65536]} { return "/t/copy does not hold big's bytes" }
+    # The copies the background cat and the background cp made.
+    foreach c {copy copy2} {
+        set path [exported $dir $c]
+        if {$path eq ""} { return "/t/$c was not written" }
+        set data [slurp $path]
+        if {[string length $data] != 65536} { return "/t/$c is [string length $data] bytes, not 65536" }
+        if {$data ne [string repeat [binary format c 0x5A] 65536]} { return "/t/$c does not hold big's bytes" }
+    }
     # The two latency figures, from the bench scripts' stamps: the first
     # and the last of sixty lines, 59 intervals between them.
     if {[llength $::stamps] != 4} { return "[llength $::stamps] stamps on the screen, not 4" }
@@ -164,10 +182,22 @@ proc post_verdict {} {
         puts stderr [format "harness: %s: %s, sixty in a row: %d ticks, %.1f ms each, a ceiling on the %d ms line (an emulator's figure: a hint)" \
             $::test $label $ticks [expr {$ticks * 1000.0 / 60 / 59}] $target]
     }
-    set path [exported $dir gap]
-    if {$path eq ""} { return "/t/gap was not written" }
-    if {![regexp {gap (\d+)} [slurp $path] -> gap]} { return "/t/gap does not hold a gap" }
-    puts stderr [format "harness: %s: the largest gap between two ticks read beside a background cat: %d ticks, %.0f ms beyond the turn (an emulator's figure: a hint)" \
-        $::test $gap [expr {($gap - 2) * 1000.0 / 60}]]
+    # The gap program prints the largest gap and the first and last tick
+    # it read, so a reading that began after the copy had ended shows
+    # itself; the two stamps around the cp give the copy's own span.
+    foreach {g what} {gap cat gap2 cp} {
+        set path [exported $dir $g]
+        if {$path eq ""} { return "/t/$g was not written" }
+        if {![regexp {gap (\d+) (\d+) (\d+)} [slurp $path] -> gap from to]} { return "/t/$g does not hold a gap" }
+        puts stderr [format "harness: %s: the largest gap between two ticks read beside a background %s: %d ticks, %.0f ms beyond the turn, reading from tick %d to %d (an emulator's figure: a hint)" \
+            $::test $what $gap [expr {($gap - 2) * 1000.0 / 60}] $from $to]
+    }
+    foreach t {t1 t2} {
+        set path [exported $dir $t]
+        if {$path eq ""} { return "/t/$t was not written" }
+        set $t [string trim [slurp $path]]
+    }
+    puts stderr [format "harness: %s: the background cp of 64 KB ran from tick %s to %s, %d ticks: a gap of that order read inside the span is the copy holding the CPU throughout (an emulator's figure: a hint)" \
+        $::test $t1 $t2 [expr {$t2 - $t1}]]
     return ""
 }

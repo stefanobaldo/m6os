@@ -1,0 +1,16 @@
+cp: /t/d: EISDIR
+rm: /t/d: EISDIR
+rmdir: /t/d: ENOTEMPTY
+mv: /mnt/b/z: EXDEV
+ls: /nodir: ENOENT
+sh: /t/d/r1: EACCES
+cp: /t/d/r1: ENOTDIR
+cp: /t/nofile: ENOENT
+mv: /t/nofile: ENOENT
+tail: /t/nofile: ENOENT
+head: /t/nofile: ENOENT
+mkdir: /t/d: EEXIST
+rmdir: /nodir: ENOENT
+chmod: /t/nofile: ENOENT
+head: usage: head [-n N] [file...]
+chmod: usage: chmod [+-][rhsa]... file...
