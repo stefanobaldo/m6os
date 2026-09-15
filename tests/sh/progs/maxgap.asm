@@ -44,6 +44,16 @@ main:   call    arg_next
         ld      hl,(gap)
         ld      b,0
         call    out_dec16
+        ld      a,' '
+        call    out_putc
+        ld      hl,(t0)
+        ld      b,0
+        call    out_dec16
+        ld      a,' '
+        call    out_putc
+        ld      hl,(last)
+        ld      b,0
+        call    out_dec16
         ld      a,10
         call    out_putc
         xor     a

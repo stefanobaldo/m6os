@@ -1,0 +1,16 @@
+cp /t/d /t/x
+rm /t/d
+rmdir /t/d
+mv /t/d/m1 /mnt/b/z
+ls /nodir
+echo x > /t/d/r1
+cp /t/r1 /t/r2 /t/d/r1
+cp /t/nofile /t/d
+mv /t/nofile /t/d
+tail -n 1 /t/nofile
+head /t/nofile
+mkdir /t/d
+rmdir /nodir
+chmod +r /t/nofile
+head -n x /t/r1
+chmod +q /t/r1
