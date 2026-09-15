@@ -44,7 +44,9 @@ commands, which is what a machine with 128K can hold beside the shell.
 
 A redirection belongs to the command it follows; in a pipeline, `<` on
 the first and `>` on the last are the usual ones. A file that does not
-open is reported and the command is not run.
+open is reported and that command is not run; the rest of the pipeline
+still runs, the command after it reading an empty input and the one
+before it ending on a broken pipe.
 
 ## Lists and the background
 
