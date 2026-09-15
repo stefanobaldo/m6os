@@ -19,7 +19,8 @@
 # file. The system files go on the first volume either way.
 #
 # Files on the volume: tests/<name>/files/, a directory tree, is copied
-# into the staging directory as it is; each program built from
+# into the staging directory as it is; a test with a `product` marker
+# boots build/m6.com as M6.COM and carries every build/bin/* in BIN/; each program built from
 # tests/<name>/progs/<prog>.asm (build/<name>.progs/<prog>) is copied to
 # the path tests/<name>/progs/<prog>.dest names; and tests/<name>/files.tcl,
 # if present, is sourced by mkdisk.tcl before the import, with M6_STAGING
@@ -41,9 +42,16 @@ export OPENMSX_USER_DATA="$ROOT/tools/openmsx"
 M6_TZ_OFFSET=$(date +%z)
 export M6_TZ_OFFSET
 
-com="build/$name.com"
+# A test with a `product` marker boots the product itself, build/m6.com
+# as M6.COM with every utility in BIN/, instead of a program of its own.
+if [ -f "tests/$name/product" ]; then
+    com="build/m6.com"
+    upper=M6
+else
+    com="build/$name.com"
+    upper=$(echo "$name" | tr '[:lower:]' '[:upper:]')
+fi
 [ -f "$com" ] || { echo "run-test: $com not built; run make first" >&2; exit 2; }
-upper=$(echo "$name" | tr '[:lower:]' '[:upper:]')
 
 staging="build/$name.staging"
 
@@ -195,6 +203,12 @@ for machine in $machines; do
         cp .tools/nextor/NEXTOR.SYS .tools/nextor/COMMAND2.COM "$staging/"
         cp "$com" "$staging/$upper.COM"
         printf '%s%s\r\n' "$upper" "${args:+ $args}" > "$staging/AUTOEXEC.BAT"
+        if [ -f "tests/$name/product" ]; then
+            mkdir -p "$staging/bin"
+            for b in build/bin/*; do
+                case $b in *.lst) ;; *) cp "$b" "$staging/bin/" ;; esac
+            done
+        fi
         if [ -d "tests/$name/files" ]; then
             cp -R "tests/$name/files/." "$staging/"
         fi
