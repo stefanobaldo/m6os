@@ -125,6 +125,12 @@ to install.
   with — buffered input and output, arguments and options, and messages
   in one form, `name: file: ENOENT`. See [`docs/programs.md`](docs/programs.md),
   *Writing a utility*.
+- The file commands: `ls` (sorted, `-l` for attributes, size and time),
+  `cp` (onto a name or into a directory, several at once), `mv` (within a
+  volume, into a directory as well), `rm`, `mkdir`, `rmdir`, `chmod` (the
+  FAT attributes by letter, `+r` the one protection there is), `pwd`,
+  `head` and `tail` (`-n N`; `tail` reads a file from its end). See
+  [`docs/commands.md`](docs/commands.md), which describes every command.
 
 ### Fixed
 

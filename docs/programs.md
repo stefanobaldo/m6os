@@ -111,8 +111,11 @@ only for what it uses: `prog.inc` gives the header, the entry and the
 exit; `out.inc` buffered output on descriptor 1; `in.inc` buffered input
 by blocks and `line.inc` by bytes and lines; `err.inc` the messages in
 the one form every command uses, `name: file: ENOENT`; `args.inc` the
-arguments and options; `str.inc` the string routines. `src/bin/cat.asm`
-is the smallest complete example.
+arguments and options; `str.inc` the string routines; `path.inc` the
+last component of a path, the join of a directory and a name, and
+whether a path names a directory. `src/bin/cat.asm` is the smallest
+complete example; the commands themselves are described in
+[`commands.md`](commands.md).
 
 A program's buffers live past the end of its file, declared with the
 library's `bss` macro rather than `ds`: the assembler writes a `ds` into
