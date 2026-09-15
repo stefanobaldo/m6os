@@ -1,0 +1,29 @@
+# The product test's script. Every check leaves its result in a file
+# under /t, which the host reads back from the image; the screen shows
+# the shell's own reports. The last line is what the harness waits for.
+echo 1 hello > /t/r1
+echo a b  c "d  e" 'f g' > /t/r2
+echo -n no newline > /t/r3
+cat /t/r1 /t/r2 > /t/r4
+cat < /t/r1 > /t/r5
+echo x >> /t/r5
+cat /t/r1 /t/nofile > /t/r6 2> /t/r6e
+wc /t/r4 > /t/r7
+echo one two three | wc -w > /t/r8
+cat /t/r4 | cat | wc -l > /t/r9
+cd /t
+echo r1 r? > r10
+echo z* > r11
+echo '*' > r12
+cat < r1 > r13
+cd /
+true; echo 14 > /t/r14
+false; echo 15 > /t/r15
+nofile > /t/r16 2> /t/r16e
+sh < /t/inner > /t/r17
+echo 18 > /t/r18 &
+sh < /etc/bench1
+sh < /etc/bench2
+cat /big > /t/copy &
+/t/maxgap 300 > /t/gap
+echo rc done

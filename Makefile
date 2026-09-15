@@ -23,8 +23,11 @@ OPENMSX   := $(if $(wildcard .tools/openmsx/bin/openmsx),.tools/openmsx/bin/open
 # at its own address, and the switched part, src/kernel/kseg.asm, to
 # build/kseg.bin; a test that loads them includes both binaries and the
 # resident's exported labels.
-TESTS     := $(notdir $(patsubst %/,%,$(dir $(wildcard tests/*/*.asm))))
-TEST_BINS := $(foreach t,$(TESTS),build/$(t).com)
+# A test directory holding a `product` marker boots the product,
+# build/m6.com, instead of a program of its own.
+PRODUCT_TESTS := $(notdir $(patsubst %/,%,$(dir $(wildcard tests/*/product))))
+TESTS     := $(sort $(notdir $(patsubst %/,%,$(dir $(wildcard tests/*/*.asm)))) $(PRODUCT_TESTS))
+TEST_BINS := $(foreach t,$(filter-out $(PRODUCT_TESTS),$(TESTS)),build/$(t).com)
 # A test may ship programs on its disk: tests/<name>/progs/<prog>.asm builds
 # to build/<name>.progs/<prog>, a raw image for P0_PROG with the executable
 # header (tests/m6prog.inc); tests/<name>/progs/<prog>.dest names where on
