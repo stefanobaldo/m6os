@@ -1,7 +1,7 @@
 ; Strings.
 ;
 ;   str_cmp     HL and DE -> 0-terminated strings: Z when equal; CF when
-;               HL's sorts first. Corrupts AF, DE, HL.
+;               DE's sorts first. Corrupts AF, DE, HL.
 ;   str_len     HL -> a string: BC = its length. Corrupts AF.
 ;   str_copy    HL -> a string, DE -> where to: copied with its 0, DE left
 ;               on the 0 so the next copy appends. Corrupts AF.
