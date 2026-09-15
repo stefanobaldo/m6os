@@ -109,6 +109,23 @@ to install.
   to a pipe nobody reads, instead of ending. A process a signal ended
   reports 128 plus the signal to `wait`.
 
+- Booting to a shell. `M6.COM`, started under Nextor, prints its version,
+  takes the machine over and boots the kernel; the kernel then runs
+  `/etc/rc` through the shell if that file exists, and starts a shell at
+  the keyboard, and another when that one exits. `M6 mem=<K>` caps the
+  memory. See [`README.md`](README.md), *Running m6*.
+- The shell, `sh`: words with `'...'` and `"..."`, `#` comments, pipelines
+  of up to four commands, `<`, `>`, `>>` and `2>`, `;` lists, `&` jobs
+  reported as they end, `*` and `?` over the names in a directory, `cd`
+  and `exit`; a command's non-zero status printed as `[N]`; `sh -i` for
+  the prompt and `sh < file` for a script. Commands are the programs in
+  `/bin`. See [`docs/shell.md`](docs/shell.md).
+- The first commands: `echo`, `cat`, `wc`, `true` and `false`, each in one
+  16K page, with the library under `src/lib/` that the rest are written
+  with — buffered input and output, arguments and options, and messages
+  in one form, `name: file: ENOENT`. See [`docs/programs.md`](docs/programs.md),
+  *Writing a utility*.
+
 ### Fixed
 
 - A program whose last sector was not a whole one, started by `exec` from
