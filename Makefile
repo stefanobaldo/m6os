@@ -29,6 +29,15 @@ PROG_SRCS := $(wildcard tests/*/progs/*.asm)
 PROG_BINS := $(foreach p,$(PROG_SRCS),build/$(word 2,$(subst /, ,$(p))).progs/$(basename $(notdir $(p))))
 KERNEL    := build/kernel.bin
 KSEG      := build/kseg.bin
+# The base utilities: src/bin/<name>.asm builds to build/bin/<name>, a raw
+# image for P0_PROG with the executable header (src/lib/prog.inc). Every
+# one fits one page: a file above PAGE_MAX bytes — 16K less the 256-byte
+# argument block, the kernel's 24-byte frame and the 256 bytes below the
+# program — is refused, and the program's own assertion keeps its buffers
+# below the same ceiling.
+BIN_SRCS  := $(wildcard src/bin/*.asm)
+BIN_BINS  := $(patsubst src/bin/%.asm,build/bin/%,$(BIN_SRCS))
+PAGE_MAX  := 16102
 SRC_FILES := $(wildcard src/*/*.asm src/*/*.inc)
 # sjasmplus rejects an include path that does not exist, so -Isrc is passed
 # only once there is a src/ to point at.
@@ -40,7 +49,7 @@ INCLUDES  := -Itests $(if $(wildcard src),-Isrc)
 
 .PHONY: all check check-sjasmplus check-openmsx check-tools fetch sizes clean distclean
 
-all: check-sjasmplus $(KERNEL) $(KSEG) $(TEST_BINS) $(PROG_BINS) sizes
+all: check-sjasmplus $(KERNEL) $(KSEG) $(BIN_BINS) $(TEST_BINS) $(PROG_BINS) sizes
 
 build:
 	mkdir -p build
@@ -71,12 +80,22 @@ build/$(1).progs/$(2): tests/$(1)/progs/$(2).asm tests/m6prog.inc $$(SRC_FILES) 
 endef
 $(foreach p,$(PROG_SRCS),$(eval $(call prog_rule,$(word 2,$(subst /, ,$(p))),$(basename $(notdir $(p))))))
 
+# One rule per utility, with the one-page check.
+define bin_rule
+build/bin/$(1): src/bin/$(1).asm $$(SRC_FILES) | build
+	@mkdir -p build/bin
+	$$(SJASMPLUS) --nologo --msg=war $$(INCLUDES) --raw=$$@ --lst=build/bin/$(1).lst $$<
+	@s=$$$$(wc -c < $$@ | tr -d ' '); [ "$$$$s" -le $(PAGE_MAX) ] || { \
+	    echo "$$@ is $$$$s bytes: a base utility fits one page ($(PAGE_MAX) at most)" >&2; rm -f $$@; exit 1; }
+endef
+$(foreach b,$(patsubst src/bin/%.asm,%,$(BIN_SRCS)),$(eval $(call bin_rule,$(b))))
+
 # One line per binary, "SIZE <name> <bytes>": what the build reports today
 # and what size limits are later checked against. kernel.bin is the resident
 # image, the number the 16K target is measured against; kseg.bin the
 # switched part, against the window's 16K.
-sizes: $(KERNEL) $(KSEG) $(TEST_BINS) $(PROG_BINS)
-	@for f in $(KERNEL) $(KSEG) $(TEST_BINS) $(PROG_BINS); do \
+sizes: $(KERNEL) $(KSEG) $(BIN_BINS) $(TEST_BINS) $(PROG_BINS)
+	@for f in $(KERNEL) $(KSEG) $(BIN_BINS) $(TEST_BINS) $(PROG_BINS); do \
 	    printf 'SIZE %s %s\n' "$$(basename $$f)" "$$(wc -c < $$f | tr -d ' ')"; \
 	done
 
