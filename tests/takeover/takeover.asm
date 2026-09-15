@@ -501,7 +501,7 @@ start:
         ld      (REC+KR_MEMCAP),a       ; no cap
         ld      hl,ksimage              ; the switched part of the kernel
         ld      (REC+KR_KSEG_SRC),hl
-        ld      hl,ksimage_end-ksimage
+        ld      hl,tblock_end-ksimage   ; the image and, after it, the block
         ld      (REC+KR_KSEG_LEN),hl
         call    ld_takeover
         jp      fail                    ; it returns only with A = F3h
@@ -825,8 +825,8 @@ nx_ramslot1 equ RAMAD1
 ; The loader module's four: the image, the record, the block and its length.
 ld_image    equ kimage
 ld_rec      equ REC
-ld_block    equ tblock
-ld_block_len equ tblock_end-tblock
+ld_block    equ 0                   ; nothing above the image: the block
+ld_block_len equ 0                  ; rides in the switched image's segment
         include "loader/takeover.asm"
 
 ; The resident image, copied to K_BASE by the takeover.
@@ -843,12 +843,15 @@ ksimage:
 ksimage_end:
         ASSERT  ksimage_end < 8000h     ; the resident copies it from pages 0-1
 
-; The second half: assembled for K_IMAGE_END (build/kernel.exp), where the
-; loader copies it, above the image in page 3. It runs once the kernel has
-; booted, with pages 1 and 2 free, and reaches the resident through the
-; jump table. Step numbers continue the loader's.
+; The second half. It follows the switched image in this file and is
+; copied with it into the image's segment (KR_KSEG_LEN covers both), which
+; is process 0's page 0: it runs there, at its offset in that segment, and
+; costs no room in page 3, which the resident has outgrown. It runs once
+; the kernel has booted, with pages 1 and 2 free, and reaches the resident
+; through the jump table. Step numbers continue the loader's.
 tblock:
-        DISP    K_IMAGE_END
+        ASSERT  tblock == ksimage_end
+        DISP    tblock-ksimage
 t_entry:
 ; --- step 8: destroy the Nextor kernel's RAM segments ------------------
         ld      a,8
