@@ -142,6 +142,11 @@ to install.
 
 ### Fixed
 
+- Starting `M6.COM` on an MSX2 BIOS flashed a frame of garbage over the top
+  of the screen: the console turned cursor blinking on before clearing the
+  video memory it uses for it, where the BIOS leaves the 40-column font —
+  whatever the width when `M6.COM` was started, since the machine boots at
+  40 columns.
 - `getcwd` — and so `pwd` and the shell's prompt — answered `ENOENT` for a
   directory whose entry lies past the first cluster of its parent: the
   cluster it was looking for was overwritten when the search moved on to

@@ -32,8 +32,12 @@
 ; interrupt handler reads S#0 and that resets the port's byte latch;
 ; data-port accesses between two addresses need no such care.
 
-; vdp_init — the ports from the record, the font, the registers, the
-; blink table. Corrupts everything.
+; vdp_init — the ports from the record, the font, the blink table, the
+; registers. The blink table is cleared before R#3 points at it and R#13
+; turns blinking on: V_BLINK is where TEXT1 keeps its font, an MSX2 BIOS
+; setting 80 columns leaves the last 40-column font there — the boot's, at
+; least — and whatever is there blinks on screen for a frame. It is
+; cleared after the font is moved, which may read it. Corrupts everything.
 vdp_init:
         ld      a,(K_REC+KR_VDPWR)
         ld      (vdp_dat),a
@@ -43,6 +47,15 @@ vdp_init:
         and     3Fh
         cp      V_PAT>>11
         call    nz,vdp_move_font
+        ld      hl,V_BLINK              ; the blink table: all zero
+        call    vdp_setwrt
+        ld      a,(vdp_dat)
+        ld      c,a
+        ld      b,CON_ROWS*10
+        xor     a
+.blk:   out     (c),a
+        nop
+        djnz    .blk
         di
         ld      a,(vdp_ctl)
         ld      c,a
@@ -80,15 +93,6 @@ vdp_init:
         ld      a,80h+1
         out     (c),a
         ei
-        ld      hl,V_BLINK              ; the blink table: all zero
-        call    vdp_setwrt
-        ld      a,(vdp_dat)
-        ld      c,a
-        ld      b,CON_ROWS*10
-        xor     a
-.blk:   out     (c),a
-        nop
-        djnz    .blk
         ret
 
 vdp_regs:
