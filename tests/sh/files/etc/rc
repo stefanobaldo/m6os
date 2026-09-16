@@ -60,11 +60,10 @@ rmdir /t/d/sub /t/d
 ls /t > /t/r34
 sh < /etc/bench1
 sh < /etc/bench2
-cat /big > /t/copy &
-/t/maxgap 300 > /t/gap
-# The copy's own span, from the two stamps around it. The gap beside a cp
-# is not read: a measuring program started here only gets the CPU if the
-# host happens to let it into its loop before the copy begins, and the
-# stamps give the span whether it does or not.
+# The response delay: the largest gap between two tick reads beside a cp
+# of 64 KB, which gap starts itself so that it is in its loop before the
+# copy begins on every host; the line ends in ok when the gap is within 8
+# ticks. The two stamps around the second copy give a copy's span alone.
+/t/gap 8 /bin/cp /big /t/copy > /t/r35
 /t/tick > /t/t1; cp /big /t/copy2; /t/tick > /t/t2
 echo rc done
