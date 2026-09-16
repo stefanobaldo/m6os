@@ -31,8 +31,12 @@ every register as it left it** — the kernel switches between processes on
 the 60 Hz tick, round-robin, and saves the whole register set, alternate
 set and index registers included, on the process's own stack. For that the
 kernel may use up to 24 bytes of a process's stack at any instant: keep at
-least that much room below `SP`. A syscall is not interrupted by a switch;
-a process that wants to give the CPU up before its turn ends calls `yield`.
+least that much room below `SP`. A syscall is not interrupted by a switch:
+a tick that finds the process inside one marks the switch as owed, and the
+process gives the CPU up when that call returns — so the wait another
+process sees is at most one call long, a `write` of 4 KB to a file being
+~50 ms on an MSX at 3.58 MHz, however long the caller goes on making
+calls. A process that wants to give the CPU up sooner calls `yield`.
 
 ## What a process sees
 

@@ -27,7 +27,9 @@ to install.
   usable memory of that mapper — `mem=128` reproduces a 128K machine on a
   larger one.
 - Processes. Up to fifteen at once, switched round-robin at the 60 Hz tick with
-  every register saved. A process owns pages 0–2, starts at `0100h` and keeps
+  every register saved; a process the tick finds inside a system call gives the
+  CPU up when the call returns, so no process holds the machine by staying in
+  the kernel. A process owns pages 0–2, starts at `0100h` and keeps
   its stack at the top of its highest page; its memory is returned when it
   exits. `spawn` creates a child, `wait` blocks until one exits and reaps it,
   `yield` gives the CPU up early; a child that outlives its parent reaps
