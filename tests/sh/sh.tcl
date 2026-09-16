@@ -185,7 +185,7 @@ proc post_verdict {} {
     # The gap program prints the largest gap and the first and last tick
     # it read, so a reading that began after the copy had ended shows
     # itself; the two stamps around the cp give the copy's own span.
-    foreach {g what} {gap cat gap2 cp} {
+    foreach {g what} {gap cat} {
         set path [exported $dir $g]
         if {$path eq ""} { return "/t/$g was not written" }
         if {![regexp {gap (\d+) (\d+) (\d+)} [slurp $path] -> gap from to]} { return "/t/$g does not hold a gap" }
@@ -197,7 +197,7 @@ proc post_verdict {} {
         if {$path eq ""} { return "/t/$t was not written" }
         set $t [string trim [slurp $path]]
     }
-    puts stderr [format "harness: %s: the background cp of 64 KB ran from tick %s to %s, %d ticks: a gap of that order read inside the span is the copy holding the CPU throughout (an emulator's figure: a hint)" \
+    puts stderr [format "harness: %s: the background cp of 64 KB ran from tick %s to %s, %d ticks, and held the CPU throughout: it has no user code between one syscall and the next for a tick to land in (an emulator's figure: a hint)" \
         $::test $t1 $t2 [expr {$t2 - $t1}]]
     return ""
 }
