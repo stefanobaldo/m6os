@@ -25,12 +25,17 @@
 ; in a syscall when the handler sees the signal keeps it owed with SF_PEND
 ; set, and the handler tries again every tick until the syscall returns to
 ; user space or the process blocks — so a signal never interrupts a
-; syscall, and a 64 KB write dies at its end. Planting sets bit 7 of
-; PX_SIGPEND (armed), so nothing plants or wakes a row twice. A second
-; signal is dropped while one is owed or armed, unless it is SIGKILL, which
-; replaces the number; a signal its owner has come to ignore since it was
-; sent is dropped when it would be planted (sig_owed). kill of oneself
-; marks and dies at once through the stub.
+; syscall, and a 64 KB write dies at its end. A process that leaves the
+; CPU with SF_PEND still set — it blocked, yielded, or paid an owed switch
+; at its syscall's return — has it turned into SF_PLANT by sched_load, so
+; that its next load plants the stub; otherwise the next tick's sig_cur
+; would read the flag against whoever is current then and the signal
+; would stay owed with nobody looking.
+; Planting sets bit 7 of PX_SIGPEND (armed), so nothing plants or wakes a
+; row twice. A second signal is dropped while one is owed or armed, unless
+; it is SIGKILL, which replaces the number; a signal its owner has come to
+; ignore since it was sent is dropped when it would be planted (sig_owed).
+; kill of oneself marks and dies at once through the stub.
 
 ; sig_bit — A = a signal: A = its PX_SIGIGN bit, CF clear; CF set for
 ; SIGKILL or a number that is none of the four. Corrupts F.
