@@ -1,0 +1,9 @@
+sleep 100 &
+ps
+kill 4
+true
+ps
+kill 9
+kill -9 0
+kill -INT 99
+kill -q 4
