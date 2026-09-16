@@ -41,8 +41,8 @@ proc expect_screen {want msg} { if {![has_row $want]} { problem $msg } }
 # src/kernel/kbd.asm, the international layout).
 array set key {
     a {2 0x40} c {3 0x01} d {3 0x02} e {3 0x04} f {3 0x08} h {3 0x20}
-    i {3 0x40} l {4 0x02} n {4 0x08} o {4 0x10} p {4 0x20} s {5 0x01}
-    t {5 0x02} w {5 0x10} x {5 0x20} y {5 0x40} 0 {0 0x01} 6 {0 0x40}
+    i {3 0x40} l {4 0x02} n {4 0x08} o {4 0x10} p {4 0x20} r {4 0x80}
+    s {5 0x01} t {5 0x02} w {5 0x10} x {5 0x20} y {5 0x40} 0 {0 0x01} 6 {0 0x40}
     7 {0 0x80} / {2 0x10} space {8 0x01} shift {6 0x01} ctrl {6 0x02}
     ret {7 0x80}
 }
@@ -112,7 +112,10 @@ proc type_at_shell {} {
     set t [typeline [expr {$t + 1.8}] {/ t / s p i n space 6 0 0 space amp space / t / s p e w space 6 0 0}]
     ctap [expr {$t + 0.5}] c
     at [expr {$t + 2.0}] check_spew
-    set t [typeline [expr {$t + 2.2}] {e x i t}]
+    # clear: the screen holds nothing but a fresh prompt on its first row.
+    set t [typeline [expr {$t + 2.2}] {c l e a r}]
+    at [expr {$t + 0.6}] check_clear
+    set t [typeline [expr {$t + 0.8}] {e x i t}]
     at [expr {$t + 1.0}] check_relaunch
 }
 proc check_spew {} {
@@ -126,6 +129,13 @@ proc check_spew {} {
     if {$last < 0} { problem "spew printed nothing"; return }
     if {[lsearch -exact [lrange $rs $last end] {[130]}] < 0} {
         problem "spew killed by ^C beside a running spin was not reported as 130"
+    }
+}
+proc check_clear {} {
+    set rs [rows]
+    if {[lindex $rs 0] ne {/ $}} { problem "clear did not leave the prompt alone on the first row"; return }
+    foreach r [lrange $rs 1 end] {
+        if {$r ne ""} { problem "clear left \"$r\" on the screen"; return }
     }
 }
 proc check_false {n1} {
