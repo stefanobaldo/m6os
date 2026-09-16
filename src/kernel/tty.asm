@@ -14,6 +14,8 @@
 ; is handed min(BC, what is left) and the rest waits for the next read,
 ; so a program reading a byte at a time gets the line without blocking
 ; again. Editing: BS and DEL rub out one byte (BS SP BS), ^U the line,
+; ^L (and SHIFT+HOME, the same byte) clears the screen and writes the
+; line again at the top, after what its row held before it — the prompt;
 ; TAB is kept and echoed as con_write moves the cursor, every other
 ; control byte — arrows, HOME, ESC, F-keys — is dropped without echo. The
 ; line holds TTY_LINE-1 bytes; a printable past that is dropped. ^D on an
@@ -51,6 +53,8 @@ tty_read:
 .build: xor     a
         ld      (ld_len),a
         ld      (ld_pos),a
+        ld      a,(con_col)
+        ld      (ld_col),a              ; where the line starts, for ^L
 .loop:  ld      a,(kbd_count)
         or      a
         jr      nz,.have
@@ -71,6 +75,54 @@ tty_read:
         push    af
         push    hl
         jp      sched_save_block        ; its ei is the load's
+.ff:    ; ^L: the screen cleared, then the cells of the line's first row
+        ; before ld_col — the prompt the reader wrote — and the line so
+        ; far. That row is the cursor's less the rows the line's echo
+        ; took, walked from ld_col the way con_write moves; a prompt
+        ; longer than a row comes back as its last row only. Neither
+        ; write scrolls, so con_linebuf, which a scroll uses, holds the
+        ; prompt safely.
+        ld      hl,ld_buf
+        ld      a,(ld_len)
+        ld      c,a
+        ld      b,0
+        push    hl
+        push    bc                      ; the line, for the last write
+        ld      a,(ld_col)
+        ld      d,a                     ; d = the column
+        ld      e,b                     ; e = the rows the echo took
+        inc     c
+        jr      .next
+.walk:  ld      a,(hl)
+        cp      9
+        ld      a,d
+        jr      nz,.char
+        or      7                       ; TAB: the next stop, less one
+.char:  inc     a
+        cp      CON_COLS
+        jr      c,.col
+        inc     e                       ; past the row: the next one
+        xor     a
+.col:   ld      d,a
+        inc     hl
+.next:  dec     c
+        jr      nz,.walk
+        ld      a,(con_row)
+        sub     e
+        ld      c,b                     ; bc = the prompt's length, 0
+        jr      c,.cls                  ; not on the screen: no prompt
+        call    vdp_row_read            ; into con_linebuf
+        ld      a,(ld_col)
+        ld      c,a
+        ld      b,0
+.cls:   ld      a,12
+        call    con_putc                ; BC kept
+        ld      hl,con_linebuf
+        call    con_write               ; nothing for a length of 0
+        pop     bc
+        pop     hl
+        call    con_write
+.again: jr      .loop
 .woken: ei
 .have:  call    kbd_pop                 ; a = the byte; CF: nothing from it
         jr      c,.loop
@@ -82,6 +134,8 @@ tty_read:
         jr      z,.bs
         cp      21                      ; ^U
         jr      z,.kill
+        cp      12                      ; ^L
+        jr      z,.ff
         cp      4                       ; ^D
         jr      z,.eof
         cp      3                       ; a ^C nobody took
@@ -89,7 +143,7 @@ tty_read:
         cp      9                       ; TAB: kept, con_write moves
         jr      z,.store
         cp      20h
-        jr      c,.loop                 ; any other control: dropped
+        jr      c,.again                ; any other control: dropped
 .store: push    af
         ld      a,(ld_len)
         cp      TTY_LINE-1
@@ -241,5 +295,6 @@ tty_mode:       db TTY_CANON            ; the terminal's mode
 ld_len:         db 0                    ; bytes in the line
 ld_pos:         db 0                    ; of them, delivered already
 ld_eof:         db 0                    ; a ^D on an empty line is owed
+ld_col:         db 0                    ; the column the line started at
 tty_bsseq:      db 8,32,8
 ld_buf:         ds TTY_LINE             ; the line

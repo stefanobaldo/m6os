@@ -115,16 +115,19 @@ File descriptor 0 is the keyboard, and the kernel edits what is typed
 before a program sees it. In **canonical mode**, the default, `read`
 returns a line: every character typed is echoed to the screen as it
 arrives, BS and DEL rub out the last one, ^U the whole line, TAB is kept;
-RET closes the line and becomes its last byte, LF (10). A `read` that asks
-for fewer bytes than the line holds gets that many, and the rest waits for
-the next `read`, so a program reading a byte at a time gets the line
-without waiting again. ^D at the start of a line makes `read` return 0,
-once, as at the end of a file; ^D in the middle of one closes it without
-an LF. A line holds 127 bytes; what is typed past that is dropped. Keys
-that are not bytes of a line — the arrows, HOME, INS, ESC, SELECT, the
-function keys — are dropped without echo, and ^C and STOP are never
-bytes: they are the interrupt (see *Signals*). The line being edited
-belongs to the terminal, not to the process reading it.
+^L (or SHIFT+HOME, the same byte) clears the screen and writes again, at
+the top, what the line's first row held before the line began — a shell's
+prompt — and the line so far; RET closes the line and becomes its last
+byte, LF (10). A `read` that asks for fewer bytes than the line holds gets
+that many, and the rest waits for the next `read`, so a program reading a
+byte at a time gets the line without waiting again. ^D at the start of a
+line makes `read` return 0, once, as at the end of a file; ^D in the
+middle of one closes it without an LF. A line holds 127 bytes; what is
+typed past that is dropped. Keys that are not bytes of a line — the
+arrows, HOME, INS, ESC, SELECT, the function keys — are dropped without
+echo, and ^C and STOP are never bytes: they are the interrupt (see
+*Signals*). The line being edited belongs to the terminal, not to the
+process reading it.
 
 `ttymode` (29) switches the keyboard to **raw mode** and back, for a
 pager or an editor that draws its own screen: `read` then returns bytes as

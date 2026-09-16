@@ -46,7 +46,9 @@ and no execute bit.
 
 `clear` — clears the screen and puts the cursor at the top left. It
 writes one form feed (byte 12), which the console takes as clear and
-home; sent to a file or a pipe, the byte goes there like any other.
+home; sent to a file or a pipe, the byte goes there like any other. At
+the prompt, ^L or SHIFT+HOME clears the screen without it, keeping the
+line being typed.
 
 ## cp
 
