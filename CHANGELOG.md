@@ -133,6 +133,12 @@ to install.
   FAT attributes by letter, `+r` the one protection there is), `pwd`,
   `head` and `tail` (`-n N`; `tail` reads a file from its end). See
   [`docs/commands.md`](docs/commands.md), which describes every command.
+- The text and process commands: `grep` (a literal pattern, `-v`, `-n`),
+  `sort` (byte order, what fits in its page), `uniq`, `tr` (ranges and
+  `\n`), `tee` (`-a`; the files written in 4 KB pieces), `date`, `sleep`,
+  `ps` (pid, parent, state and pages of every process) and `kill` (by
+  number or name, `SIGTERM` by default). With these, every command in
+  `/bin` is described in [`docs/commands.md`](docs/commands.md).
 
 ### Fixed
 
