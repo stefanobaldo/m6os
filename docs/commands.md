@@ -42,6 +42,12 @@ directory's attributes can be changed the same way; its directory bit
 stays. These are FAT's attributes, not Unix's modes: there are no owners
 and no execute bit.
 
+## clear
+
+`clear` — clears the screen and puts the cursor at the top left. It
+writes one form feed (byte 12), which the console takes as clear and
+home; sent to a file or a pipe, the byte goes there like any other.
+
 ## cp
 
 `cp src dst` copies one file onto a new or existing name; `cp src... dir`
