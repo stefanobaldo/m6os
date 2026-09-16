@@ -4,10 +4,10 @@
 #
 # Files the product test needs that are too large or too regular to
 # commit, written by tools/mkdisk.tcl before it imports the staging
-# directory: big, 65 536 bytes, what a background cat copies while
-# maxgap measures; etc/bench1, sixty one-sector commands of which the
-# first and the last print the kernel's tick; etc/bench2, sixty
-# three-stage pipelines of which the first and the last end in a stamp.
+# directory: big, 65 536 bytes, what cp copies while gap measures;
+# etc/bench1, sixty one-sector commands of which the first and the last
+# print the kernel's tick; etc/bench2, sixty three-stage pipelines of
+# which the first and the last end in a stamp.
 # Only two lines of each reach the screen, so the measurement holds no
 # file write and no scrolling.
 set staging $::env(M6_STAGING)
