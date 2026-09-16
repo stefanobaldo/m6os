@@ -1,0 +1,4 @@
+kill: 9: ESRCH
+kill: 0: EPERM
+kill: 99: EINVAL
+kill: usage: kill [-sig] pid...

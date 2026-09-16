@@ -58,6 +58,27 @@ cd /
 rm /t/d/m1 /t/d/r1 /t/d/sub/r14 /t/d/sub/r15
 rmdir /t/d/sub /t/d
 ls /t > /t/r34
+# The text and process commands. The checks that must fail join /t/fails;
+# ps and kill run in /t/procs, a nested script whose pids are known in
+# advance because a new process takes the first free row of the table.
+grep b /t/r4 > /t/r36
+grep -n hello /t/r1 /t/r4 > /t/r37
+grep -v hello /t/r4 > /t/r38
+cat /t/r4 | grep hello > /t/r39
+sort /t/words > /t/r40
+cat /t/words | sort > /t/r41
+sort /t/words | uniq > /t/r42
+uniq /t/words > /t/r43
+cat /t/words | uniq > /t/r44
+ls /bin | sort | uniq | wc -l > /t/r45
+echo hello | tr a-z A-Z > /t/r46
+tr '\n' ' ' < /t/words > /t/r47
+cat /t/r4 | tee /t/r48 /t/r49 > /t/r50
+echo more | tee -a /t/r48 > /t/r51
+cat /big | tee /t/copy3 | wc -c > /t/r52
+date > /t/r53
+/t/tick > /t/s1; sleep 1; /t/tick > /t/s2
+sh < /t/procs > /t/r54 2> /t/r54e
 sh < /etc/bench1
 sh < /etc/bench2
 # The response delay: the largest gap between two tick reads beside a cp

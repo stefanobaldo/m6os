@@ -14,3 +14,10 @@ rmdir /nodir
 chmod +r /t/nofile
 head -n x /t/r1
 chmod +q /t/r1
+grep zzz /t/r4
+grep x /t/nofile
+sort /big
+echo x | tee /nodir/x
+uniq /t/nofile
+tr a
+sleep x
