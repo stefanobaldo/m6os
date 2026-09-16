@@ -37,8 +37,10 @@ proc expect_screen {want msg} { if {![has_row $want]} { problem $msg } }
 # src/kernel/kbd.asm, the international layout).
 array set key {
     a {2 0x40} c {3 0x01} d {3 0x02} e {3 0x04} f {3 0x08} h {3 0x20}
-    i {3 0x40} l {4 0x02} o {4 0x10} p {4 0x20} s {5 0x01} t {5 0x02}
-    x {5 0x20} y {5 0x40} space {8 0x01} ctrl {6 0x02} ret {7 0x80}
+    i {3 0x40} l {4 0x02} n {4 0x08} o {4 0x10} p {4 0x20} s {5 0x01}
+    t {5 0x02} w {5 0x10} x {5 0x20} y {5 0x40} 0 {0 0x01} 6 {0 0x40}
+    7 {0 0x80} / {2 0x10} space {8 0x01} shift {6 0x01} ctrl {6 0x02}
+    ret {7 0x80}
 }
 proc down {k} { keymatrixdown {*}$::key($k) }
 proc up {k}   { keymatrixup   {*}$::key($k) }
@@ -52,8 +54,17 @@ proc ctap {t k} {
     tap [expr {$t + 0.05}] $k
     at [expr {$t + 0.15}] {up ctrl}
 }
+proc stap {t k} {
+    at $t {down shift}
+    tap [expr {$t + 0.05}] $k
+    at [expr {$t + 0.15}] {up shift}
+}
+# amp in a key list is &, SHIFT and 7 on the international layout.
 proc taps {t keys} {
-    foreach k $keys { tap $t $k; set t [expr {$t + 0.15}] }
+    foreach k $keys {
+        if {$k eq "amp"} { stap $t 7 } else { tap $t $k }
+        set t [expr {$t + 0.15}]
+    }
     return $t
 }
 proc typeline {t keys} {
@@ -90,8 +101,28 @@ proc type_at_shell {} {
     set t [typeline [expr {$t + 0.8}] {c a t}]
     ctap [expr {$t + 0.8}] c
     at [expr {$t + 1.6}] {expect_screen {[130]} "cat killed by ^C was not reported as 130"}
-    set t [typeline [expr {$t + 1.8}] {e x i t}]
+    # A ^C that lands while the foreground process is inside the kernel,
+    # with another process runnable: spew is in the console's write nearly
+    # always, spin makes the ring two, and the ^C reaches spew at the
+    # write's return — or never, if giving the CPU up there lost it.
+    set t [typeline [expr {$t + 1.8}] {/ t / s p i n space 6 0 0 space amp space / t / s p e w space 6 0 0}]
+    ctap [expr {$t + 0.5}] c
+    at [expr {$t + 2.0}] check_spew
+    set t [typeline [expr {$t + 2.2}] {e x i t}]
     at [expr {$t + 1.0}] check_relaunch
+}
+proc check_spew {} {
+    # spew's rows of dots have scrolled everything before them away; the
+    # shell's report of its death is a row of its own after the last one.
+    set rs [rows]
+    set last -1
+    for {set i 0} {$i < [llength $rs]} {incr i} {
+        if {[string match {....*} [lindex $rs $i]]} { set last $i }
+    }
+    if {$last < 0} { problem "spew printed nothing"; return }
+    if {[lsearch -exact [lrange $rs $last end] {[130]}] < 0} {
+        problem "spew killed by ^C beside a running spin was not reported as 130"
+    }
 }
 proc check_false {n1} {
     if {[count_rows {[1]}] <= $n1} { problem "false typed at the prompt was not reported as \[1\]" }
@@ -178,22 +209,20 @@ proc post_verdict {} {
         puts stderr [format "harness: %s: %s, sixty in a row: %d ticks, %.1f ms each, a ceiling on the %d ms line (an emulator's figure: a hint)" \
             $::test $label $ticks [expr {$ticks * 1000.0 / 60 / 59}] $target]
     }
-    # The gap program prints the largest gap and the first and last tick
-    # it read, so a reading that began after the copy had ended shows
-    # itself; the two stamps around the cp give the copy's own span.
-    foreach {g what} {gap cat} {
-        set path [exported $dir $g]
-        if {$path eq ""} { return "/t/$g was not written" }
-        if {![regexp {gap (\d+) (\d+) (\d+)} [slurp $path] -> gap from to]} { return "/t/$g does not hold a gap" }
-        puts stderr [format "harness: %s: the largest gap between two ticks read beside a background %s: %d ticks, %.0f ms beyond the turn, reading from tick %d to %d (an emulator's figure: a hint)" \
-            $::test $what $gap [expr {($gap - 2) * 1000.0 / 60}] $from $to]
-    }
+    # The gap program's line was matched above (r35.re wants its ok); its
+    # figures are the response delay beside a cp and the copy's span with
+    # the reader taking a turn per syscall; the two stamps around the
+    # second cp give a copy's span alone.
+    set path [exported $dir r35]
+    if {![regexp {gap (\d+) span (\d+)} [slurp $path] -> gap span]} { return "/t/r35 does not hold a gap" }
+    puts stderr [format "harness: %s: the largest gap between two ticks read beside a cp of 64 KB: %d ticks, %.0f ms beyond the turn, the copy taking %d ticks with the reader beside it (an emulator's figure: a hint)" \
+        $::test $gap [expr {($gap - 2) * 1000.0 / 60}] $span]
     foreach t {t1 t2} {
         set path [exported $dir $t]
         if {$path eq ""} { return "/t/$t was not written" }
         set $t [string trim [slurp $path]]
     }
-    puts stderr [format "harness: %s: the background cp of 64 KB ran from tick %s to %s, %d ticks, and held the CPU throughout: it has no user code between one syscall and the next for a tick to land in (an emulator's figure: a hint)" \
+    puts stderr [format "harness: %s: a cp of 64 KB alone ran from tick %s to %s, %d ticks (an emulator's figure: a hint)" \
         $::test $t1 $t2 [expr {$t2 - $t1}]]
     return ""
 }

@@ -1,7 +1,7 @@
 drain
 fails
+gap
 inner
-maxgap
 r1
 r10
 r11
@@ -38,5 +38,7 @@ r6e
 r7
 r8
 r9
+spew
+spin
 stamp
 tick
