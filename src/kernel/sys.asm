@@ -47,7 +47,9 @@ sys_write:
 .con:   push    bc
         call    con_write               ; the whole buffer, scrolled once
         pop     hl                      ; the length, all of it written
+        ld      a,(k_owed)
         or      a                       ; CF clear
+        jp      nz,k_owed_con           ; a switch owed while it wrote
         ret
 
 ; sys_close — SYS_CLOSE: A = fd. A pipe end is closed here — the slot
