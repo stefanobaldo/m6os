@@ -34,8 +34,9 @@ you a shell. `M6 mem=128` caps the memory at 128K on a larger machine.
 
 At the prompt, [`docs/shell.md`](docs/shell.md) is the language and
 [`docs/commands.md`](docs/commands.md) the commands: `cat`, `chmod`, `cp`,
-`echo`, `false`, `head`, `ls`, `mkdir`, `mv`, `pwd`, `rm`, `rmdir`,
-`tail`, `true` and `wc`. `exit` at the prompt starts a fresh shell.
+`date`, `echo`, `false`, `grep`, `head`, `kill`, `ls`, `mkdir`, `mv`,
+`ps`, `pwd`, `rm`, `rmdir`, `sleep`, `sort`, `tail`, `tee`, `tr`, `true`,
+`uniq` and `wc`. `exit` at the prompt starts a fresh shell.
 
 ## Documents
 
