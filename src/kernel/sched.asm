@@ -22,12 +22,16 @@
 ; Every register is saved because a tick may land on any instruction.
 ;
 ; The policy is round-robin, a switch at every tick in user space, no
-; priorities. The runnable rows form a ring through P_NEXT — the low byte
-; of the next row, since the table is one page — so that the next process
-; is one load away however sparse the table is; a row enters the ring
-; after the current one (sched_link) and the current row leaves it
-; (sched_unlink) when it blocks or exits. k_nrun is the ring's size, so
-; that the tick with one runnable process costs a compare.
+; priorities. A tick that finds the process in the kernel cannot switch
+; and sets k_owed instead (irq.asm); the syscall's return pays it
+; (k_owed_gate, kwin.asm), so the wait for a turn is bounded by one call.
+; sched_load clears k_owed, since whoever owed it has left. The runnable
+; rows form a ring through P_NEXT — the low byte of the next row, since
+; the table is one page — so that the next process is one load away
+; however sparse the table is; a row enters the ring after the current
+; one (sched_link) and the current row leaves it (sched_unlink) when it
+; blocks or exits. k_nrun is the ring's size, so that the tick with one
+; runnable process costs a compare.
 ;
 ; The save and the scan run with interrupts enabled; the load — the pages
 ; and the stack pointer — is one DI region closed by the resume's EI, so
@@ -307,6 +311,8 @@ sched_load:
         out     (0FEh),a
         ex      de,hl
         ld      sp,hl                   ; the process's stack, at its frame
+        xor     a
+        ld      (k_owed),a              ; a switch the one leaving owed: paid
         ; A signal it owes and has not been planted with (sig.asm): now that
         ; its pages are in, the stub goes into the frame — on this stack,
         ; below the frame, never on the outgoing process's.
@@ -336,3 +342,5 @@ sched_resume:
 ; k_cur and k_pid are in the header (K_CUR, K_PID), where the switched
 ; part reads them.
 k_nrun:         db 0            ; rows in PS_RUN, the current one included
+k_owed:         db 0            ; the current process owes a switch: a tick
+                                ; found it in the kernel with k_nrun >= 2
