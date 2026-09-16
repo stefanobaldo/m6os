@@ -49,6 +49,41 @@ proc blink_nonzero {} {
 }
 proc ack {} { poke $::CUE 0 }
 
+# The blink table has to be clear before the VDP is told to use it: a
+# register write of R#3 (where the table is) or R#13 (blink on) with a
+# table still holding the previous system's VRAM shows that VRAM as
+# blinking cells for a frame — after a 40-column SCREEN 0, the font. A
+# register write is the value, then 80h + the register, on the control
+# port; nothing else sent there is 83h or 8Dh. The BIOS's own writes, from
+# below C000h, are not the kernel's to answer for.
+#
+# C-BIOS clears that VRAM when it sets 80 columns; an MSX2 BIOS leaves the
+# 40-column font there, where TEXT1 keeps its pattern table. The table is
+# made to hold what the BIOS would have left — the first 240 bytes of the
+# font, copied from 1000h — at the kernel's first write to the port,
+# before it has touched the VDP.
+set blink_seen 0
+set blink_dirtied 0
+proc vdp_ctl_write {} {
+    if {[reg PC] < 0xC000} return
+    if {!$::blink_dirtied} {
+        set ::blink_dirtied 1
+        for {set i 0} {$i < $::BLINK_N} {incr i} {
+            debug write VRAM [expr {$::BLINK + $i}] [debug read VRAM [expr {0x1000 + $i}]]
+        }
+    }
+    set v $::wp_last_value
+    if {$v == 0x83 || $v == 0x8D} {
+        incr ::blink_seen
+        set n [blink_nonzero]
+        if {$n != 0} {
+            problem [format "R#%d written with %d bytes of the blink table set" \
+                         [expr {$v & 0x3F}] $n]
+        }
+    }
+}
+set vdp_wp [debug set_watchpoint write_io 0x99 {} vdp_ctl_write]
+
 # The matrix: row and mask of the keys the script presses.
 array set key {
     h {3 0x20} e {3 0x04} l {4 0x02} o {4 0x10} m {4 0x04} c {3 0x01}
@@ -71,6 +106,8 @@ proc tap {t k} {
 proc cue {c} {
     switch $c {
         5 {
+            debug remove_watchpoint $::vdp_wp
+            if {$::blink_seen < 2} { problem "R#3 and R#13 were not both seen written at boot" }
             if {[blink_nonzero] != 0} { problem "the blink table is not clear after boot" }
             if {![string match "console: m6 writes*" [row 0]]} { problem "row 0 is not the banner: \"[row 0]\"" }
             ack
