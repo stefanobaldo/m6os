@@ -311,9 +311,20 @@ sched_load:
         ld      (k_owed),a              ; a switch the one leaving owed: paid
         ; A signal it owes and has not been planted with (sig.asm): now that
         ; its pages are in, the stub goes into the frame — on this stack,
-        ; below the frame, never on the outgoing process's.
+        ; below the frame, never on the outgoing process's. SF_PEND here
+        ; belongs to the process that left — the current one owed a signal
+        ; sig_cur could not plant, and gave the CPU up before the next tick
+        ; — and becomes SF_PLANT, so that its next load plants it instead
+        ; of the next tick's sig_cur consulting it against another pid.
         ld      a,(k_sigflag)
-        and     SF_PLANT
+        or      a
+        jr      z,sched_resume
+        bit     1,a                     ; SF_PEND
+        jr      z,.plant
+        res     1,a
+        set     2,a                     ; SF_PLANT
+        ld      (k_sigflag),a
+.plant: and     SF_PLANT
         call    nz,sig_load
 
 ; sched_resume — the frame off the current stack, and back to the process.
