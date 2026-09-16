@@ -1227,7 +1227,7 @@ ks_getcwd:
         inc     hl
         ld      d,(hl)                  ; de = the parent's cluster
         ld      hl,(SG+VV_CLUS)
-        ld      (SG+VV_T+6),hl          ; the cluster to find in the parent
+        ld      (SG+VR_CLUS),hl         ; the cluster to find in the parent
         ld      (SG+VV_CLUS),de
         call    dir_find_clus           ; VR_ENT = this directory's entry
         ret     c
@@ -1330,11 +1330,14 @@ ks_getcwd:
 s_slashmnt:     db  "/mnt/"
 s_slash:        db  "/"
 
-; dir_find_clus — the node (VV_VOL, VV_CLUS) and VV_T+6 = a cluster: the
+; dir_find_clus — the node (VV_VOL, VV_CLUS) and VR_CLUS = a cluster: the
 ; directory entry in that node whose first cluster it is and whose
 ; attribute has DA_DIR, copied to VR_ENT, VR_DSEC/VR_DIDX where it is —
-; dir_find with the cluster for the name. CF with E_NOENT or E_IO.
-; Corrupts everything.
+; dir_find with the cluster for the name. The cluster is kept in VR_CLUS
+; and not in VV_T, which is the FAT walk's own: fat_next writes VV_T+6
+; when the scan crosses into the node's second cluster, and a cluster
+; kept there was lost for every entry past the first. CF with E_NOENT or
+; E_IO. Corrupts everything.
 dir_find_clus:
         call    dir_scan_start
         ret     c
@@ -1363,11 +1366,11 @@ dir_find_clus:
         jr      z,.pop
         ld      de,FE_CLUS-FE_ATTR
         add     hl,de
-        ld      a,(SG+VV_T+6)
+        ld      a,(SG+VR_CLUS)
         cp      (hl)
         jr      nz,.pop
         inc     hl
-        ld      a,(SG+VV_T+7)
+        ld      a,(SG+VR_CLUS+1)
         cp      (hl)
         jr      nz,.pop
         pop     hl
