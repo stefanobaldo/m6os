@@ -15,7 +15,8 @@ nothing is expanded inside either. `#` ends the line. A line longer than
 128 bytes is reported and skipped.
 
 At the keyboard the kernel does the line editing (BS, DEL, ^U, ^D), so a
-line reaches the shell whole.
+line reaches the shell whole. ^L, or SHIFT+HOME, clears the screen and
+leaves the prompt and the line so far at the top.
 
 ## Commands
 

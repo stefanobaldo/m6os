@@ -139,7 +139,9 @@ to install.
   `ps` (pid, parent, state and pages of every process) and `kill` (by
   number or name, `SIGTERM` by default). With these, every command in
   `/bin` is described in [`docs/commands.md`](docs/commands.md).
-- `clear`, which clears the screen and homes the cursor.
+- `clear`, which clears the screen and homes the cursor. ^L, or SHIFT+HOME,
+  does the same while a line is being typed, and writes the prompt and the
+  line so far again at the top.
 
 ### Fixed
 
