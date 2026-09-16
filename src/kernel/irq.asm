@@ -12,8 +12,12 @@
 ; and its stack pointer both below page 3. A PC in page 3 is the resident,
 ; a syscall body or a stub; a stack pointer in page 3 is the switched image
 ; on the syscall stack, or process 0. The kernel is never preempted; a tick
-; that lands inside a syscall leaves the switch to the next one. The BIOS's
-; own handler — hooks, keyboard scan every third tick — never runs again.
+; that lands inside a syscall marks the switch as owed (k_owed, sched.asm),
+; and the syscall's return pays it — so a process that lives in the kernel
+; holds the CPU for one call at most, not for every tick that finds it
+; there. Process 0 is never marked: it gives the CPU up in wait and yield
+; only. The BIOS's own handler — hooks, keyboard scan every third tick —
+; never runs again.
 
 ; k_irq_init — install the vector, select S#0, zero the counter. Call with
 ; interrupts disabled; the caller enables them. Corrupts AF, BC, HL.
@@ -67,15 +71,20 @@ k_isr_in:
         add     hl,sp                   ; [L][H][F][A][PCl][PCh]: hl -> PCh
         ld      a,(hl)
         cp      0C0h
-        jr      nc,.ret                 ; PC in page 3: the kernel
+        jr      nc,.owe                 ; PC in page 3: the kernel
         ld      a,l
         sub     5
         ld      a,h
         sbc     a,0                     ; a = the interrupted SP's high byte
         cp      0C0h
-        jr      nc,.ret                 ; SP in page 3: the switched image
+        jr      nc,.owe                 ; SP in page 3: the switched image
                                         ; on the syscall stack, or process 0
         jp      sched_save_switch
+.owe:   ld      a,(k_pid)
+        or      a
+        jr      z,.ret                  ; process 0: never
+        ld      a,1
+        ld      (k_owed),a              ; owed: the syscall's return pays it
 .ret:   pop     hl
         pop     af
         ei
