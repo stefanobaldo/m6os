@@ -139,6 +139,7 @@ to install.
   `ps` (pid, parent, state and pages of every process) and `kill` (by
   number or name, `SIGTERM` by default). With these, every command in
   `/bin` is described in [`docs/commands.md`](docs/commands.md).
+- `clear`, which clears the screen and homes the cursor.
 
 ### Fixed
 
