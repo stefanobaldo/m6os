@@ -43,8 +43,8 @@ array set key {
     a {2 0x40} c {3 0x01} d {3 0x02} e {3 0x04} f {3 0x08} h {3 0x20}
     i {3 0x40} l {4 0x02} n {4 0x08} o {4 0x10} p {4 0x20} r {4 0x80}
     s {5 0x01} t {5 0x02} w {5 0x10} x {5 0x20} y {5 0x40} 0 {0 0x01} 6 {0 0x40}
-    7 {0 0x80} / {2 0x10} space {8 0x01} shift {6 0x01} ctrl {6 0x02}
-    ret {7 0x80}
+    7 {0 0x80} / {2 0x10} space {8 0x01} home {8 0x02} shift {6 0x01}
+    ctrl {6 0x02} ret {7 0x80}
 }
 proc down {k} { keymatrixdown {*}$::key($k) }
 proc up {k}   { keymatrixup   {*}$::key($k) }
@@ -112,9 +112,23 @@ proc type_at_shell {} {
     set t [typeline [expr {$t + 1.8}] {/ t / s p i n space 6 0 0 space amp space / t / s p e w space 6 0 0}]
     ctap [expr {$t + 0.5}] c
     at [expr {$t + 2.0}] check_spew
+    # SHIFT+HOME, the CLS key, at an empty prompt: the prompt alone on the
+    # first row. ^L halfway through a line: the prompt and the line so far
+    # there, and RET still runs the whole line.
+    stap [expr {$t + 2.2}] home
+    at [expr {$t + 2.8}] {check_top {/ $} "SHIFT+HOME at the prompt"}
+    set t [taps [expr {$t + 3.0}] {e c h o space h i}]
+    ctap $t l
+    at [expr {$t + 0.6}] {check_top {/ $ echo hi} "^L halfway through a line"}
+    set t [typeline [expr {$t + 0.8}] {}]
+    at [expr {$t + 0.6}] {
+        if {[lrange [rows] 0 2] ne {{/ $ echo hi} hi {/ $}}} {
+            problem "the line redrawn by ^L did not run as echo hi"
+        }
+    }
     # clear: the screen holds nothing but a fresh prompt on its first row.
-    set t [typeline [expr {$t + 2.2}] {c l e a r}]
-    at [expr {$t + 0.6}] check_clear
+    set t [typeline [expr {$t + 0.8}] {c l e a r}]
+    at [expr {$t + 0.6}] {check_top {/ $} "clear"}
     set t [typeline [expr {$t + 0.8}] {e x i t}]
     at [expr {$t + 1.0}] check_relaunch
 }
@@ -131,11 +145,13 @@ proc check_spew {} {
         problem "spew killed by ^C beside a running spin was not reported as 130"
     }
 }
-proc check_clear {} {
+# check_top <want> <what>: a cleared screen, want on its first row and
+# every other row blank.
+proc check_top {want what} {
     set rs [rows]
-    if {[lindex $rs 0] ne {/ $}} { problem "clear did not leave the prompt alone on the first row"; return }
+    if {[lindex $rs 0] ne $want} { problem "$what did not leave \"$want\" alone on the first row"; return }
     foreach r [lrange $rs 1 end] {
-        if {$r ne ""} { problem "clear left \"$r\" on the screen"; return }
+        if {$r ne ""} { problem "$what left \"$r\" on the screen"; return }
     }
 }
 proc check_false {n1} {
