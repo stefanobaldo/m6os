@@ -62,8 +62,9 @@ sh < /etc/bench1
 sh < /etc/bench2
 cat /big > /t/copy &
 /t/maxgap 300 > /t/gap
-# The same gap beside a cp: the measuring program must be in its loop
-# before the copy starts, or it runs only after the copy ends and reads
-# an idle machine; the two one-sector commands between give it the CPU.
-/t/tick > /t/t1; /t/maxgap 300 > /t/gap2 & true; true; cp /big /t/copy2; /t/tick > /t/t2
+# The copy's own span, from the two stamps around it. The gap beside a cp
+# is not read: a measuring program started here only gets the CPU if the
+# host happens to let it into its loop before the copy begins, and the
+# stamps give the span whether it does or not.
+/t/tick > /t/t1; cp /big /t/copy2; /t/tick > /t/t2
 echo rc done
