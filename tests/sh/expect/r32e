@@ -14,3 +14,9 @@ rmdir: /nodir: ENOENT
 chmod: /t/nofile: ENOENT
 head: usage: head [-n N] [file...]
 chmod: usage: chmod [+-][rhsa]... file...
+grep: /t/nofile: ENOENT
+sort: input too large
+tee: /nodir/x: ENOENT
+uniq: /t/nofile: ENOENT
+tr: usage: tr set1 set2
+sleep: usage: sleep N

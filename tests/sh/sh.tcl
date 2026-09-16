@@ -193,8 +193,8 @@ proc post_verdict {} {
         }
     }
     puts stderr "harness: $::test: [llength [glob -directory $expdir -tails *]] files under /t hold what the script should have written"
-    # The copies the background cat and the background cp made.
-    foreach c {copy copy2} {
+    # The copies the background cat, the background cp and tee made.
+    foreach c {copy copy2 copy3} {
         set path [exported $dir $c]
         if {$path eq ""} { return "/t/$c was not written" }
         set data [slurp $path]
@@ -224,5 +224,14 @@ proc post_verdict {} {
     }
     puts stderr [format "harness: %s: a cp of 64 KB alone ran from tick %s to %s, %d ticks (an emulator's figure: a hint)" \
         $::test $t1 $t2 [expr {$t2 - $t1}]]
+    # sleep 1 between two stamps: 60 ticks, plus the two spawns.
+    foreach t {s1 s2} {
+        set path [exported $dir $t]
+        if {$path eq ""} { return "/t/$t was not written" }
+        set $t [string trim [slurp $path]]
+    }
+    set ticks [expr {$s2 - $s1}]
+    if {$ticks < 60 || $ticks >= 90} { return "sleep 1 ran from tick $s1 to $s2, $ticks ticks, not 60 to 89" }
+    puts stderr [format "harness: %s: sleep 1 between two stamps: %d ticks" $::test $ticks]
     return ""
 }
