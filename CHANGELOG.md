@@ -136,6 +136,11 @@ to install.
 
 ### Fixed
 
+- `getcwd` — and so `pwd` and the shell's prompt — answered `ENOENT` for a
+  directory whose entry lies past the first cluster of its parent: the
+  cluster it was looking for was overwritten when the search moved on to
+  the parent's second cluster. On a volume with 1 KB clusters that was
+  every directory after the first thirty entries of its parent.
 - A program whose last sector was not a whole one, started by `exec` from
   a `vfork` child, had that sector written into the parent's memory rather
   than its own.
