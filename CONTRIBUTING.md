@@ -58,7 +58,9 @@ holding a `product` marker boots `M6.COM` itself, with every command in
 `BIN/`, and its `<name>.tcl` gives the verdict from the screen and from the
 files the run left on the image. `make check` also runs
 `tools/check-version.sh`, which requires the version in `src/version.inc`
-and the headings of `CHANGELOG.md` to agree. The harness's exit
+and the headings of `CHANGELOG.md` to agree, and `tools/check-headers.sh`,
+which requires every source file to open with the copyright and license
+header the existing ones carry. The harness's exit
 code is 0 for a pass, 1 for a fail and 2 when no verdict arrived in time; its
 messages go to stderr, and stdout carries what the program wrote through the
 emulator's debug device. `build/<name>.lst` is the assembler listing, and

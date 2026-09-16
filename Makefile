@@ -134,6 +134,7 @@ fetch:
 check: fetch
 	@$(MAKE) --no-print-directory all check-tools
 	@tools/check-version.sh
+	@tools/check-headers.sh
 	@set -e; n=0; for t in $(TESTS); do \
 	    echo "TEST $$t"; tools/run-test.sh $$t; n=$$((n + 1)); \
 	done; echo "OK: $$n test(s) passed"
