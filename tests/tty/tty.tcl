@@ -12,7 +12,7 @@
 set show_screen 1
 
 set CUE      0x8004
-set expected {5 6 7 8 9 10 11 12 13 14 15 16 17 18}
+set expected {5 6 7 8 9 10 11 12 13 14 15 16 17 18 22 23 24 25 26 27 28}
 set next     0
 set problems {}
 
@@ -46,7 +46,7 @@ array set key {
     h {3 0x20} i {3 0x40} l {4 0x02} n {4 0x08} o {4 0x10} p {4 0x20}
     q {4 0x40} s {5 0x01} u {5 0x04} x {5 0x20} y {5 0x40} z {5 0x80}
     ctrl {6 0x02} esc {7 0x04} tab {7 0x08} stop {7 0x10} bs {7 0x20}
-    ret {7 0x80} right {8 0x80}
+    ret {7 0x80} home {8 0x02} del {8 0x08} left {8 0x10} right {8 0x80}
 }
 proc down {k} { keymatrixdown {*}$::key($k) }
 proc up {k}   { keymatrixup   {*}$::key($k) }
@@ -100,7 +100,34 @@ proc cue {c} {
         16 { ack; ctap 0.4 c }
         17 { ack; ctap 0.4 c }
         18 { ack; typeline 0.3 {i g n} ; ctap 1.3 c ; tap 2.5 a ; tap 2.65 b ; tap 3.0 stop ; typeline 3.6 {q} }
+        22 { check_shell_rows ; ack; typeline 0.3 {a b left x}
+             at 1.5 {expect_screen "axb" "LEFT then x did not put x between a and b on the screen"} }
+        23 { ack; typeline 0.3 {a b c home del}
+             at 1.6 {expect_screen "bc" "HOME then DEL did not leave bc on the screen"} }
+        24 { ack; typeline 0.3 {a b c left left bs}
+             at 1.8 {expect_screen "bc" "LEFT LEFT then BS did not leave bc on the screen"} }
+        25 { ack; taps 0.3 {a b c left} ; ctap 0.95 u ; typeline 1.3 {z}
+             at 2.0 {expect_screen "z" "^U in the middle then z did not leave z alone on the screen"
+                     if {[has_row "abc"]} { problem "^U in the middle left abc on the screen" }} }
+        26 { ack; set t [taps 0.3 {tab tab tab tab tab tab tab tab tab tab a b left left left del}]
+             at [expr {$t + 0.2}] check_wrap
+             tap [expr {$t + 0.4}] ret }
+        27 { ack; taps 0.3 {a b left} ; ctap 0.8 l ; typeline 1.2 {x}
+             at 1.8 {if {[lindex [rows] 0] ne "axb"} { problem "^L in the middle then x did not leave axb on the first row: \"[lindex [rows] 0]\"" }} }
+        28 { ack; typeline 0.3 {a tab b home x}
+             at 1.6 {expect_screen "xa      b" "x before a TAB did not shrink the TAB on the screen"} }
     }
+}
+
+# check_wrap: after DEL took the tenth TAB, ab sits at columns 72-73 of
+# the row the line started on and the row below, where ab was, is blank.
+proc check_wrap {} {
+    set rs [rows]
+    set want "[string repeat { } 72]ab"
+    set i [lsearch -exact $rs $want]
+    if {$i < 0} { problem "after DEL across the wrap, no row reads 72 blanks then ab"; return }
+    if {$i == 23} { problem "the wrapped line's first row is the last row: nothing wrapped"; return }
+    if {[lindex $rs [expr {$i + 1}]] ne ""} { problem "the row below the wrapped line still reads \"[lindex $rs [expr {$i + 1}]]\"" }
 }
 
 proc cue_poll {} {
@@ -116,19 +143,25 @@ proc cue_poll {} {
 }
 after time 0.1 cue_poll
 
-proc post_verdict {} {
-    if {$::next != [llength $::expected]} { problem "only $::next of [llength $::expected] cues were seen" }
-    # The echo of the edited lines was checked while it was on the screen
-    # (cues 5 and 6); by now it has scrolled off.
-    # The test shell: the command echoed at its prompt, the killed one
-    # reported — by the second ^C, the first having landed in its load —
-    # the survivor reported, two empty lines from the two ^Cs nobody took,
-    # and nothing typed ahead of them run as a command.
+# check_shell_rows: the test shell's rows, read at cue 22 — the ^L of cue
+# 27 clears the screen, so they are gone by the verdict. The command
+# echoed at its prompt, the killed one reported — by the second ^C, the
+# first having landed in its load — the survivor reported, two empty
+# lines from the two ^Cs nobody took, and nothing typed ahead of them run
+# as a command.
+proc check_shell_rows {} {
     if {![has_row {$ bigspin}]} { problem "the shell did not echo bigspin at its prompt" }
     if {![has_row {[130]}]} { problem "the shell did not report the command killed by ^C" }
     if {![has_row {[5]}]} { problem "the shell did not report the survivor's status" }
     if {[count_rows "!"] < 2} { problem "fewer than two empty lines reached the shell from the ^Cs nobody took" }
     foreach r [rows] { if {[string first "?" $r] >= 0} { problem "the shell tried to run something it should not have: \"$r\""; break } }
+}
+
+proc post_verdict {} {
+    if {$::next != [llength $::expected]} { problem "only $::next of [llength $::expected] cues were seen" }
+    # The echo of the edited lines was checked while it was on the screen
+    # (cues 5, 6 and 22-28), and the test shell's rows at cue 22; by now
+    # they have scrolled off or been cleared.
     # The two figures, for the log.
     foreach r [rows] {
         if {[regexp {^16 .*: (\d+) bytes} $r -> v]} {

@@ -674,6 +674,104 @@ t_entry:
         ld      hl,t_ok
         k_call  API_CON_PUTS
 
+; --- step 22: the cursor inside the line: LEFT, then a byte inserted ----------
+        t_begin 22, t_k22
+        t_cue   22
+        ld      hl,p_l6
+        call    t_run_into
+        t_status 0
+        ld      hl,p_l6
+        ld      de,s_axb
+        call    t_file_is
+        ld      a,0E1h
+        jp      nz,t_fail
+        ld      hl,t_ok
+        k_call  API_CON_PUTS
+
+; --- step 23: HOME, then DEL rubs out under the cursor ------------------------
+        t_begin 23, t_k23
+        t_cue   23
+        ld      hl,p_l7
+        call    t_run_into
+        t_status 0
+        ld      hl,p_l7
+        ld      de,s_bc
+        call    t_file_is
+        ld      a,0E1h
+        jp      nz,t_fail
+        ld      hl,t_ok
+        k_call  API_CON_PUTS
+
+; --- step 24: LEFT twice, then BS rubs out to the left --------------------------
+        t_begin 24, t_k24
+        t_cue   24
+        ld      hl,p_l8
+        call    t_run_into
+        t_status 0
+        ld      hl,p_l8
+        ld      de,s_bc
+        call    t_file_is
+        ld      a,0E1h
+        jp      nz,t_fail
+        ld      hl,t_ok
+        k_call  API_CON_PUTS
+
+; --- step 25: ^U with the cursor in the middle empties the whole line ------------
+        t_begin 25, t_k25
+        t_cue   25
+        ld      hl,p_l9
+        call    t_run_into
+        t_status 0
+        ld      hl,p_l9
+        ld      de,s_z
+        call    t_file_is
+        ld      a,0E1h
+        jp      nz,t_fail
+        ld      hl,t_ok
+        k_call  API_CON_PUTS
+
+; --- step 26: a line past column 80, the cursor back across the wrap, DEL ---------
+        t_begin 26, t_k26
+        t_cue   26
+        ld      hl,p_l10
+        call    t_run_into
+        t_status 0
+        ld      hl,p_l10
+        ld      de,s_tabs
+        call    t_file_is
+        ld      a,0E1h
+        jp      nz,t_fail
+        ld      hl,t_ok
+        k_call  API_CON_PUTS
+
+; --- step 27: ^L with the cursor in the middle keeps its place -------------------
+        t_begin 27, t_k27
+        t_cue   27
+        ld      hl,p_l11
+        call    t_run_into
+        t_status 0
+        ld      hl,p_l11
+        ld      de,s_axb
+        call    t_file_is
+        ld      a,0E1h
+        jp      nz,t_fail
+        ld      hl,t_ok
+        k_call  API_CON_PUTS
+
+; --- step 28: a byte put before a TAB: the TAB shrinks, the old end is blanked ---
+        t_begin 28, t_k28
+        t_cue   28
+        ld      hl,p_l12
+        call    t_run_into
+        t_status 0
+        ld      hl,p_l12
+        ld      de,s_xatb
+        call    t_file_is
+        ld      a,0E1h
+        jp      nz,t_fail
+        ld      hl,t_ok
+        k_call  API_CON_PUTS
+
 ; --- verdict --------------------------------------------------------------
         ld      hl,t_pass
         k_call  API_CON_PUTS
@@ -878,6 +976,13 @@ t_k18:      db  "18 shell: ign RET, ^C, a b STOP, q RET",10,0
 t_k19:      db  "19 kill, signal: ",0
 t_k20:      db  "20 SIGPIPE ignored, not: ",0
 t_k21:      db  "21 a vfork parent killed: ",0
+t_k22:      db  "22 cursor: a b LEFT x RET",10,0
+t_k23:      db  "23 home, del: a b c HOME DEL RET",10,0
+t_k24:      db  "24 left, bs: a b c LEFT LEFT BS RET",10,0
+t_k25:      db  "25 ^U mid-line: a b c LEFT ^U z RET",10,0
+t_k26:      db  "26 wrap: TAB x10 a b LEFT x3 DEL RET",10,0
+t_k27:      db  "27 ^L mid-line: a b LEFT ^L x RET",10,0
+t_k28:      db  "28 tab shrinks: a TAB b HOME x RET",10,0
 t_bytes:    db  " bytes: ",0
 t_ticks:    db  " ticks: ",0
 t_ok:       db  "ok",10,0
@@ -908,10 +1013,22 @@ p_l2:       db  "/l2.txt",0
 p_l3:       db  "/l3.txt",0
 p_l4:       db  "/l4.txt",0
 p_l5:       db  "/l5.txt",0
+p_l6:       db  "/l6.txt",0
+p_l7:       db  "/l7.txt",0
+p_l8:       db  "/l8.txt",0
+p_l9:       db  "/l9.txt",0
+p_l10:      db  "/l10.txt",0
+p_l11:      db  "/l11.txt",0
+p_l12:      db  "/l12.txt",0
 s_hello:    db  "hello",10,0
 s_xty:      db  "x",9,"y",10,0
 s_escrx:    db  1Bh,1Ch,"x",0
 s_xnl:      db  "x",10,0
+s_axb:      db  "axb",10,0
+s_bc:       db  "bc",10,0
+s_z:        db  "z",10,0
+s_tabs:     db  9,9,9,9,9,9,9,9,9,"ab",10,0
+s_xatb:     db  "xa",9,"b",10,0
 av_none:    dw  0
 av_tsh:     dw  s_tsh,0
 s_tsh:      db  "tsh",0
