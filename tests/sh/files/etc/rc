@@ -77,6 +77,8 @@ cat /t/r4 | tee /t/r48 /t/r49 > /t/r50
 echo more | tee -a /t/r48 > /t/r51
 cat /big | tee /t/copy3 | wc -c > /t/r52
 date > /t/r53
+head -n 2 /etc/bench1 > /t/r58
+cat /etc/bench1 | head -n 3 | wc -l > /t/r59
 # Long names: listed as written, expanded by a glob, and a line of the
 # length a long path needs.
 ls /lfn > /t/r55
