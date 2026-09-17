@@ -21,3 +21,4 @@ echo x | tee /nodir/x
 uniq /t/nofile
 tr a
 sleep x
+more /t/nofile
