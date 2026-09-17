@@ -95,6 +95,9 @@ tty_read:
 .woken: ei
 .have:  call    kbd_pop                 ; a = the byte; CF: nothing from it
         jr      c,.loop
+        push    af                      ; the cursor off where it was drawn:
+        call    tty_cursor_off          ; what follows moves the console's
+        pop     af                      ; cursor, and the loop draws it again
         cp      13
         jr      z,.ret
         cp      4                       ; ^D
@@ -250,8 +253,13 @@ tty_row_read:
         ret
 
 ; tty_cursor_on / tty_cursor_off — the cursor drawn while a reader waits,
-; erased when it returns; as the raw read does, through con_shown.
-; Corrupt everything.
+; erased when it returns; as the raw read does, through con_shown. The
+; cursor is a cell's blink bit, and which cell that is is read from
+; con_row and con_col at the moment it is erased — so it is erased before
+; a key reaches the editor, which moves the console's cursor by writing
+; those two. A cursor left drawn across an edit would be erased at the new
+; place and stay lit at the old one, and a key that only moves the cursor
+; would not redraw it anywhere. Corrupt everything.
 tty_cursor_on:
         ld      a,(con_shown)
         or      a
