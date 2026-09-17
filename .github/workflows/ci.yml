@@ -28,8 +28,8 @@ jobs:
             tools/openmsx/systemroms
           key: tools-${{ runner.os }}-${{ hashFiles('tools/fetch-*.sh', 'tools/lib.sh') }}
 
-      - name: Install the FAT checker
-        run: sudo apt-get install -y --no-install-recommends dosfstools
+      - name: Install the FAT checker and mtools
+        run: sudo apt-get install -y --no-install-recommends dosfstools mtools
 
       - name: Build and test
         run: make check

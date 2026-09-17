@@ -255,6 +255,27 @@ for machine in $machines; do
                 dd of="$M6_IMAGE" bs=1 seek=466 count=1 conv=notrunc 2>/dev/null
         fi
 
+        # A test that ships lfn-files/ wants that tree on the first
+        # volume under LFN/, with the long names the tree's entries carry:
+        # the emulator's importer cuts a long name to 8.3, so mtools
+        # writes them, with the image closed, before the boot. The
+        # partition's offset is the MBR's first entry, or 0 on an image
+        # with no table; MTOOLS_SKIP_CHECK because a Nextor boot sector
+        # carries no geometry.
+        if [ -d "tests/$name/lfn-files" ]; then
+            command -v mcopy > /dev/null 2>&1 ||
+                { echo "run-test: $name: no mcopy (mtools) on this host" >&2; exit 2; }
+            lf_off=0
+            if [ "$(byte "$M6_IMAGE" 510)" = 85 ] && [ "$(byte "$M6_IMAGE" 450)" != 0 ]; then
+                lf_off=$(( $(le32 "$M6_IMAGE" 454) * 512 ))
+            fi
+            MTOOLS_SKIP_CHECK=1 mmd -i "$M6_IMAGE@@$lf_off" ::/LFN
+            for f in "tests/$name/lfn-files"/* "tests/$name/lfn-files"/.[!.]*; do
+                [ -e "$f" ] || continue
+                MTOOLS_SKIP_CHECK=1 mcopy -s -i "$M6_IMAGE@@$lf_off" "$f" ::/LFN/
+            done
+        fi
+
         # A test that ships patch.tcl wants something on the image no
         # importer writes — an attribute bit. It runs with the image
         # closed, between the import and the boot.
@@ -265,6 +286,13 @@ for machine in $machines; do
         M6_TEST="$name" M6_TEST_DIR="$ROOT/tests/$name" \
             openmsx_run -ext "$ext" -ext debugdevice -hda "$M6_IMAGE" -command "$slave_cmd" \
                 -script tools/harness.tcl
+
+        # A test that ships check.sh reads its images from outside the
+        # machine, with the emulator gone: mtools listing the names the
+        # kernel wrote, for one. M6_IMAGE and M6_SLAVE_IMAGE name them.
+        if [ -x "tests/$name/check.sh" ]; then
+            "tests/$name/check.sh"
+        fi
 
         # A test that ships fsck wrote to its volumes: every one of them,
         # on both images, is judged by the host's FAT checker and by a
