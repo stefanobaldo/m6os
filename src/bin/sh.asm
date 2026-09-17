@@ -17,6 +17,16 @@
 ; mode the shell ignores SIGINT and the commands it starts take it by
 ; default, so ^C ends the command and the prompt comes back; without -i
 ; the shell takes SIGINT and a ^C ends the script.
+;
+; In -i mode the shell keeps the last HIST lines it ran, in memory, and
+; UP and DOWN at the prompt bring them back: the terminal is put in
+; recall mode before each prompt, so an arrow ends the read with its
+; byte alone on the line, the shell picks the line it names and puts it
+; in place with ttyline, and reads on — the line is edited like any
+; other and stored as it ran. A line of no words, or the same as the
+; last one stored, is not stored. The terminal goes back to canonical
+; before the line's commands run, so a command reading the keyboard
+; sees the arrows dropped as always.
         include "kernel/kernel.inc"
         include "lib/prog.inc"
 
@@ -26,6 +36,8 @@ NSTAGE  equ     4                       ; stages in a pipeline
 LINE    equ     ARGV_MAX                ; the line, its 0 included: a longer
                                         ; one could never run
 XBUF    equ     ARGV_MAX                ; expansions of one command
+HIST    equ     16                      ; lines kept, each a slot of TTY_LINE:
+                                        ; the terminal's line is at most that
 
 T_END   equ     0                       ; the tokens
 T_WORD  equ     1
@@ -58,6 +70,9 @@ main:   xor     a
         jr      nz,.noargs
         ld      a,1
         ld      (interactive),a
+        xor     a
+        ld      (hist_n),a              ; nothing kept yet
+        ld      (hist_w),a
         ld      a,SIGINT
         ld      b,SIG_IGN
         sys     SYS_SIGNAL
@@ -68,8 +83,10 @@ main:   xor     a
         or      a
         jr      z,.read
         call    reap
-        xor     a
+        ld      a,TTY_RECALL
         sys     SYS_TTYMODE
+        xor     a
+        ld      (hist_i),a              ; at the line being typed
         ld      hl,cwd
         ld      bc,LINE
         sys     SYS_GETCWD
@@ -85,17 +102,118 @@ main:   xor     a
         ld      bc,LINE
         call    in_line
         jr      c,.eof
-        ld      a,(in_cut)
+        ld      a,(interactive)
+        or      a
+        jr      z,.whole
+        ld      a,b                     ; a line of one byte that is an
+        or      a                       ; arrow: the history, not a command
+        jr      nz,.whole
+        ld      a,c
+        dec     a
+        jr      nz,.whole
+        ld      a,(line)
+        cp      1Eh                     ; UP
+        jr      z,.up
+        cp      1Fh                     ; DOWN
+        jr      z,.down
+.whole: ld      a,(in_cut)
         or      a
         jr      z,.run
         ld      de,s_long
         call    err_msg
         jr      .line
-.run:   call    tokenize
+.run:   call    hist_save               ; the line as typed, before tokenize
+        call    tokenize                ; cuts it up
         jr      c,.line
+        call    hist_keep
         call    run
         jr      .line
 .eof:   xor     a
+        ret
+; UP: one line further back, unless at the oldest; DOWN: one nearer,
+; the line being typed — empty — at 0. Either puts the slot's line in
+; the terminal's with ttyline and reads on, the prompt still there.
+.up:    ld      a,(hist_i)
+        ld      hl,hist_n
+        cp      (hl)
+        jr      nc,.read                ; at the oldest: nothing
+        inc     a
+        ld      (hist_i),a
+        jr      .recall
+.down:  ld      a,(hist_i)
+        or      a
+        jr      z,.read                 ; at the line being typed: nothing
+        dec     a
+        ld      (hist_i),a
+        jr      z,.blank
+.recall:
+        ld      a,(hist_w)
+        ld      hl,hist_i
+        sub     (hl)
+        call    hist_slot               ; hl -> the line, hist_i back
+        call    str_len                 ; bc = its length
+        sys     SYS_TTYLINE
+        jr      .read
+.blank: ld      bc,0
+        sys     SYS_TTYLINE             ; hl: nothing read from it
+        jr      .read
+
+; hist_slot — A = a slot number, any: HL -> its line, HIST slots round.
+; Corrupts AF, DE.
+hist_slot:
+        and     HIST-1
+        ld      l,0
+        srl     a
+        rr      l
+        ld      h,a                     ; hl = a * 128
+        ld      de,hist
+        add     hl,de
+        ret
+
+; hist_save — the line as typed into the slot the next line goes to, in
+; -i mode: tokenize cuts the line up in place, so before it. Corrupts
+; everything.
+hist_save:
+        ld      a,(interactive)
+        or      a
+        ret     z
+        ld      a,(hist_w)
+        call    hist_slot
+        ex      de,hl
+        ld      hl,line
+        jp      str_copy                ; at most TTY_LINE-1 bytes and its 0
+
+; hist_keep — after tokenize: the slot hist_save filled becomes the
+; newest line, unless the line had no word or is the newest one again.
+; Corrupts everything.
+hist_keep:
+        ld      a,(interactive)
+        or      a
+        ret     z
+        ld      a,(tok_kind)
+        or      a                       ; T_END first: no word
+        ret     z
+        ld      a,(hist_n)
+        or      a
+        jr      z,.new
+        ld      a,(hist_w)
+        dec     a
+        call    hist_slot               ; the newest
+        push    hl
+        ld      a,(hist_w)
+        call    hist_slot               ; the candidate
+        pop     de
+        call    str_cmp
+        ret     z                       ; the same again: dropped
+.new:   ld      a,(hist_w)
+        inc     a
+        and     HIST-1
+        ld      (hist_w),a
+        ld      a,(hist_n)
+        cp      HIST
+        ret     z
+        inc     a
+        ld      (hist_n),a
         ret
 
 ; --- the tokens ----------------------------------------------------------
@@ -295,8 +413,11 @@ tok_get:
         ret
 
 ; --- the lists ------------------------------------------------------------
-; run — every list of the line.
+; run — every list of the line. The terminal back in canonical mode
+; first: the commands see the arrows dropped, as every program does.
 run:    xor     a
+        sys     SYS_TTYMODE
+        xor     a
         ld      (tok_i),a
 run_list:
         ; Background? The list's end, looked ahead: & or not.
@@ -1018,6 +1139,9 @@ s_syntax: db    "syntax error",0
         include "lib/str.inc"
         m6_bss
         bss     interactive,1
+        bss     hist_n,1
+        bss     hist_w,1
+        bss     hist_i,1
         bss     ntok,1
         bss     tok_i,1
         bss     argc_s,1
@@ -1054,3 +1178,4 @@ s_syntax: db    "syntax error",0
         bss     path,LINE+8
         bss     dirent,DIRENT_SIZE
         bss     xbuf,XBUF
+        bss     hist,HIST*TTY_LINE

@@ -14,9 +14,22 @@ A line is at most 128 bytes and is cut into words on blanks and tabs.
 nothing is expanded inside either. `#` ends the line. A line longer than
 128 bytes is reported and skipped.
 
-At the keyboard the kernel does the line editing (BS, DEL, ^U, ^D), so a
-line reaches the shell whole. ^L, or SHIFT+HOME, clears the screen and
-leaves the prompt and the line so far at the top.
+At the keyboard the kernel does the line editing — the cursor keys, BS
+and DEL, HOME and ^E, ^U, ^D, as [`syscalls.md`](syscalls.md) describes
+under *The console* — so a line reaches the shell whole. ^L, or
+SHIFT+HOME, clears the screen and leaves the prompt and the line at the
+top.
+
+## Earlier lines: UP and DOWN
+
+At the prompt, UP brings back the last line run, ready to edit and run
+with RET; UP again goes one line further back, DOWN one forward, and
+DOWN past the newest line is the empty line again. A line brought back
+is edited like any other, and stored as it ran. The shell keeps the last
+sixteen lines, in memory: a line of no words is not stored, nor a line
+the same as the one stored last, and the history is gone when the shell
+exits or the machine is switched off. A command reading the keyboard in
+the middle of a session sees UP and DOWN dropped, as always.
 
 ## Commands
 
@@ -98,7 +111,7 @@ pipe — `cat` alone — reads the rest of the script.
 
 ## What is not there
 
-No variables, no `$?`, no `if` or `for`, no `PATH`, no history or
-completion; a shell language is a program of its own, for later. A
+No variables, no `$?`, no `if` or `for`, no `PATH`, no completion, no
+history file; a shell language is a program of its own, for later. A
 pipeline of more than four commands, or a command of more than 31
 words, is reported and not run.

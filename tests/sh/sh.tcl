@@ -45,7 +45,9 @@ array set key {
     p {4 0x20} q {4 0x40} r {4 0x80} s {5 0x01} t {5 0x02} w {5 0x10}
     x {5 0x20} y {5 0x40} 0 {0 0x01} 6 {0 0x40} 7 {0 0x80} - {1 0x04}
     \\ {1 0x10} / {2 0x10} space {8 0x01} home {8 0x02} shift {6 0x01}
-    ctrl {6 0x02} ret {7 0x80}
+    ctrl {6 0x02} ret {7 0x80} up {8 0x20} down {8 0x40} left {8 0x10}
+    u {5 0x04} z {5 0x80} 1 {0 0x02} 2 {0 0x04} 3 {0 0x08} 4 {0 0x10}
+    5 {0 0x20} 8 {1 0x01} 9 {1 0x02} . {2 0x08}
 }
 proc down {k} { keymatrixdown {*}$::key($k) }
 proc up {k}   { keymatrixup   {*}$::key($k) }
@@ -137,7 +139,87 @@ proc type_at_shell {} {
     # clear: the screen holds nothing but a fresh prompt on its first row.
     set t [typeline [expr {$t + 0.8}] {c l e a r}]
     at [expr {$t + 0.6}] {check_top {/ $} "clear"}
-    at [expr {$t + 0.8}] more_start
+    at [expr {$t + 0.8}] history_start
+}
+
+# The history: UP and DOWN at the prompt bring earlier lines back, on
+# the prompt's row, where the line is then edited and run. Every check
+# reads the last prompt row on the screen.
+proc last_prompt {} {
+    set rs [rows]
+    for {set i 23} {$i >= 0} {incr i -1} {
+        if {[string match {/ $*} [lindex $rs $i]]} { return [lindex $rs $i] }
+    }
+    return ""
+}
+proc check_prompt {want what} {
+    if {[last_prompt] ne $want} { problem "$what: the prompt row reads \"[last_prompt]\", not \"$want\"" }
+}
+proc history_start {} {
+    set t [typeline 0 {e c h o space o n e}]
+    set t [typeline [expr {$t + 0.5}] {e c h o space t w o}]
+    # UP brings the last line back; RET runs it: two now printed twice.
+    tap [expr {$t + 0.5}] up
+    at [expr {$t + 0.8}] {check_prompt {/ $ echo two} "UP after echo two"}
+    tap [expr {$t + 1.0}] ret
+    at [expr {$t + 1.5}] {if {[count_rows two] != 2} { problem "the line UP brought back did not run as echo two" }}
+    # UP UP is the line before; DOWN forward again; DOWN past the newest
+    # is the empty line, and RET on it runs nothing.
+    tap [expr {$t + 1.7}] up
+    tap [expr {$t + 1.9}] up
+    at [expr {$t + 2.2}] {check_prompt {/ $ echo one} "UP UP"}
+    tap [expr {$t + 2.4}] down
+    at [expr {$t + 2.7}] {check_prompt {/ $ echo two} "DOWN after UP UP"}
+    tap [expr {$t + 2.9}] down
+    at [expr {$t + 3.2}] {check_prompt {/ $} "DOWN past the newest line"}
+    tap [expr {$t + 3.4}] ret
+    # The same line twice is stored once: UP UP after two more echo two
+    # is still echo one. ^U empties the line brought back; RET runs nothing.
+    set t [typeline [expr {$t + 3.8}] {e c h o space t w o}]
+    set t [typeline [expr {$t + 0.5}] {e c h o space t w o}]
+    tap [expr {$t + 0.5}] up
+    tap [expr {$t + 0.7}] up
+    at [expr {$t + 1.0}] {check_prompt {/ $ echo one} "UP UP after echo two twice"}
+    ctap [expr {$t + 1.2}] u
+    at [expr {$t + 1.6}] {check_prompt {/ $} "^U on the line brought back"}
+    tap [expr {$t + 1.8}] ret
+    # A line brought back is edited in place: LEFT three times, x, RET
+    # runs echo xtwo, and UP then shows the line as it ran.
+    tap [expr {$t + 2.2}] up
+    set t [taps [expr {$t + 2.5}] {left left left x}]
+    at [expr {$t + 0.3}] {check_prompt {/ $ echo xtwo} "x inserted in the line brought back"}
+    tap [expr {$t + 0.5}] ret
+    at [expr {$t + 1.0}] {expect_screen xtwo "the edited line did not run as echo xtwo"}
+    tap [expr {$t + 1.2}] up
+    at [expr {$t + 1.5}] {check_prompt {/ $ echo xtwo} "UP after the edited line ran"}
+    ctap [expr {$t + 1.7}] u
+    tap [expr {$t + 2.1}] ret
+    at [expr {$t + 2.5}] history_ring
+}
+# Sixteen lines are kept: after echo 1 to echo 17, sixteen UPs reach
+# echo 2 and one more stays there; RET runs it. Then a command reading
+# the keyboard in the middle of the session sees UP dropped: cat > /t/up
+# with UP, z, RET, ^D leaves z alone in the file (post_verdict reads it).
+proc history_ring {} {
+    set t 0
+    foreach n {1 2 3 4 5 6 7 8 9} { set t [typeline $t [list e c h o space $n]] }
+    foreach n {10 11 12 13 14 15 16 17} {
+        set t [typeline $t [list e c h o space [string index $n 0] [string index $n 1]]]
+    }
+    for {set i 0} {$i < 16} {incr i} { tap [expr {$t + 0.3 + $i * 0.15}] up }
+    set t [expr {$t + 0.3 + 16 * 0.15}]
+    at [expr {$t + 0.3}] {check_prompt {/ $ echo 2} "sixteen UPs after seventeen lines"}
+    tap [expr {$t + 0.5}] up
+    at [expr {$t + 0.8}] {check_prompt {/ $ echo 2} "one more UP at the oldest line"}
+    tap [expr {$t + 1.0}] ret
+    set t [taps [expr {$t + 1.5}] {c a t space}]
+    stap $t .
+    set t [typeline [expr {$t + 0.3}] {space / t / u p}]
+    tap [expr {$t + 0.5}] up
+    tap [expr {$t + 0.7}] z
+    tap [expr {$t + 0.9}] ret
+    ctap [expr {$t + 1.2}] d
+    at [expr {$t + 1.8}] more_start
 }
 
 # more: first a file whose rows wrap — 100 columns take two rows, 80
