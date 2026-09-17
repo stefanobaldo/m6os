@@ -115,29 +115,53 @@ A write of many lines scrolls once, by all of them, not once per line.
 File descriptor 0 is the keyboard, and the kernel edits what is typed
 before a program sees it. In **canonical mode**, the default, `read`
 returns a line: every character typed is echoed to the screen as it
-arrives, BS and DEL rub out the last one, ^U the whole line, TAB is kept;
-^L (or SHIFT+HOME, the same byte) clears the screen and writes again, at
-the top, what the line's first row held before the line began — a shell's
-prompt — and the line so far; RET closes the line and becomes its last
-byte, LF (10). A `read` that asks for fewer bytes than the line holds gets
-that many, and the rest waits for the next `read`, so a program reading a
-byte at a time gets the line without waiting again. ^D at the start of a
-line makes `read` return 0, once, as at the end of a file; ^D in the
-middle of one closes it without an LF. A line holds 127 bytes; what is
-typed past that is dropped. Keys that are not bytes of a line — the
-arrows, HOME, INS, ESC, SELECT, the function keys — are dropped without
-echo, and ^C and STOP are never bytes: they are the interrupt (see
+arrives, and the line is edited with a cursor that moves inside it:
+
+| Key | Effect |
+|---|---|
+| a character, TAB | inserted at the cursor; a line already 127 bytes long drops it |
+| BS | rubs out the character before the cursor |
+| DEL | rubs out the character under the cursor |
+| LEFT, RIGHT | the cursor one character back or on |
+| HOME, ^A | the cursor to the start of the line |
+| ^E | the cursor to its end |
+| ^U | empties the line |
+| ^L, SHIFT+HOME | clears the screen and writes again, at the top, what the line's first row held before the line began — a shell's prompt — and the line, the cursor where it was |
+| RET | closes the line, wherever the cursor is, and becomes its last byte, LF (10) |
+| UP, DOWN | dropped, unless the terminal is in recall mode (below) |
+| INS, ESC, SELECT, the function keys | dropped without echo |
+
+A `read` that asks for fewer bytes than the line holds gets that many,
+and the rest waits for the next `read`, so a program reading a byte at a
+time gets the line without waiting again. ^D at the start of a line makes
+`read` return 0, once, as at the end of a file; ^D in the middle of one
+closes it without an LF. A line holds 127 bytes; what is typed past that
+is dropped. ^C and STOP are never bytes: they are the interrupt (see
 *Signals*). The line being edited belongs to the terminal, not to the
 process reading it.
 
-`ttymode` (29) switches the keyboard to **raw mode** and back, for a
-pager or an editor that draws its own screen: `read` then returns bytes as
-keys go down, one byte per key with the modifiers in effect at that
-moment — nothing is echoed, nothing waits for RET, and a key that means
-nothing on its own (SHIFT, F1) produces nothing. The mode is the
-terminal's, not the process's: a program that sets raw sets it for
-whoever reads next, so a program that reads lines sets canonical first
-rather than trust what the last one left. In either mode, keys typed
+`ttymode` (29) switches the keyboard to **raw mode** (1) and back to
+canonical (0), for a pager or an editor that draws its own screen:
+`read` then returns bytes as keys go down, one byte per key with the
+modifiers in effect at that moment — nothing is echoed, nothing waits
+for RET, and a key that means nothing on its own (SHIFT, F1) produces
+nothing. The mode is the terminal's, not the process's: a program that
+sets raw sets it for whoever reads next, so a program that reads lines
+sets canonical first rather than trust what the last one left.
+
+**Recall mode** (2) is canonical mode for a program that keeps a history
+of lines, as the shell does: UP and DOWN, instead of being dropped, end
+the `read` with two bytes — the arrow's own byte, 30 or 31, and an LF —
+and leave the line being edited **open**: its bytes, its cursor and its
+echo stay as they are, and the next `read` goes on editing it rather
+than starting a new one. `ttyline` (32) replaces an open line with the
+bytes at `HL`, `BC` of them (0 to 127): the old line's echo is erased,
+the new one echoed with the cursor at its end; when no line is open it
+opens one, so a program may also pre-type an answer before it reads.
+The shell reads the arrow, looks the line up in its history, puts it in
+place with `ttyline` and reads again; a program that ignores the two
+bytes and reads again simply goes on with the line. A change of mode
+drops an open line. In every mode, keys typed
 before any process reads are kept — sixteen of them at most — and a key
 held down repeats after half a second, twelve times a second. Letters
 follow SHIFT and CAPS LOCK; CTRL with a letter gives 1 to 26; the keypad
@@ -194,10 +218,11 @@ input is a file or a pipe reads what is typed there: `more` in
 | 26 | `getcwd` | `HL` = buffer, `BC` = its size | `HL` = the length | `ENAMETOOLONG`: the path or the buffer too short; `EFAULT`; `EIO` |
 | 27 | `time` | — | `HL` = FAT date, `DE` = FAT time | — |
 | 28 | `chmod` | `HL` = path, `A` = attributes | — | `EINVAL`: a bit that is not one; `ENOENT`, `ENOTDIR`, `ENAMETOOLONG`, `EACCES`: a volume's root or `/mnt`; `EROFS`, `EIO` |
-| 29 | `ttymode` | `A` = 0 canonical, 1 raw | `L` = the mode that was | `EINVAL`: not 0 or 1 |
+| 29 | `ttymode` | `A` = 0 canonical, 1 raw, 2 recall | `L` = the mode that was | `EINVAL`: not 0, 1 or 2 |
 | 30 | `kill` | `A` = pid, `B` = signal | — | `EPERM`: pid 0; `EINVAL`: pid past 15, or a signal that is none of the four; `ESRCH`: no such process |
 | 31 | `signal` | `A` = signal, `B` = 0 (the default) or 1 (ignore) | `L` = the action that was | `EINVAL`: `SIGKILL`, or not a signal |
-| 32–47 | — | — | — | `ENOSYS` |
+| 32 | `ttyline` | `HL` = bytes, `BC` = how many, 0 to 127 | — | `EINVAL`: more than 127; `EFAULT`: a buffer reaching page 3 |
+| 33–47 | — | — | — | `ENOSYS` |
 
 `write` to a descriptor that is the console goes to the screen and `read`
 from one that is the keyboard or the console takes from the keyboard, as

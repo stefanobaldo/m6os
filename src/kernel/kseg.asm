@@ -51,6 +51,7 @@
         jp      ks_getcwd               ; KS_GETCWD (ks_vfs.asm)
         jp      ks_chmod                ; KS_CHMOD (ks_vfsw.asm)
         jp      ks_tty_key              ; KS_TTY_KEY (ks_tty.asm)
+        jp      ks_tty_set              ; KS_TTY_SET
 
 ; ks_enosys — an entry whose body does not exist yet.
 ks_enosys:

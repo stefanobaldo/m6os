@@ -314,6 +314,24 @@ kbd_pop:
         pop     hl
         ret
 
+; k_ubuf — HL = a buffer, BC = its length: CF when it reaches page 3 —
+; E_FAULT's condition, for a read or a ttyline — unless the caller is
+; process 0, whose buffer may be anywhere. Preserves HL, BC; corrupts
+; AF, DE.
+k_ubuf:
+        ld      a,(k_pid)
+        or      a
+        ret     z                       ; CF clear from or a
+        push    hl
+        ld      de,0C000h
+        ex      de,hl
+        or      a
+        sbc     hl,de                   ; the room before page 3
+        jr      c,.out
+        sbc     hl,bc                   ; minus the length
+.out:   pop     hl
+        ret
+
 ; sys_read — SYS_READ: A = fd, HL = buffer, BC = length. A descriptor
 ; that is the keyboard, or the console — a terminal open both ways, so a
 ; program whose input is a pipe still reads keys on 2 — reads here: HL =
@@ -343,22 +361,12 @@ sys_read:
 .kbd:   ld      a,b
         or      c
         jp      z,.inval
-        ld      a,(k_pid)
-        or      a
-        jr      z,.inpage               ; process 0's buffer may be anywhere
-        push    hl
-        ld      de,0C000h
-        ex      de,hl
-        or      a
-        sbc     hl,de                   ; the room before page 3
-        jr      c,.room
-        sbc     hl,bc                   ; minus the length
-.room:  pop     hl
+        call    k_ubuf
         jp      c,pi_fault              ; refused, not written through
-.inpage:
         ld      a,(tty_mode)
-        or      a
-        jp      z,tty_read              ; canonical: the line discipline
+        cp      TTY_RAW
+        jp      nz,tty_read             ; canonical, with or without recall:
+                                        ; the line discipline
         push    hl
         pop     ix                      ; the buffer and the length travel
         push    bc                      ; in IX and IY across a block: the

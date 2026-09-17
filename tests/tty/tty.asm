@@ -359,7 +359,7 @@ t_entry:
         cp      TTY_RAW
         ld      a,0E2h
         jp      nz,t_fail
-        ld      a,2
+        ld      a,3
         sys     SYS_TTYMODE
         ld      b,E_INVAL
         ld      c,0E3h
@@ -772,6 +772,162 @@ t_entry:
         ld      hl,t_ok
         k_call  API_CON_PUTS
 
+; --- step 29: recall mode: UP ends the read with its byte, the line stays open --
+        t_begin 29, t_k29
+        ld      a,TTY_RECALL
+        sys     SYS_TTYMODE
+        jp      c,t_fail
+        ld      a,l
+        cp      TTY_CANON               ; what was
+        ld      a,0E1h
+        jp      nz,t_fail
+        t_cue   29                      ; a b UP, then c RET
+        ld      hl,p_l13
+        call    t_run_into              ; rdl gets the arrow and an LF
+        t_status 0
+        ld      hl,p_l13
+        ld      de,s_up
+        call    t_file_is
+        ld      a,0E2h
+        jp      nz,t_fail
+        ld      hl,p_l14
+        call    t_run_into              ; the next read goes on with ab
+        t_status 0
+        ld      hl,p_l14
+        ld      de,s_abc
+        call    t_file_is
+        ld      a,0E3h
+        jp      nz,t_fail
+        ld      hl,t_ok
+        k_call  API_CON_PUTS
+
+; --- step 30: DOWN the same, with its own byte ------------------------------
+        t_begin 30, t_k30
+        t_cue   30                      ; x DOWN, then y RET
+        ld      hl,p_l15
+        call    t_run_into
+        t_status 0
+        ld      hl,p_l15
+        ld      de,s_down
+        call    t_file_is
+        ld      a,0E1h
+        jp      nz,t_fail
+        ld      hl,p_l16
+        call    t_run_into
+        t_status 0
+        ld      hl,p_l16
+        ld      de,s_xy
+        call    t_file_is
+        ld      a,0E2h
+        jp      nz,t_fail
+        ld      hl,t_ok
+        k_call  API_CON_PUTS
+
+; --- step 31: canonical again: UP is dropped, as before ----------------------
+        t_begin 31, t_k31
+        ld      a,TTY_CANON
+        sys     SYS_TTYMODE
+        jp      c,t_fail
+        ld      a,l
+        cp      TTY_RECALL
+        ld      a,0E1h
+        jp      nz,t_fail
+        t_cue   31                      ; UP z RET
+        ld      hl,p_l17
+        call    t_run_into
+        t_status 0
+        ld      hl,p_l17
+        ld      de,s_z
+        call    t_file_is
+        ld      a,0E2h
+        jp      nz,t_fail
+        ld      hl,t_ok
+        k_call  API_CON_PUTS
+
+; --- step 32: ttyline pre-types a line before anyone reads -------------------
+        t_begin 32, t_k32
+        ld      hl,s_xyz
+        ld      bc,3
+        sys     SYS_TTYLINE
+        jp      c,t_fail
+        t_cue   32                      ; RET
+        ld      hl,p_l18
+        call    t_run_into
+        t_status 0
+        ld      hl,p_l18
+        ld      de,s_xyznl
+        call    t_file_is
+        ld      a,0E1h
+        jp      nz,t_fail
+        ld      hl,t_ok
+        k_call  API_CON_PUTS
+
+; --- step 33: ttyline replaces an open line; a length of 0 empties it --------
+        t_begin 33, t_k33
+        ld      a,TTY_RECALL
+        sys     SYS_TTYMODE
+        jp      c,t_fail
+        t_cue   33                      ; a b UP, then RET
+        ld      hl,p_l19
+        call    t_run_into
+        t_status 0
+        ld      hl,p_l19
+        ld      de,s_up
+        call    t_file_is
+        ld      a,0E1h
+        jp      nz,t_fail
+        ld      hl,s_q
+        ld      bc,1
+        sys     SYS_TTYLINE             ; ab becomes q
+        jp      c,t_fail
+        ld      hl,p_l20
+        call    t_run_into
+        t_status 0
+        ld      hl,p_l20
+        ld      de,s_qnl
+        call    t_file_is
+        ld      a,0E2h
+        jp      nz,t_fail
+        t_cue   34                      ; a UP, then RET
+        ld      hl,p_l21
+        call    t_run_into
+        t_status 0
+        ld      hl,p_l21
+        ld      de,s_up
+        call    t_file_is
+        ld      a,0E3h
+        jp      nz,t_fail
+        ld      hl,s_q
+        ld      bc,0
+        sys     SYS_TTYLINE             ; a becomes nothing
+        jp      c,t_fail
+        ld      hl,p_l22
+        call    t_run_into
+        t_status 0
+        ld      hl,p_l22
+        ld      de,s_nl
+        call    t_file_is
+        ld      a,0E4h
+        jp      nz,t_fail
+        ld      a,TTY_CANON
+        sys     SYS_TTYMODE
+        jp      c,t_fail
+        ld      hl,t_ok
+        k_call  API_CON_PUTS
+
+; --- step 34: ttyline's refusals: 128 bytes, a buffer reaching page 3 ---------
+        t_begin 34, t_k34
+        ld      hl,t_buf
+        ld      bc,TTY_LINE
+        sys     SYS_TTYLINE
+        ld      b,E_INVAL
+        ld      c,0E1h
+        call    t_expect
+        t_exec  p_tlf, av_none, m_inh   ; tlf: ttyline of a page-3 buffer
+        t_status E_FAULT                ; exits with the errno
+        ld      hl,t_ok
+        k_call  API_CON_PUTS
+
 ; --- verdict --------------------------------------------------------------
         ld      hl,t_pass
         k_call  API_CON_PUTS
@@ -983,6 +1139,12 @@ t_k25:      db  "25 ^U mid-line: a b c LEFT ^U z RET",10,0
 t_k26:      db  "26 wrap: TAB x10 a b LEFT x3 DEL RET",10,0
 t_k27:      db  "27 ^L mid-line: a b LEFT ^L x RET",10,0
 t_k28:      db  "28 tab shrinks: a TAB b HOME x RET",10,0
+t_k29:      db  "29 recall: a b UP, then c RET",10,0
+t_k30:      db  "30 recall: x DOWN, then y RET",10,0
+t_k31:      db  "31 canonical drops UP: UP z RET",10,0
+t_k32:      db  "32 ttyline xyz: RET",10,0
+t_k33:      db  "33 ttyline over an open line: a b UP, RET; a UP, RET",10,0
+t_k34:      db  "34 ttyline refusals: ",0
 t_bytes:    db  " bytes: ",0
 t_ticks:    db  " ticks: ",0
 t_ok:       db  "ok",10,0
@@ -1008,6 +1170,7 @@ p_kt:       db  "/bin/kt",0
 p_wpipe:    db  "/bin/wpipe",0
 p_w141:     db  "/bin/w141",0
 p_vfp:      db  "/bin/vfp",0
+p_tlf:      db  "/bin/tlf",0
 p_l1:       db  "/l1.txt",0
 p_l2:       db  "/l2.txt",0
 p_l3:       db  "/l3.txt",0
@@ -1020,6 +1183,16 @@ p_l9:       db  "/l9.txt",0
 p_l10:      db  "/l10.txt",0
 p_l11:      db  "/l11.txt",0
 p_l12:      db  "/l12.txt",0
+p_l13:      db  "/l13.txt",0
+p_l14:      db  "/l14.txt",0
+p_l15:      db  "/l15.txt",0
+p_l16:      db  "/l16.txt",0
+p_l17:      db  "/l17.txt",0
+p_l18:      db  "/l18.txt",0
+p_l19:      db  "/l19.txt",0
+p_l20:      db  "/l20.txt",0
+p_l21:      db  "/l21.txt",0
+p_l22:      db  "/l22.txt",0
 s_hello:    db  "hello",10,0
 s_xty:      db  "x",9,"y",10,0
 s_escrx:    db  1Bh,1Ch,"x",0
@@ -1029,6 +1202,15 @@ s_bc:       db  "bc",10,0
 s_z:        db  "z",10,0
 s_tabs:     db  9,9,9,9,9,9,9,9,9,"ab",10,0
 s_xatb:     db  "xa",9,"b",10,0
+s_up:       db  1Eh,10,0
+s_down:     db  1Fh,10,0
+s_abc:      db  "abc",10,0
+s_xy:       db  "xy",10,0
+s_xyz:      db  "xyz"
+s_xyznl:    db  "xyz",10,0
+s_q:        db  "q"
+s_qnl:      db  "q",10,0
+s_nl:       db  10,0
 av_none:    dw  0
 av_tsh:     dw  s_tsh,0
 s_tsh:      db  "tsh",0

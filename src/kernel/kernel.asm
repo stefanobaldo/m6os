@@ -103,6 +103,7 @@ k_sys:
         jp      sys_ttymode             ; SYS_TTYMODE (tty.asm)
         jp      sys_kill                ; SYS_KILL (sig.asm)
         jp      sys_signal              ; SYS_SIGNAL (sig.asm)
+        jp      sys_ttyline             ; SYS_TTYLINE (tty.asm)
         DUP     K_SYS_N-SYS_N
         jp      sys_enosys
         EDUP

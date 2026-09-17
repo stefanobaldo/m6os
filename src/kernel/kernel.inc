@@ -243,16 +243,20 @@ SYS_CHMOD       equ 28          ; HL = path, A = DA_RDONLY|DA_HIDDEN|
                                 ; DA_SYSTEM|DA_ARCHIVE; EINVAL, ENOENT,
                                 ; ENOTDIR, EACCES, EROFS, EIO
 ; The terminal and signals (tty.asm, sig.asm).
-SYS_TTYMODE     equ 29          ; A = TTY_CANON or TTY_RAW -> L = the mode
-                                ; that was; EINVAL. The mode is the
-                                ; terminal's, not the process's
+SYS_TTYMODE     equ 29          ; A = TTY_CANON, TTY_RAW or TTY_RECALL ->
+                                ; L = the mode that was; EINVAL. The mode
+                                ; is the terminal's, not the process's
 SYS_KILL        equ 30          ; A = pid, B = a signal: it terminates the
                                 ; process, or is ignored; EPERM (pid 0),
                                 ; EINVAL (pid >= NPROC, a bad signal),
                                 ; ESRCH (a free row)
 SYS_SIGNAL      equ 31          ; A = a signal, B = SIG_DFL or SIG_IGN ->
                                 ; L = the action that was; EINVAL
-SYS_N           equ 32          ; entries given a syscall so far
+SYS_TTYLINE     equ 32          ; HL = a line, BC = its length, 0 to
+                                ; TTY_LINE-1: the line being edited
+                                ; replaced by it, or one opened; EINVAL,
+                                ; EFAULT
+SYS_N           equ 33          ; entries given a syscall so far
 WNOHANG         equ 1           ; waitpid: do not block
 PROCINFO_SIZE   equ P_SIZE+PX_SIZE ; the row, then the extension row
 
@@ -277,6 +281,9 @@ SF_PLANT        equ 4           ;   some process owes one not yet planted:
 ; returns edited lines; raw is byte for byte, no echo, as 2.4 left it.
 TTY_CANON       equ 0
 TTY_RAW         equ 1
+TTY_RECALL      equ 2           ; canonical, and UP or DOWN ends the read
+                                ; with its byte and an LF, the line kept
+                                ; open for the next read or ttyline
 TTY_LINE        equ 128         ; bytes of the terminal's line buffer
 ; The line's state (tty.asm), as the editor in the switched part reaches
 ; it through IX.
@@ -285,7 +292,9 @@ LD_POS          equ 1           ; of them, delivered already
 LD_EOF          equ 2           ; a ^D on an empty line is owed
 LD_COL          equ 3           ; the column the line started at
 LD_CUR          equ 4           ; the cursor: an index, 0 to the length
-LD_BUF          equ 5           ; the line, TTY_LINE bytes
+LD_OPEN         equ 5           ; the line is open: the next read goes on
+                                ; with it instead of starting one
+LD_BUF          equ 6           ; the line, TTY_LINE bytes
 
 O_RDONLY        equ 0           ; open's flags: the access mode in bits 0-1
 O_WRONLY        equ 1           ; (3 is EINVAL), then
@@ -404,6 +413,7 @@ KS_SPAWNV       equ KS_TABLE2+45 ; (ks_exec.asm)
 KS_GETCWD       equ KS_TABLE2+48 ; (ks_vfs.asm)
 KS_CHMOD        equ KS_TABLE2+51 ; (ks_vfsw.asm)
 KS_TTY_KEY      equ KS_TABLE2+54 ; the line editor: A = a key (ks_tty.asm)
+KS_TTY_SET      equ KS_TABLE2+57 ; the line replaced: echoed, cursor at its end
 
 ; The window (kwin.asm) and the storage gate: what is in page 2 and page 1
 ; while the switched part of the kernel runs. kwin_enter puts the switched

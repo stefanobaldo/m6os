@@ -18,6 +18,18 @@
 ; before (lt_redraw). Nothing here blocks, and nothing is kept between
 ; calls but the state IX points at.
 
+; ks_tty_set — the line replaced by ttyline (tty.asm): its bytes and
+; length in place, the cursor at 0 and the console's cursor on the
+; line's first cell, the old line's cells blanked already. The line
+; written, the cursor put at its end. Corrupts everything but IX, IY.
+ks_tty_set:
+        ld      c,0
+        call    lt_write
+        ld      a,(ix+LD_LEN)
+        call    lt_pos
+        ld      a,(ix+LD_LEN)
+        jp      lt_place
+
 ; ks_tty_key — A = the byte. IX -> the line's state, IY -> the console's
 ; cursor. Corrupts everything but IX, IY.
 ks_tty_key:
