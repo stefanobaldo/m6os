@@ -140,6 +140,22 @@ are no columns, no `-a`, and no sorting by time or size.
 `mkdir dir...` — each directory made, empty, in a parent that exists.
 There is no `-p`.
 
+## more
+
+`more [file...]` — the files, one after the other, to the output, stopping
+each time a screenful has gone by, since the screen keeps nothing that
+scrolls off its top: `ls -l | more`. After 23 rows it shows `--More--` on
+the last one and waits for a key — SPACE for the next screenful, RET for
+one more line, `q` to stop there. A line longer than 80 columns counts as
+the rows it takes, TABs included; the prompt is erased before the output
+goes on.
+
+The keys are read on the message output, the console, so `more` pages its
+input from a pipe as well as from a file. With its messages sent to a file
+(`2> file`) there is no terminal to ask, and `more` copies everything
+without stopping, as `cat` does. Several files follow one another with no
+header between them, and there is no searching or going back.
+
 ## mv
 
 `mv old new` renames a file or a directory, within one volume — into
