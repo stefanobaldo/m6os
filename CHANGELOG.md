@@ -144,6 +144,10 @@ to install.
 - `clear`, which clears the screen and homes the cursor. ^L, or SHIFT+HOME,
   does the same while a line is being typed, and writes the prompt and the
   line so far again at the top.
+- `more`, which stops a listing or a file each time a screenful has gone by
+  and goes on with SPACE, RET or `q` — `ls -l | more`. For it, `read` on the
+  console now takes from the keyboard, so a program whose input is a pipe
+  can still read what is typed.
 
 ### Fixed
 
