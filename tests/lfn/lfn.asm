@@ -1130,7 +1130,7 @@ t_pat:      dw  0
 t_off:      dw  0
 t_seen:     ds  16
 t_rec:      ds  DIRENT_SIZE
-t_buf:      ds  512
+t_buf:      ds  PATH_MAX            ; the longest read into it is a path
 
 
 tblock_end:
