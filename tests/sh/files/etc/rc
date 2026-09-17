@@ -79,6 +79,11 @@ cat /big | tee /t/copy3 | wc -c > /t/r52
 date > /t/r53
 head -n 2 /etc/bench1 > /t/r58
 cat /etc/bench1 | head -n 3 | wc -l > /t/r59
+# more: with its messages in a file there is no terminal to page on, so
+# /rows, 24 rows on the screen, goes through whole with no prompt; an
+# input shorter than a screen never stops.
+more /rows 2> /t/r60e | wc -l > /t/r60
+cat /t/r4 | more > /t/r61
 # Long names: listed as written, expanded by a glob, and a line of the
 # length a long path needs.
 ls /lfn > /t/r55

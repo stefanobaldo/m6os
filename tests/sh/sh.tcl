@@ -40,10 +40,11 @@ proc expect_screen {want msg} { if {![has_row $want]} { problem $msg } }
 # The matrix: row and mask of every key typed here (kbd_map in
 # src/kernel/kbd.asm, the international layout).
 array set key {
-    a {2 0x40} c {3 0x01} d {3 0x02} e {3 0x04} f {3 0x08} h {3 0x20}
-    i {3 0x40} l {4 0x02} n {4 0x08} o {4 0x10} p {4 0x20} r {4 0x80}
-    s {5 0x01} t {5 0x02} w {5 0x10} x {5 0x20} y {5 0x40} 0 {0 0x01} 6 {0 0x40}
-    7 {0 0x80} / {2 0x10} space {8 0x01} home {8 0x02} shift {6 0x01}
+    a {2 0x40} b {2 0x80} c {3 0x01} d {3 0x02} e {3 0x04} f {3 0x08}
+    h {3 0x20} i {3 0x40} l {4 0x02} m {4 0x04} n {4 0x08} o {4 0x10}
+    p {4 0x20} q {4 0x40} r {4 0x80} s {5 0x01} t {5 0x02} w {5 0x10}
+    x {5 0x20} y {5 0x40} 0 {0 0x01} 6 {0 0x40} 7 {0 0x80} - {1 0x04}
+    \\ {1 0x10} / {2 0x10} space {8 0x01} home {8 0x02} shift {6 0x01}
     ctrl {6 0x02} ret {7 0x80}
 }
 proc down {k} { keymatrixdown {*}$::key($k) }
@@ -63,10 +64,17 @@ proc stap {t k} {
     tap [expr {$t + 0.05}] $k
     at [expr {$t + 0.15}] {up shift}
 }
-# amp in a key list is &, SHIFT and 7 on the international layout.
+# amp in a key list is &, SHIFT and 7 on the international layout; bar
+# is |, SHIFT and backslash.
 proc taps {t keys} {
     foreach k $keys {
-        if {$k eq "amp"} { stap $t 7 } else { tap $t $k }
+        if {$k eq "amp"} {
+            stap $t 7
+        } elseif {$k eq "bar"} {
+            stap $t \\
+        } else {
+            tap $t $k
+        }
         set t [expr {$t + 0.15}]
     }
     return $t
@@ -129,8 +137,87 @@ proc type_at_shell {} {
     # clear: the screen holds nothing but a fresh prompt on its first row.
     set t [typeline [expr {$t + 0.8}] {c l e a r}]
     at [expr {$t + 0.6}] {check_top {/ $} "clear"}
-    set t [typeline [expr {$t + 0.8}] {e x i t}]
+    at [expr {$t + 0.8}] more_start
+}
+
+# more: first a file whose rows wrap — 100 columns take two rows, 80
+# columns two as well, the second blank, ten TABs reach column 80 and
+# wrap — so the stop falls after a, and q ends it there. Then ls -l /bin
+# through it: the 27 commands stop after the 23rd, tee, with the prompt
+# on the last row; RET shows one more, tr; SPACE the last three and the
+# shell's prompt. A second run ends at the first stop with q: the
+# prompt's row holds the shell's prompt, and nothing is reported, the
+# pipeline's status being more's.
+set more_cmd {l s space - l space / b i n space bar space m o r e}
+proc more_start {} {
+    typeline 0 {m o r e space / r o w s}
+    wait_for {[lindex [rows] 23] eq "--More--"} more_rows "more did not stop on a file of 24 rows"
+}
+proc more_rows {} {
+    set rs [rows]
+    set want [list [string repeat w 80] [string repeat w 20] [string repeat v 80] {} {} x a]
+    if {[lrange $rs 16 22] ne $want} { problem "more did not stop after the 23rd row of /rows: [lrange $rs 16 22]" }
+    tap 0.3 q
+    wait_for {[lindex [rows] 23] eq {/ $}} more_ls "q at more's prompt did not end it on /rows"
+}
+proc more_ls {} {
+    set rs [rows]
+    if {[lsearch -exact $rs a] < 0 || [lsearch -exact $rs b] >= 0 || [lsearch -exact $rs "--More--"] >= 0} {
+        problem "q at more's prompt did not end /rows at a, its prompt erased: [lrange $rs 18 23]"
+    }
+    typeline 0 $::more_cmd
+    wait_for {[lindex [rows] 23] eq "--More--"} more_page "more did not stop with --More-- on the last row"
+}
+proc more_page {} {
+    set rs [rows]
+    if {![string match -nocase "* cat" [lindex $rs 0]] || ![string match -nocase "* tee" [lindex $rs 22]]} {
+        problem "more's first screenful is not cat to tee: \"[lindex $rs 0]\" to \"[lindex $rs 22]\""
+    }
+    tap 0.3 ret
+    wait_for {[string match -nocase "* tr" [lindex [rows] 22]] && [lindex [rows] 23] eq "--More--"} more_line \
+        "RET at more's prompt did not show one more line, tr"
+}
+proc more_line {} {
+    tap 0.3 space
+    wait_for {[lindex [rows] 23] eq {/ $}} more_end "SPACE at more's prompt did not run to the end"
+}
+proc more_end {} {
+    set rs [rows]
+    if {[more_names $rs 4] ne {tr true uniq wc}} {
+        problem "more's last screenful does not end tr true uniq wc: [more_names $rs 4]"
+    }
+    if {[lsearch -exact $rs "--More--"] >= 0} { problem "more's prompt was left on the screen" }
+    typeline 0.3 $::more_cmd
+    wait_for {[lindex [rows] 23] eq "--More--"} more_quit "more did not stop the second time"
+}
+proc more_quit {} {
+    tap 0.3 q
+    wait_for {[lindex [rows] 23] eq {/ $}} more_done "q at more's prompt did not end it"
+}
+proc more_done {} {
+    set rs [rows]
+    if {[more_names $rs 1] ne {tee}} { problem "q at more's prompt left [more_names $rs 1] last, not tee" }
+    if {[lsearch -exact $rs "--More--"] >= 0} { problem "q left more's prompt on the screen" }
+    set t [typeline 0.3 {e x i t}]
     at [expr {$t + 1.0}] check_relaunch
+}
+# more_names <rows> <n>: the names on the last n rows of ls -l, in lower
+# case — a background job's report may stand between them and the prompt.
+proc more_names {rs n} {
+    set names {}
+    foreach r $rs {
+        if {[regexp {^[-d][-r][-h][-s][-a] +\d+ \S+ \S+ (\S+)$} $r -> name]} {
+            lappend names [string tolower $name]
+        }
+    }
+    return [lrange $names end-[expr {$n - 1}] end]
+}
+# wait_for <cond> <then> <what>: then, once cond holds, polled every 0.2 s
+# for 20 s; past that the problem is recorded and then runs anyway.
+proc wait_for {cond then what {left 100}} {
+    if {[uplevel #0 [list expr $cond]]} { after time 0.3 $then; return }
+    if {$left == 0} { problem $what; after time 0.3 $then; return }
+    after time 0.2 [list wait_for $cond $then $what [expr {$left - 1}]]
 }
 proc check_spew {} {
     # spew's rows of dots have scrolled everything before them away; the

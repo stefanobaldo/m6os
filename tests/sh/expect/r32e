@@ -20,3 +20,4 @@ tee: /nodir/x: ENOENT
 uniq: /t/nofile: ENOENT
 tr: usage: tr set1 set2
 sleep: usage: sleep N
+more: /t/nofile: ENOENT
