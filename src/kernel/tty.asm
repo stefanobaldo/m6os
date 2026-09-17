@@ -9,19 +9,22 @@
 ;
 ; The line is the terminal's, not the process's: one buffer, ld_buf, that
 ; a reader fills one key event at a time — blocking as the raw read
-; blocks while the queue is empty — echoing every byte it keeps through
-; con_write, until RET, ^D or a ^C nobody took closes it. Then the reader
-; is handed min(BC, what is left) and the rest waits for the next read,
-; so a program reading a byte at a time gets the line without blocking
-; again. Editing: BS and DEL rub out one byte (BS SP BS), ^U the line,
-; ^L (and SHIFT+HOME, the same byte) clears the screen and writes the
-; line again at the top, after what its row held before it — the prompt;
-; TAB is kept and echoed as con_write moves the cursor, every other
-; control byte — arrows, HOME, ESC, F-keys — is dropped without echo. The
-; line holds TTY_LINE-1 bytes; a printable past that is dropped. ^D on an
-; empty line is a read of 0 bytes, once. The byte 03h, which the handler
-; queues only when no process took the ^C, ends the line empty with an LF
-; delivered: a shell at its prompt prints a fresh one.
+; blocks while the queue is empty — until RET, ^D or a ^C nobody took
+; closes it. Then the reader is handed min(BC, what is left) and the rest
+; waits for the next read, so a program reading a byte at a time gets the
+; line without blocking again. Every other key is the editor's, and the
+; editor is in the switched part of the kernel (ks_tty.asm): a keystroke
+; is the coldest path there is, and the page switch it costs — ~60 µs —
+; is nothing beside a key's own latency. The editor keeps a cursor,
+; ld_cur, inside the line: printables and TAB are inserted at it, BS and
+; DEL rub out beside it, the arrows, HOME, ^A and ^E move it, ^U empties
+; the line, ^L (and SHIFT+HOME, the same byte) clears the screen and
+; writes the prompt and the line again at the top; every other control
+; byte is dropped without echo. The line holds TTY_LINE-1 bytes; a byte
+; past that is dropped. ^D on an empty line is a read of 0 bytes, once.
+; The byte 03h, which the handler queues only when no process took the
+; ^C, ends the line empty with an LF delivered: a shell at its prompt
+; prints a fresh one.
 ;
 ; The user buffer and length ride in IX and IY across a block, as the raw
 ; read's do — the frame saves them, and con_write, vdp_t2 and kbd_pop
@@ -53,6 +56,7 @@ tty_read:
 .build: xor     a
         ld      (ld_len),a
         ld      (ld_pos),a
+        ld      (ld_cur),a
         ld      a,(con_col)
         ld      (ld_col),a              ; where the line starts, for ^L
 .loop:  ld      a,(kbd_count)
@@ -75,107 +79,20 @@ tty_read:
         push    af
         push    hl
         jp      sched_save_block        ; its ei is the load's
-.ff:    ; ^L: the screen cleared, then the cells of the line's first row
-        ; before ld_col — the prompt the reader wrote — and the line so
-        ; far. That row is the cursor's less the rows the line's echo
-        ; took, walked from ld_col the way con_write moves; a prompt
-        ; longer than a row comes back as its last row only. Neither
-        ; write scrolls, so con_linebuf, which a scroll uses, holds the
-        ; prompt safely.
-        ld      hl,ld_buf
-        ld      a,(ld_len)
-        ld      c,a
-        ld      b,0
-        push    hl
-        push    bc                      ; the line, for the last write
-        ld      a,(ld_col)
-        ld      d,a                     ; d = the column
-        ld      e,b                     ; e = the rows the echo took
-        inc     c
-        jr      .next
-.walk:  ld      a,(hl)
-        cp      9
-        ld      a,d
-        jr      nz,.char
-        or      7                       ; TAB: the next stop, less one
-.char:  inc     a
-        cp      CON_COLS
-        jr      c,.col
-        inc     e                       ; past the row: the next one
-        xor     a
-.col:   ld      d,a
-        inc     hl
-.next:  dec     c
-        jr      nz,.walk
-        ld      a,(con_row)
-        sub     e
-        ld      c,b                     ; bc = the prompt's length, 0
-        jr      c,.cls                  ; not on the screen: no prompt
-        call    vdp_row_read            ; into con_linebuf
-        ld      a,(ld_col)
-        ld      c,a
-        ld      b,0
-.cls:   ld      a,12
-        call    con_putc                ; BC kept
-        ld      hl,con_linebuf
-        call    con_write               ; nothing for a length of 0
-        pop     bc
-        pop     hl
-        call    con_write
-.again: jr      .loop
 .woken: ei
 .have:  call    kbd_pop                 ; a = the byte; CF: nothing from it
         jr      c,.loop
         cp      13
         jr      z,.ret
-        cp      8
-        jr      z,.bs
-        cp      127
-        jr      z,.bs
-        cp      21                      ; ^U
-        jr      z,.kill
-        cp      12                      ; ^L
-        jr      z,.ff
         cp      4                       ; ^D
         jr      z,.eof
         cp      3                       ; a ^C nobody took
         jr      z,.intr
-        cp      9                       ; TAB: kept, con_write moves
-        jr      z,.store
-        cp      20h
-        jr      c,.again                ; any other control: dropped
-.store: push    af
+        ld      hl,KS_TTY_KEY           ; everything else: the editor's
+        call    tty_ks
+        jr      .loop
+.ret:   call    tty_end
         ld      a,(ld_len)
-        cp      TTY_LINE-1
-        jr      nc,.full
-        ld      hl,ld_buf
-        ld      e,a
-        ld      d,0
-        add     hl,de
-        pop     af
-        ld      (hl),a
-        ld      hl,ld_len
-        inc     (hl)
-        call    con_putc                ; the echo
-        jp      .loop
-.full:  pop     af
-        jp      .loop
-.bs:    ld      a,(ld_len)
-        or      a
-        jp      z,.loop                 ; nothing to rub out
-        dec     a
-        ld      (ld_len),a
-        call    tty_erase
-        jp      .loop
-.kill:  ld      a,(ld_len)
-        or      a
-        jp      z,.loop
-.kloop: call    tty_erase
-        ld      hl,ld_len
-        dec     (hl)
-        jr      nz,.kloop
-        jp      .loop
-.ret:   ld      a,(ld_len)
         cp      TTY_LINE-1
         jr      nc,.close               ; no room for the LF: without it
         ld      hl,ld_buf
@@ -190,12 +107,15 @@ tty_read:
         jr      .close
 .eof:   ld      a,(ld_len)
         or      a
-        jr      nz,.close               ; mid-line: what is there, no LF
+        jr      nz,.mid
         call    tty_cursor_off
         ld      hl,0
         xor     a                       ; CF clear
         ret
-.intr:  ld      a,10                    ; the line the handler emptied,
+.mid:   call    tty_end                 ; mid-line: what is there, no LF
+        jr      .close
+.intr:  call    tty_end
+        ld      a,10                    ; the line the handler emptied,
         ld      (ld_buf),a              ; delivered as an empty one
         ld      a,1
         ld      (ld_len),a
@@ -244,12 +164,47 @@ tty_read:
         xor     a                       ; CF clear
         ret
 
-; tty_erase — BS SP BS to the console: one byte rubbed out. Corrupts
-; everything.
-tty_erase:
-        ld      hl,tty_bsseq
-        ld      bc,3
-        jp      con_write
+; tty_end — the cursor to the line's end, when it is not there: what a
+; key that closes the line does first, so that the LF, or the program's
+; output, starts after the line and not inside it. Corrupts everything
+; but IX, IY.
+tty_end:
+        ld      a,(ld_cur)
+        ld      hl,ld_len
+        cp      (hl)
+        ret     z
+        ld      a,5                     ; ^E
+        ld      hl,KS_TTY_KEY
+; tty_ks — HL = an entry of the switched part, A = its argument: the
+; call, the way k_switched makes one — the stack moved to k_sstack, since
+; the process's may be in page 2, and the window in — with the line's
+; state in IX and the console's cursor in IY for the callee, and the
+; caller's IX and IY kept. k_usp is free here: sys_read on the keyboard
+; is resident, never entered through the gate. The switch a tick may have
+; marked as owed inside is paid at the read's return, as for any tick
+; that lands in the loop. Corrupts everything but IX, IY.
+tty_ks:
+        push    ix
+        push    iy
+        ld      (k_usp),sp
+        ld      sp,k_sstack
+        ld      ix,ld_state
+        ld      iy,con_row
+        kwin_enter
+        call    .go
+        kwin_leave
+        ld      sp,(k_usp)
+        pop     iy
+        pop     ix
+        ret
+.go:    jp      (hl)
+
+; tty_row_read — A = a row: API_ROW_READ, the row into con_linebuf and
+; HL -> it, for the editor's ^L. Corrupts everything.
+tty_row_read:
+        call    vdp_row_read
+        ld      hl,con_linebuf
+        ret
 
 ; tty_cursor_on / tty_cursor_off — the cursor drawn while a reader waits,
 ; erased when it returns; as the raw read does, through con_shown.
@@ -292,9 +247,15 @@ sys_ttymode:
         ret
 
 tty_mode:       db TTY_CANON            ; the terminal's mode
+; The line's state, laid out as LD_* in kernel.inc say: the editor in the
+; switched part reaches it through IX.
+ld_state:
 ld_len:         db 0                    ; bytes in the line
 ld_pos:         db 0                    ; of them, delivered already
 ld_eof:         db 0                    ; a ^D on an empty line is owed
 ld_col:         db 0                    ; the column the line started at
-tty_bsseq:      db 8,32,8
+ld_cur:         db 0                    ; the cursor: an index, 0 to ld_len
 ld_buf:         ds TTY_LINE             ; the line
+        ASSERT  ld_len == ld_state+LD_LEN && ld_pos == ld_state+LD_POS
+        ASSERT  ld_eof == ld_state+LD_EOF && ld_col == ld_state+LD_COL
+        ASSERT  ld_cur == ld_state+LD_CUR && ld_buf == ld_state+LD_BUF

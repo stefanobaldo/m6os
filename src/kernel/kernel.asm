@@ -66,9 +66,8 @@ k_api:
         jp      exec_finish             ; API_EXEC_FINISH
         jp      KS_BFLUSH               ; API_BFLUSH: in the switched part
         jp      KS_BZERO                ; API_BZERO
-        DUP     K_API_N-30
-        jp      sys_enosys              ; an entry not yet given a routine
-        EDUP
+        jp      con_write               ; API_CON_WRITE
+        jp      tty_row_read            ; API_ROW_READ (tty.asm)
         block   K_SYS-$
 k_sys:
         jp      sys_exit                ; SYS_EXIT

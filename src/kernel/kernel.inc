@@ -149,6 +149,8 @@ API_BFLUSH      equ 28          ; every dirty buffer written, a FAT sector to
                                 ; every copy; CF with the first errno met
 API_BZERO       equ 29          ; A = volume, DE:HL = sector -> HL = a buffer
                                 ; of zeros for it, nothing read
+API_CON_WRITE   equ 30          ; HL -> bytes, BC = how many: to the console
+API_ROW_READ    equ 31          ; A = a row -> HL -> its CON_COLS cells
 
 ; k_call n — call the resident through the jump table.
     macro k_call n
@@ -276,6 +278,14 @@ SF_PLANT        equ 4           ;   some process owes one not yet planted:
 TTY_CANON       equ 0
 TTY_RAW         equ 1
 TTY_LINE        equ 128         ; bytes of the terminal's line buffer
+; The line's state (tty.asm), as the editor in the switched part reaches
+; it through IX.
+LD_LEN          equ 0           ; bytes in the line
+LD_POS          equ 1           ; of them, delivered already
+LD_EOF          equ 2           ; a ^D on an empty line is owed
+LD_COL          equ 3           ; the column the line started at
+LD_CUR          equ 4           ; the cursor: an index, 0 to the length
+LD_BUF          equ 5           ; the line, TTY_LINE bytes
 
 O_RDONLY        equ 0           ; open's flags: the access mode in bits 0-1
 O_WRONLY        equ 1           ; (3 is EINVAL), then
@@ -393,6 +403,7 @@ KS_BZERO        equ KS_TABLE2+42
 KS_SPAWNV       equ KS_TABLE2+45 ; (ks_exec.asm)
 KS_GETCWD       equ KS_TABLE2+48 ; (ks_vfs.asm)
 KS_CHMOD        equ KS_TABLE2+51 ; (ks_vfsw.asm)
+KS_TTY_KEY      equ KS_TABLE2+54 ; the line editor: A = a key (ks_tty.asm)
 
 ; The window (kwin.asm) and the storage gate: what is in page 2 and page 1
 ; while the switched part of the kernel runs. kwin_enter puts the switched

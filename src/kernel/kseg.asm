@@ -50,6 +50,7 @@
         jp      ks_spawnv               ; KS_SPAWNV (ks_exec.asm)
         jp      ks_getcwd               ; KS_GETCWD (ks_vfs.asm)
         jp      ks_chmod                ; KS_CHMOD (ks_vfsw.asm)
+        jp      ks_tty_key              ; KS_TTY_KEY (ks_tty.asm)
 
 ; ks_enosys — an entry whose body does not exist yet.
 ks_enosys:
@@ -226,6 +227,7 @@ s_more2:    db  " more, not scanned",10,0
         include "kernel/ks_lfn.asm"
         include "kernel/ks_exec.asm"
         include "kernel/ks_vfsw.asm"
+        include "kernel/ks_tty.asm"
 
 ks_end:
         ASSERT  ks_end <= KS_BASE+4000h
