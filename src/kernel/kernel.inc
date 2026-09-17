@@ -286,15 +286,18 @@ O_TRUNC         equ 80h         ; with a writable mode: empty it first
 SEEK_SET        equ 0           ; lseek's whence: from the start,
 SEEK_CUR        equ 1           ; the position,
 SEEK_END        equ 2           ; the end
-PATH_MAX        equ 128         ; bytes of a path, its terminator included
+PATH_MAX        equ 256         ; bytes of a path, its terminator included
+NAME_MAX        equ 255         ; bytes of one component: VFAT's limit
 
 ; What stat and readdir return: DIRENT_SIZE bytes in the caller's buffer.
-DIRENT_SIZE     equ 24
-DE_NAME         equ 0           ; 13: "name.ext" in lower case, 0-terminated
-DE_ATTR         equ 13          ; the FAT attribute byte: DA_*
-DE_SIZE         equ 14          ; 4: bytes; 0 for a directory
-DE_MTIME        equ 18          ; 4: the FAT date word, then the time word
-                                ; 22-23 zero
+DIRENT_SIZE     equ 265
+DE_NAME         equ 0           ; NAME_MAX+1: the name, 0-terminated — the
+                                ; long name when the entry has one, else
+                                ; the short name as stored, lower-cased
+                                ; where its case bits say so
+DE_ATTR         equ 256         ; the FAT attribute byte: DA_*
+DE_SIZE         equ 257         ; 4: bytes; 0 for a directory
+DE_MTIME        equ 261         ; 4: the FAT date word, then the time word
 DA_RDONLY       equ 01h
 DA_HIDDEN       equ 02h
 DA_SYSTEM       equ 04h
@@ -310,7 +313,7 @@ XH_SIGN         equ 2           ; 2: "m6"
 XH_PAGES        equ 4           ; pages the program wants, 1-3
 XH_FLAGS        equ 5           ; 0
 XH_SIZE         equ 6
-ARGV_MAX        equ 256         ; bytes of an argument block: the pointers
+ARGV_MAX        equ 512         ; bytes of an argument block: the pointers
                                 ; and the strings
 
     macro sys n
@@ -436,6 +439,9 @@ P0_PROG         equ 0100h       ; where the program starts
 P0_FRAME        equ 24          ; bytes the kernel may use on a process's
                                 ; stack at any instant: an interrupt's
                                 ; return address and the saved context
+P0_TOP          equ 4000h-ARGV_MAX-P0_FRAME ; where a one-page program's
+                                ; memory ends: the argument block and the
+                                ; frame sit above it, under the page's top
 NPROC           equ 16
 P_STATE         equ 0           ; PS_*
 P_SP            equ 1           ; 2: the stack pointer while not running;
@@ -564,13 +570,18 @@ ST_VARS         equ 0900h       ; 128: the switched part's variables (it
 ST_MNT          equ 0980h       ; the mount table: MNT_N rows of MNT_SIZE,
                                 ; row i describing volume i of K_VOL
 ST_OFT          equ 0A80h       ; the open-file table: OFT_N rows of OFT_SIZE
-ST_ARGV         equ 0CC0h       ; ARGV_MAX: exec's argument block, gathered
-                                ; before the image is overwritten
+ST_LNAME        equ 0CC0h       ; NAME_MAX+1: a name, 0-terminated — read
+                                ; from its chain, or built for readdir and
+                                ; stat to hand out
 ST_VFS          equ 0DC0h       ; 320: the filesystem's variables (VV_*, VX_*)
 ST_VFSW         equ 0F00h       ; 256: the write side's variables (VW_*)
-ST_BUF          equ 1000h       ; BUF_N sector buffers of 512
-BUF_N           equ 24
-BUF_SCRATCH     equ 23          ; the enumeration's buffer at boot
+ST_PATH         equ 1000h       ; PATH_MAX: the path a syscall copies in
+ST_PATH2        equ 1100h       ; PATH_MAX: rename's second path
+ST_ARGV         equ 1200h       ; ARGV_MAX: exec's argument block, gathered
+                                ; before the image is overwritten
+ST_BUF          equ 1400h       ; BUF_N sector buffers of 512
+BUF_N           equ 22
+BUF_SCRATCH     equ 21          ; the enumeration's buffer at boot
 H_VOL           equ 0           ; a header: the volume; FFh = free
 H_SEC           equ 1           ; 4: the sector
 H_AGE           equ 5           ; the clock's value at the last touch
@@ -668,6 +679,7 @@ OF_CLUS_END     equ 0FFFFh
 ; A FAT directory entry, 32 bytes.
 FE_NAME         equ 0           ; 11: name and extension, space padded
 FE_ATTR         equ 11          ; DA_*
+FE_NT           equ 12          ; the case bits: FN_*
 FE_CTENTH       equ 13          ; creation time, tenths of a second: 0
 FE_CTIME        equ 14          ; 2: creation time and
 FE_CDATE        equ 16          ; 2: date
@@ -678,12 +690,62 @@ FE_CLUS         equ 26          ; 2: first cluster
 FE_SIZE         equ 28          ; 4
 FE_SIZEOF       equ 32
 FE_END          equ 00h         ; a first byte: no entry from here on
+FN_LBASE        equ 08h         ; FE_NT: the name part is lower case
+FN_LEXT         equ 10h         ;        the extension is
+FE_LFN          equ 0Fh         ; an attribute: a long-name part
 FE_FREE         equ 0E5h        ; a first byte: deleted
 
 ; ST_VFS: the filesystem's variables. The path and its cursor, the name
 ; being matched, the directory scan's cursor, the lookup's result (VR_*),
 ; the record being built, the read loop's scalars, and exec's (VX_*).
-VV_PATH         equ ST_VFS+0    ; PATH_MAX: the path, copied in
+VV_PATH         equ ST_PATH     ; PATH_MAX: the path, copied in
+; The long-name chain being read (ks_lfn.asm), what the scan hands on
+; about it, and the case of the component being matched or made.
+VL_N            equ ST_VFS+16   ; entries in the chain; 0 = none open
+VL_NEXT         equ ST_VFS+17   ; the ordinal expected next
+VL_SUM          equ ST_VFS+18   ; the checksum every part carries
+VL_LEN          equ ST_VFS+19   ; the name's length
+VL_DEAD         equ ST_VFS+20   ; 1: the chain is broken, skip to the entry
+VL_LSEC         equ ST_VFS+21   ; 4: the sector of the chain's first part
+VL_LIDX         equ ST_VFS+25   ;    and its index
+VL_MODE         equ ST_VFS+26   ; 0: every chain read; 1: one of VL_WANT
+VL_WANT         equ ST_VFS+27   ; a lookup: the component's length
+VL_SHORT        equ ST_VFS+28   ; 1: VV_NAME holds the component as a short
+                                ; name, to be compared too
+VR_LN           equ ST_VFS+29   ; the found entry's chain: its entries, 0 none
+VR_LSEC         equ ST_VFS+30   ; 4: the chain's first part, its sector
+VR_LIDX         equ ST_VFS+34   ;    and index
+VV_NT           equ ST_VFS+35   ; the component's case bits, FN_*
+VV_CASE         equ ST_VFS+36   ; name83's scratch: bit 0 lower, 1 upper seen
+VV_MIXED        equ ST_VFS+37   ; 1: a part of the component mixes its cases
+; Making a name (ks_lfn.asm, ks_vfsw.asm): what the lookup gathers for the
+; creation that follows it, and the parts being written.
+VW_CREATE       equ ST_VFS+38   ; 1: the syscall makes the last component
+VW_GATHER       equ ST_VFS+39   ; 1: this scan counts free slots and aliases
+VW_EXCL         equ ST_VFS+40   ; 1: the entry at VW_OSEC/VW_OIDX on VW_OVOL
+                                ; is no match (rename's own source)
+VW_NLFN         equ ST_VFS+41   ; parts the new name needs; 0 for a short one
+VW_RNEED        equ ST_VFS+42   ; slots wanted: VW_NLFN + 1
+VW_RCNT         equ ST_VFS+43   ; free slots in the run being counted
+VW_RFOUND       equ ST_VFS+44   ; 1: a run at VW_RSEC/VW_RIDX holds them, or
+                                ; reaches the directory's end
+VW_RSEC         equ ST_VFS+45   ; 4: the run's first slot: sector
+VW_RIDX         equ ST_VFS+49   ;    and index
+VW_ALIAS        equ ST_VFS+50   ; 11: the alias being built
+VW_ATPOS        equ ST_VFS+61   ; where its ~ is
+VW_AMAP         equ ST_VFS+62   ; 2: aliases ~1 to ~9 seen, bit n for ~n
+VW_AEND         equ ST_VFS+64   ; 2: lfn_alias: past the component,
+VW_ABASE        equ ST_VFS+66   ; 2: the base's start,
+VW_AEXT         equ ST_VFS+68   ; 2: the last dot, 0 none
+VW_PPOS         equ ST_VFS+70   ; lfn_part: the character being written
+VW_PENT         equ ST_VFS+71   ; 32: a part being written; lfn_digit's
+                                ; copy of VR_ENT across its scan
+VW_OLN          equ ST_VFS+103  ; rename: the old entry's chain, its parts
+VW_OLSEC        equ ST_VFS+104  ; 4: its first part's sector
+VW_OLIDX        equ ST_VFS+108  ;    and index
+VW_PN           equ ST_VFS+109  ; dir_new_name: the part to write next
+VW_FN           equ ST_VFS+119  ; dir_free_name: parts left to mark
+VW_ODCLUS       equ ST_VFS+120  ; 2: rename, rmdir: the entry's directory
 VV_NAME         equ ST_VFS+128  ; 11: the component as a FAT name
 VV_P            equ ST_VFS+139  ; 2: the cursor into VV_PATH
 VV_VOL          equ ST_VFS+141  ; the node being walked: volume (VOL_NONE =
@@ -703,7 +765,8 @@ VR_MTIME        equ ST_VFS+163  ; 4: time, date as the entry has them
 VR_DSEC         equ ST_VFS+167  ; 4: the entry's sector
 VR_DIDX         equ ST_VFS+171  ;    and index
 VR_ENT          equ ST_VFS+172  ; 32: the entry itself
-VV_REC          equ ST_VFS+204  ; DIRENT_SIZE: the record being built
+VV_RECX         equ ST_VFS+110  ; 9: the record from DE_ATTR on, being built
+                                ; (its name is in ST_LNAME)
 VV_RBUF         equ ST_VFS+228  ; 2: read: the user address
 VV_RLEFT        equ ST_VFS+230  ; 2: bytes still to deliver
 VV_RDONE        equ ST_VFS+232  ; 2: bytes delivered
@@ -754,7 +817,7 @@ VK_BADNAME      equ 5           ; the same, but the component is not a name
 VK_NONE         equ 0FFh        ; a failed lookup that left nothing
 
 ; ST_VFSW: the write side's variables (ks_vfsw.asm, ks_fat.asm).
-VW_PATH2        equ ST_VFSW+0   ; PATH_MAX: rename's second path
+VW_PATH2        equ ST_PATH2    ; PATH_MAX: rename's second path
 VW_ESEC         equ ST_VFSW+128 ; 4: dir_alloc_entry's slot: its sector
 VW_EIDX         equ ST_VFSW+132 ;    and index
 VW_TAIL         equ ST_VFSW+133 ; 2: a chain's last cluster

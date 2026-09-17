@@ -1015,7 +1015,7 @@ p_autoexec: db  "autoexec.bat",0
 p_rootdd:   db  "/..",0
 p_mntbdd:   db  "/mnt/b/..",0
 p_long:     db  "/"
-            DUP 129
+            DUP PATH_MAX
             db  "x"
             EDUP
             db  0
@@ -1024,13 +1024,15 @@ n_dot:      db  ".",0
 n_dotdot:   db  "..",0
 n_a:        db  "a",0
 n_motd:     db  "m6",10
-root_names: db  "nextor.sys",0,"command2.com",0,"vfs.com",0,"autoexec.bat",0
-            db  "bin",0,"data",0,"etc",0,0
-bin_names:  db  ".",0,"..",0,"hello",0,"two",0,"three",0,"big16k",0,0
-etc_names:  db  ".",0,"..",0,"motd",0
-            db  "pad01",0,"pad02",0,"pad03",0,"pad04",0,"pad05",0,"pad06",0
-            db  "pad07",0,"pad08",0,"pad09",0,"pad10",0,"pad11",0,"pad12",0
-            db  "pad13",0,"pad14",0,0
+; The names as the importer wrote them: short entries in upper case, no
+; case bits, listed as they are.
+root_names: db  "NEXTOR.SYS",0,"COMMAND2.COM",0,"VFS.COM",0,"AUTOEXEC.BAT",0
+            db  "BIN",0,"DATA",0,"ETC",0,0
+bin_names:  db  ".",0,"..",0,"HELLO",0,"TWO",0,"THREE",0,"BIG16K",0,0
+etc_names:  db  ".",0,"..",0,"MOTD",0
+            db  "PAD01",0,"PAD02",0,"PAD03",0,"PAD04",0,"PAD05",0,"PAD06",0
+            db  "PAD07",0,"PAD08",0,"PAD09",0,"PAD10",0,"PAD11",0,"PAD12",0
+            db  "PAD13",0,"PAD14",0,0
 
 t_step:     db  0
 t_n:        db  0
@@ -1591,7 +1593,7 @@ u_execerr_k:
 .nope:  db      "/nope",0
 .hello: db      "/bin/hello",0
 .bigargv: dw    .hello,.big,0
-.big:   DUP 300
+.big:   DUP ARGV_MAX
         db      "x"
         EDUP
         db      0

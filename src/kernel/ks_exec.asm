@@ -257,7 +257,7 @@ ex_args:
         ld      a,(SG+VX_ARGC)
         inc     a
         ld      (SG+VX_ARGC),a
-        cp      ARGV_MAX/2              ; the table alone would overflow
+        cp      ARGV_MAX/4              ; the table alone would fill half
         jp      nc,.big
         inc     hl
         inc     hl
@@ -297,9 +297,12 @@ ex_args:
 .byte:  call    um_peek
         push    af
         ld      de,(SG+VX_BP)
-        ld      a,d
+        push    hl
+        ld      hl,ARGV_MAX-1
         or      a
-        jr      nz,.bigpop              ; the 257th byte
+        sbc     hl,de
+        pop     hl
+        jr      c,.bigpop               ; the byte past ARGV_MAX
         push    hl
         ld      hl,SG+ST_ARGV
         add     hl,de

@@ -23,8 +23,9 @@
 NTOK    equ     40                      ; tokens in a line
 NARG    equ     32                      ; words in a command, the 0 included
 NSTAGE  equ     4                       ; stages in a pipeline
-LINE    equ     130                     ; the line, its 0 included
-XBUF    equ     256                     ; expansions of one command
+LINE    equ     ARGV_MAX                ; the line, its 0 included: a longer
+                                        ; one could never run
+XBUF    equ     ARGV_MAX                ; expansions of one command
 
 T_END   equ     0                       ; the tokens
 T_WORD  equ     1

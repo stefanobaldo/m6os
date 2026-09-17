@@ -27,8 +27,8 @@
 ; nine sectors instead of one. The kernel checks that the file, the
 ; argument block and its frame fit the page, and nothing checks the
 ; memory a program uses past its file; so every bss asserts that the
-; buffers end below 3EE8h — the top of a one-page process holds the
-; 256-byte argument block and the kernel's 24-byte frame.
+; buffers end below P0_TOP — the top of a one-page process holds the
+; argument block, ARGV_MAX bytes at most, and the kernel's frame.
 ;
 ; lib_exit (A = status) flushes the output buffer, when there is one, and
 ; exits; lib_status is 1 once err_file has reported something, so a
@@ -54,7 +54,7 @@ start:  ld      (lib_argc),bc
     macro bss Q1,Q2
 Q1      equ     __bss
 __bss   =       __bss+Q2
-        assert  __bss <= 3EE8h
+        assert  __bss <= P0_TOP
     endm
 
     macro bss_align

@@ -283,7 +283,7 @@ vfs_lookup:
         ld      (SG+VV_PN),hl           ; past the component
         ld      a,(SG+VV_VOL)
         cp      VOL_NONE
-        jr      z,.atmnt
+        jp      z,.atmnt
         ld      hl,(SG+VV_CLUS)
         ld      a,h
         or      l
@@ -296,10 +296,10 @@ vfs_lookup:
         ld      a,(SG+VV_VOL)           ; .. at a root: / on the boot volume,
         ld      hl,K_BLK_ROOT           ; /mnt elsewhere
         cp      (hl)
-        jr      z,.next
+        jp      z,.next
         ld      a,VOL_NONE
         ld      (SG+VV_VOL),a
-        jr      .next
+        jp      .next
 .notdd: ld      a,(SG+VV_VOL)
         ld      hl,K_BLK_ROOT
         cp      (hl)
@@ -308,9 +308,37 @@ vfs_lookup:
         jr      nz,.scan
         ld      a,VOL_NONE
         ld      (SG+VV_VOL),a
-        jr      .next
-.scan:  call    name83
-        jp      c,.badname              ; not a name: nothing has it
+        jp      .next
+.scan:  xor     a
+        ld      (SG+VW_GATHER),a
+        ld      a,c
+        ld      (SG+VL_WANT),a          ; the component's length, for the
+        ld      a,1                     ; chains' length filter
+        ld      (SG+VL_SHORT),a
+        call    name83
+        jr      nc,.find
+        ld      de,(SG+VV_P)            ; not a short name: a long one?
+        ld      a,(SG+VL_WANT)
+        ld      c,a
+        call    lfn_valid
+        jp      c,.badname              ; neither: nothing has it
+        xor     a
+        ld      (SG+VL_SHORT),a
+.find:  ld      a,(SG+VW_CREATE)
+        or      a
+        jr      z,.look
+        ld      hl,(SG+VV_PN)           ; the last component of a creation:
+        ld      a,(hl)
+        or      a
+        jr      nz,.look
+        ld      de,(SG+VV_P)            ; ASCII alone is written
+        ld      a,(SG+VL_WANT)
+        ld      c,a
+        call    lfn_ascii
+        jp      c,.badname
+        call    lfn_prepare             ; what it needs, and the scan gathers
+.look:  ld      a,1
+        call    lfn_reset               ; a lookup
         call    dir_find
         jp      c,.missing
         ; More components: this one must be a directory.
@@ -492,6 +520,10 @@ name83:
 .pad:   ld      (hl),' '
         inc     hl
         djnz    .pad
+        xor     a
+        ld      (SG+VV_NT),a
+        ld      (SG+VV_CASE),a
+        ld      (SG+VV_MIXED),a
         ld      hl,SG+VV_NAME
         ld      a,c
         or      a
@@ -527,14 +559,18 @@ name83:
         jr      z,.full
         dec     c
         jr      nz,.nch
-        or      a                       ; a name alone
-        ret
+        ld      a,FN_LBASE              ; a name alone
+        jr      .fold
 .full:  dec     c
-        ret     z                       ; eight characters, no extension
-        ld      a,(de)
+        jr      nz,.more
+        ld      a,FN_LBASE              ; eight characters, no extension
+        jr      .fold
+.more:  ld      a,(de)
         cp      '.'
         jr      nz,.bad                 ; a ninth character
-.ext:   inc     de                      ; past the dot
+.ext:   ld      a,FN_LBASE
+        call    .fold
+        inc     de                      ; past the dot
         dec     c
         jr      z,.bad                  ; "name.": an empty extension
         ld      hl,SG+VV_NAME+8
@@ -551,12 +587,47 @@ name83:
         jr      z,.ok
         djnz    .ech
         jr      .bad                    ; a fourth character
-.ok:    or      a
+.ok:    ld      a,FN_LEXT
+; .fold — A = a part's bit: set in VV_NT when the part had lower case and
+; no upper case; VV_CASE cleared for the next part. CF clear.
+.fold:  ld      b,a
+        ld      a,(SG+VV_CASE)
+        cp      3
+        jr      nz,.notmixed
+        ld      (SG+VV_MIXED),a         ; both cases: only a chain keeps it
+.notmixed:
+        cp      1
+        jr      nz,.nofold
+        ld      a,(SG+VV_NT)
+        or      b
+        ld      (SG+VV_NT),a
+.nofold:
+        xor     a
+        ld      (SG+VV_CASE),a
         ret
 .bad:   scf
         ret
-; .char — A = a character: upper case, CF if FAT forbids it.
-.char:  call    upper
+; .char — A = a character: upper case, CF if FAT forbids it; its case
+; noted in VV_CASE (bit 0 lower, bit 1 upper).
+.char:  cp      'a'
+        jr      c,.notlow
+        cp      'z'+1
+        jr      nc,.notlow
+        push    hl
+        ld      hl,SG+VV_CASE
+        set     0,(hl)
+        pop     hl
+        jr      .up
+.notlow:
+        cp      'A'
+        jr      c,.up
+        cp      'Z'+1
+        jr      nc,.up
+        push    hl
+        ld      hl,SG+VV_CASE
+        set     1,(hl)
+        pop     hl
+.up:    call    upper
         cp      21h
         jr      c,.no
         push    hl
@@ -651,18 +722,23 @@ dir_scan_next:
         or      1                       ; NZ, CF clear
         ret
 
-; dir_find — the node (VV_VOL, VV_CLUS) and VV_NAME: the entry with that
-; name copied to VR_ENT, VR_DSEC/VR_DIDX where it is, VV_HASENT set. The
-; scan stops at the first entry whose first byte is FE_END, skips deleted
-; entries and every entry with the label bit — a label, or a long-name
-; entry. CF with E_NOENT or E_IO. Corrupts everything.
+; dir_find — the node (VV_VOL, VV_CLUS) and the component: the entry
+; with that name — the long name its chain carries, VL_WANT bytes at
+; (VV_P), or with VL_SHORT the short name VV_NAME — copied to VR_ENT,
+; VR_DSEC/VR_DIDX where it is, VR_LN and VR_LSEC/VR_LIDX its chain,
+; VV_HASENT set. The scan stops at the first entry whose first byte is
+; FE_END, skips deleted entries and volume labels, and feeds every
+; long-name part to lfn_feed; lfn_reset comes before it. With VW_GATHER
+; every entry also goes to lfn_track, for the run of free slots and the
+; aliases a creation needs; with VW_EXCL the entry rename is moving is
+; no match. CF with E_NOENT or E_IO. Corrupts everything.
 dir_find:
         call    dir_scan_start
         ret     c
 .sector:
         call    dir_scan_next
         ret     c
-        jp      z,.noent
+        jp      z,.ended
         ld      (SG+VR_DSEC),hl
         ld      (SG+VR_DSEC+2),de
         ld      a,(SG+VV_VOL)
@@ -672,16 +748,31 @@ dir_find:
         ld      c,0
 .entry: ld      a,(hl)
         or      a
-        jr      z,.noent                ; FE_END
+        jp      z,.end                  ; FE_END
         cp      FE_FREE
-        jr      z,.skip
+        jr      z,.free
         push    hl
         ld      de,FE_ATTR
         add     hl,de
-        bit     3,(hl)                  ; DA_LABEL: a label or an LFN entry
+        ld      a,(hl)
         pop     hl
+        and     3Fh
+        cp      FE_LFN
+        jr      z,.lfn                  ; a long-name part: read it
+        bit     3,a                     ; DA_LABEL: a volume label
         jr      nz,.skip
-        push    bc
+        ld      a,1
+        call    .track                  ; a live entry: the run breaks, an
+        push    bc                      ; alias counts
+        push    hl
+        call    lfn_close               ; a valid chain behind it?
+        jr      z,.short
+        call    lfn_cmp                 ; the component, as a long name
+        jr      z,.found
+.short: ld      a,(SG+VL_SHORT)
+        or      a
+        jr      z,.diff                 ; the component fits no short name
+        pop     hl
         push    hl
         ld      de,SG+VV_NAME
         ld      b,11
@@ -691,9 +782,20 @@ dir_find:
         inc     hl
         inc     de
         djnz    .cmp
-        pop     hl
+.found: pop     hl
         pop     bc
-        ld      a,c
+        ld      a,(SG+VW_EXCL)
+        or      a
+        jr      z,.take
+        push    hl
+        ld      hl,(SG+VV_PN)
+        ld      a,(hl)
+        pop     hl
+        or      a
+        jr      nz,.take                ; a middle component: no exclusion
+        call    .excluded               ; the entry being moved: no match
+        jr      z,.skip
+.take:  ld      a,c
         ld      (SG+VR_DIDX),a
         ld      de,SG+VR_ENT
         ld      bc,FE_SIZEOF
@@ -702,25 +804,84 @@ dir_find:
         ld      (SG+VV_HASENT),a
         or      a
         ret
+.lfn:   ld      a,2
+        call    .track
+        push    bc
+        call    lfn_feed
+        pop     bc
+        jr      .skip
+.free:  xor     a
+        call    .track
+        jr      .skip
 .diff:  pop     hl
         pop     bc
 .skip:  ld      de,FE_SIZEOF
         add     hl,de
         inc     c
-        djnz    .entry
-        jr      .sector
+        dec     b
+        jp      nz,.entry
+        jp      .sector
+.end:   ld      a,(SG+VW_GATHER)
+        or      a
+        jr      z,.noent
+        xor     a
+        call    lfn_track_end           ; the run to the end, from here
+        jr      .noent
+.ended: ld      a,(SG+VW_GATHER)
+        or      a
+        jr      z,.noent
+        ld      a,1
+        call    lfn_track_end           ; free slots at the end, if any
 .noent: ld      a,E_NOENT
         scf
         ret
+; .track — A = an entry's kind: to lfn_track when the scan gathers.
+; Preserves HL, BC.
+.track: push    af
+        ld      a,(SG+VW_GATHER)
+        or      a
+        jr      z,.notrack
+        pop     af
+        jp      lfn_track
+.notrack:
+        pop     af
+        ret
+; .excluded — Z when the entry at VR_DSEC, index C, on VV_VOL is the one
+; VW_OSEC, VW_OIDX and VW_OVOL name. Preserves HL, BC.
+.excluded:
+        push    hl
+        push    bc
+        ld      a,(SG+VW_OIDX)
+        cp      c
+        jr      nz,.other
+        ld      hl,SG+VV_VOL
+        ld      a,(SG+VW_OVOL)
+        cp      (hl)
+        jr      nz,.other
+        ld      hl,SG+VR_DSEC
+        ld      de,SG+VW_OSEC
+        ld      b,4
+.x:     ld      a,(de)
+        cp      (hl)
+        jr      nz,.other
+        inc     hl
+        inc     de
+        djnz    .x
+.other: pop     bc
+        pop     hl
+        ret
 
-; fe_name_out — HL -> an eleven-byte FAT name, DE -> thirteen bytes:
-; "name.ext" in lower case, 0-terminated. Corrupts AF, BC, DE, HL.
+; fe_name_out — HL -> an eleven-byte FAT name, C = its case bits (FE_NT),
+; DE -> thirteen bytes: "name.ext", 0-terminated, each part lower-cased
+; when its bit says so; a byte that is no letter passes as it is.
+; Corrupts AF, BC, DE, HL.
 fe_name_out:
         ld      b,8
 .name:  ld      a,(hl)
         cp      ' '
         jr      z,.ext
-        call    lower
+        bit     3,c                     ; FN_LBASE
+        call    nz,lower
         ld      (de),a
         inc     de
 .skip:  inc     hl
@@ -738,7 +899,8 @@ fe_name_out:
 .e:     ld      a,(hl)
         cp      ' '
         jr      z,.done
-        call    lower
+        bit     4,c                     ; FN_LEXT
+        call    nz,lower
         ld      (de),a
         inc     de
         inc     hl
@@ -755,27 +917,35 @@ lower:  cp      'A'
         add     a,20h
         ret
 
-; vr_record — VV_REC = the DIRENT_SIZE record for what VR_* describes: the
-; entry's name, or the volume's letter for a root, "mnt" for /mnt, "." for
-; a directory known by its cluster. Corrupts everything.
+; vr_record — the record for what VR_* describes, in the two pieces
+; um_out hands out: its name in ST_LNAME, 0-terminated — the entry's,
+; long when its chain is valid (there already), else short with its case
+; bits; the volume's letter for a root, "mnt" for /mnt, "." for a
+; directory known by its cluster — BC = its length with the terminator;
+; and VV_RECX, the nine bytes from DE_ATTR on: the attribute, the size,
+; the FAT date word then the time word. Corrupts everything.
 vr_record:
-        ld      hl,SG+VV_REC
-        ld      b,DIRENT_SIZE
-.zero:  ld      (hl),0
-        inc     hl
-        djnz    .zero
-        ld      de,SG+VV_REC+DE_NAME
         ld      a,(SG+VR_KIND)
         or      a                       ; VK_ENTRY
         jr      nz,.noname
+        ld      a,(SG+VR_LN)
+        or      a
+        jr      nz,.rest                ; the long name, as its chain reads
         ld      hl,SG+VR_ENT+FE_NAME
+        ld      a,(SG+VR_ENT+FE_NT)
+        ld      c,a
+        ld      de,SG+ST_LNAME
         call    fe_name_out
         jr      .rest
 .noname:
+        ld      de,SG+ST_LNAME
         cp      VK_ROOT
         jr      nz,.notroot
         ld      a,(SG+VR_VOL)
         add     a,'a'
+        ld      (de),a
+        inc     de
+        xor     a
         ld      (de),a
         jr      .rest
 .notroot:
@@ -787,19 +957,28 @@ vr_record:
         jr      .rest
 .node:  ld      a,'.'
         ld      (de),a
+        inc     de
+        xor     a
+        ld      (de),a
 .rest:  ld      a,(SG+VR_ATTR)
-        ld      (SG+VV_REC+DE_ATTR),a
+        ld      (SG+VV_RECX),a
         ld      hl,SG+VR_SIZE
-        ld      de,SG+VV_REC+DE_SIZE
+        ld      de,SG+VV_RECX+1
         ld      bc,4
         ldir
         ld      hl,SG+VR_MTIME+2        ; the date word, then the time word
-        ld      de,SG+VV_REC+DE_MTIME
         ld      bc,2
         ldir
         ld      hl,SG+VR_MTIME
         ld      bc,2
         ldir
+        ld      hl,SG+ST_LNAME          ; the name's length, its 0 included
+        ld      bc,0
+.len:   ld      a,(hl)
+        inc     hl
+        inc     bc
+        or      a
+        jr      nz,.len
         ret
 s_mntname:      db  "mnt",0
 
@@ -880,7 +1059,14 @@ ks_open:
         ld      (SG+VW_ACC),a
         call    vfs_getpath
         ret     c
+        ld      a,(SG+VW_FLAGS)
+        and     O_CREAT
+        ld      (SG+VW_CREATE),a        ; the lookup gathers for a creation
         call    vfs_lookup
+        push    af
+        xor     a
+        ld      (SG+VW_CREATE),a
+        pop     af
         jr      nc,.found
         cp      E_NOENT
         scf                             ; cp cleared the carry
@@ -1140,8 +1326,13 @@ ks_stat:
         jr      c,.err
         call    vr_record
         pop     de
-        ld      hl,VV_REC
-        ld      bc,DIRENT_SIZE
+        push    de
+        ld      hl,ST_LNAME             ; the name, bc bytes with its 0
+        call    um_out
+        pop     de
+        inc     d                       ; DE_ATTR: 256 on
+        ld      hl,VV_RECX
+        ld      bc,9
         call    um_out
         xor     a
         ret
@@ -1235,19 +1426,26 @@ ks_getcwd:
         ld      (SG+VV_CLUS),de
         call    dir_find_clus           ; VR_ENT = this directory's entry
         ret     c
+        ld      hl,SG+ST_LNAME          ; its long name, when it has one
+        ld      a,(SG+VR_LN)
+        or      a
+        jr      nz,.len
         ld      hl,SG+VR_ENT+FE_NAME
-        ld      de,SG+VV_REC
+        ld      a,(SG+VR_ENT+FE_NT)
+        ld      c,a
+        ld      de,SG+ST_LNAME
         call    fe_name_out             ; "name.ext", 0-terminated
-        ld      hl,SG+VV_REC
+        ld      hl,SG+ST_LNAME
+.len:   push    hl
         ld      bc,0
-.len:   ld      a,(hl)
+.count: ld      a,(hl)
         or      a
         jr      z,.gotlen
         inc     hl
         inc     bc
-        jr      .len
+        jr      .count
 .gotlen:
-        ld      hl,SG+VV_REC
+        pop     hl
         call    .prepend
         ret     c
         ld      hl,s_slash
@@ -1260,8 +1458,8 @@ ks_getcwd:
         cp      (hl)
         jr      z,.boot
         add     a,'a'
-        ld      (SG+VV_REC),a           ; /mnt/<letter>
-        ld      hl,SG+VV_REC
+        ld      (SG+ST_LNAME),a         ; /mnt/<letter>
+        ld      hl,SG+ST_LNAME
         ld      bc,1
         call    .prepend
         ret     c
@@ -1343,7 +1541,9 @@ s_slash:        db  "/"
 ; kept there was lost for every entry past the first. CF with E_NOENT or
 ; E_IO. Corrupts everything.
 dir_find_clus:
-        call    dir_scan_start
+        xor     a
+        call    lfn_reset               ; every chain read: the name is
+        call    dir_scan_start          ; wanted, not matched
         ret     c
 .sector:
         call    dir_scan_next
@@ -1364,8 +1564,19 @@ dir_find_clus:
         push    hl
         ld      de,FE_ATTR
         add     hl,de
-        bit     3,(hl)                  ; DA_LABEL: a label or an LFN entry
+        ld      a,(hl)
+        and     3Fh
+        cp      FE_LFN
+        jr      z,.lfn                  ; a long-name part: read it
+        bit     3,(hl)                  ; DA_LABEL: a volume label
         jr      nz,.pop
+        pop     hl
+        push    bc
+        call    lfn_close               ; the chain behind it, if any
+        pop     bc
+        push    hl
+        ld      de,FE_ATTR
+        add     hl,de
         bit     4,(hl)                  ; DA_DIR
         jr      z,.pop
         ld      de,FE_CLUS-FE_ATTR
@@ -1387,6 +1598,11 @@ dir_find_clus:
         ld      (SG+VV_HASENT),a
         or      a
         ret
+.lfn:   pop     hl
+        push    bc
+        call    lfn_feed
+        pop     bc
+        jr      .skip
 .pop:   pop     hl
 .skip:  ld      de,FE_SIZEOF
         add     hl,de
@@ -1413,23 +1629,30 @@ ks_readdir:
                                         ; may reach the driver: IY does not
                                         ; survive one
         bit     0,(iy+OF_FLAGS)         ; OFF_DIR
-        jr      z,.notdir
+        jp      z,.notdir
         bit     2,(iy+OF_FLAGS)         ; OFF_MNT
-        jr      nz,.mnt
+        jp      nz,.mnt
+        xor     a
+        call    lfn_reset               ; every chain read
 .next:  call    rd_entry                ; hl -> the entry at OF_POS
         ret     c
-        jr      z,.end
+        jp      z,.end
         ld      a,(hl)
         or      a
-        jr      z,.end                  ; FE_END
+        jp      z,.end                  ; FE_END
         cp      FE_FREE
-        jr      z,.skip
+        jp      z,.skip
         push    hl
         ld      de,FE_ATTR
         add     hl,de
-        bit     3,(hl)
+        ld      a,(hl)
         pop     hl
-        jr      nz,.skip
+        and     3Fh
+        cp      FE_LFN
+        jp      z,.lfn                  ; a long-name part: read it
+        bit     3,a
+        jp      nz,.skip                ; a volume label
+        call    lfn_close               ; the chain behind it, if any
         ; A live entry: the record, then past it.
         ld      de,SG+VR_ENT
         ld      bc,FE_SIZEOF
@@ -1449,19 +1672,26 @@ ks_readdir:
         ld      bc,4
         ldir
         call    vr_record
-        call    rd_advance
+        ld      (SG+VV_RLEFT),bc        ; the name's length: rd_advance
+        call    rd_advance              ; keeps no register
         ret     c
 .out:   ld      iy,(SG+VV_ROW)
-        ld      hl,VV_REC
+        ld      hl,ST_LNAME             ; the name, bc bytes with its 0;
+        ld      de,(SG+VV_RBUF)         ; what follows it is left alone
+        ld      bc,(SG+VV_RLEFT)
+        call    um_out
+        ld      hl,VV_RECX
         ld      de,(SG+VV_RBUF)
-        ld      bc,DIRENT_SIZE
+        inc     d                       ; DE_ATTR: 256 on
+        ld      bc,9
         call    um_out
         ld      hl,1
         or      a
         ret
+.lfn:   call    lfn_feed
 .skip:  call    rd_advance
         ret     c
-        jr      .next
+        jp      .next
 .end:   ld      hl,0
         or      a
         ret
@@ -1472,7 +1702,7 @@ ks_readdir:
 .mnt:   ld      a,(iy+OF_POS)
         ld      hl,K_BLK_NVOL
         cp      (hl)
-        jr      nc,.end
+        jp      nc,.end
         ld      (SG+VR_VOL),a
         inc     a
         ld      (iy+OF_POS),a
@@ -1486,7 +1716,8 @@ ks_readdir:
         inc     hl
         djnz    .z
         call    vr_record
-        jr      .out
+        ld      (SG+VV_RLEFT),bc
+        jp      .out
 
 ; rd_entry — IY -> a directory's row: HL -> the entry at index OF_POS, in
 ; its sector's buffer; Z with CF clear when the directory has no sector
@@ -1571,6 +1802,8 @@ rd_entry:
         pop     af
         call    add32_a
 .sector:
+        ld      (SG+VR_DSEC),hl         ; where a chain starts, if one does
+        ld      (SG+VR_DSEC+2),de
         ld      a,(iy+OF_VOL)
         k_call  API_BGET
         ld      iy,(SG+VV_ROW)

@@ -77,6 +77,11 @@ cat /t/r4 | tee /t/r48 /t/r49 > /t/r50
 echo more | tee -a /t/r48 > /t/r51
 cat /big | tee /t/copy3 | wc -c > /t/r52
 date > /t/r53
+# Long names: listed as written, expanded by a glob, and a line of the
+# length a long path needs.
+ls /lfn > /t/r55
+echo /lfn/Long* > /t/r56
+echo xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx > /t/r57
 /t/tick > /t/s1; sleep 1; /t/tick > /t/s2
 sh < /t/procs > /t/r54 2> /t/r54e
 sh < /etc/bench1

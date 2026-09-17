@@ -762,7 +762,7 @@ t_entry:
         ld      hl,p_abc
         sys     SYS_CHDIR
         jp      c,t_fail
-        ld      de,p_abc
+        ld      de,s_abcup              ; as the importer wrote it: upper case
         call    t_cwd_is
         ld      a,0E2h
         jp      nz,t_fail
@@ -1204,6 +1204,7 @@ p_rd0txt:   db  "/rd0.txt",0
 p_out:      db  "/out.txt",0
 p_rotxt:    db  "/ro.txt",0
 p_abc:      db  "/a/b/c",0
+s_abcup:    db  "/A/B/C",0
 p_mntbd:    db  "/mnt/b/d",0
 p_mnt:      db  "/mnt",0
 p_root:     db  "/",0

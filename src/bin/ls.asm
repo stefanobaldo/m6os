@@ -7,10 +7,11 @@
 ; more than one path prints "path:" before each. -l puts the attributes,
 ; the size and the time before the name: d r h s a, a - for each clear
 ; bit; the size in ten columns; YYYY-MM-DD HH:MM as the entry has it.
-; The entries fill a table of DIRENT_SIZE records sized by the assembler
-; from what is left of the page, sorted as they arrive by a binary
-; search on a table of pointers; a directory with more entries than that
-; is listed as far as the table goes and then reported.
+; The entries fill a pool sized by the assembler from what is left of
+; the page — nine fixed bytes and the name at its own length, each —
+; sorted as they arrive by a binary search on a table of pointers; a
+; directory with more entries than the pool or the table holds is listed
+; as far as they go and then reported.
         include "kernel/kernel.inc"
         include "lib/prog.inc"
         m6_prog 1
@@ -58,6 +59,13 @@ main:   ld      hl,opts
 .done:  ld      a,(lib_status)
         ret
 
+; A pool entry: the record's fixed bytes, then the name, 0-terminated.
+E_ATTR  equ     0
+E_SIZE  equ     1                       ; 4
+E_MTIME equ     5                       ; 4
+E_NAME  equ     9
+E_FIXED equ     9
+
 ; list — HL -> a path: a file printed as itself, a directory read, sorted
 ; and printed.
 list:   ld      (path),hl
@@ -67,8 +75,11 @@ list:   ld      (path),hl
         ld      a,(ent+DE_ATTR)
         and     DA_DIR
         jr      nz,.dir
-        ld      hl,ent
-        ld      de,(path)
+        ld      hl,pool
+        ld      (next),hl
+        ld      hl,(path)
+        call    pack                    ; a file: its entry, the path as
+        ld      hl,pool                 ; the name
         jp      print_ent
 .err:   ld      de,(path)
         jp      err_file
@@ -79,23 +90,18 @@ list:   ld      (path),hl
         ld      (fd),a
         ld      hl,0
         ld      (count),hl
-        ld      hl,recs
+        ld      hl,pool
         ld      (next),hl
         xor     a
         ld      (over),a
-.read:  ld      hl,(count)
-        ld      de,LS_MAX
-        or      a
-        sbc     hl,de
-        jr      z,.full
-        ld      a,(fd)
-        ld      hl,(next)
+.read:  ld      a,(fd)
+        ld      hl,ent
         sys     SYS_READDIR
         jr      c,.rderr
         ld      a,h
         or      l
         jr      z,.end
-        ld      hl,(next)
+        ld      hl,ent
         ld      a,(hl)
         cp      '.'
         jr      nz,.keep
@@ -109,23 +115,20 @@ list:   ld      (path),hl
         ld      a,(hl)
         or      a
         jr      z,.read                 ; ".."
-.keep:  call    insert
-        ld      hl,(next)
-        ld      de,DIRENT_SIZE
-        add     hl,de
-        ld      (next),hl
+.keep:  ld      hl,(count)
+        ld      de,LS_PTRS
+        or      a
+        sbc     hl,de
+        jr      z,.full                 ; the table is full
+        ld      hl,ent+DE_NAME
+        call    pack
+        jr      c,.full                 ; so is the pool
+        call    insert
         ld      hl,(count)
         inc     hl
         ld      (count),hl
         jr      .read
-.full:  ld      a,(fd)                  ; the table is full: is there more?
-        ld      hl,ent
-        sys     SYS_READDIR
-        jr      c,.rderr
-        ld      a,h
-        or      l
-        jr      z,.end
-        ld      a,1
+.full:  ld      a,1                     ; more than fits: listed so far
         ld      (over),a
 .end:   ld      a,(fd)
         sys     SYS_CLOSE
@@ -147,7 +150,47 @@ list:   ld      (path),hl
         pop     af
         jp      .err
 
-; insert — the record at next into the pointer table, kept sorted by
+; pack — the record in ent, HL -> the name to keep: a pool entry at
+; next, which is left pointing at it; next moved past it. CF when the
+; pool has no room for it, nothing written.
+pack:   push    hl
+        ld      bc,E_FIXED+1            ; the fixed bytes and the name's 0
+.len:   ld      a,(hl)
+        or      a
+        jr      z,.gotlen
+        inc     hl
+        inc     bc
+        jr      .len
+.gotlen:
+        ld      hl,POOL_END
+        ld      de,(next)
+        or      a
+        sbc     hl,de                   ; the room
+        or      a
+        sbc     hl,bc
+        pop     hl
+        ret     c
+        push    hl
+        ld      de,(next)
+        ld      (entry),de
+        ld      a,(ent+DE_ATTR)
+        ld      (de),a
+        inc     de
+        ld      hl,ent+DE_SIZE
+        ld      bc,8                    ; the size, then the time
+        ldir
+        pop     hl
+.copy:  ld      a,(hl)
+        ld      (de),a
+        inc     hl
+        inc     de
+        or      a
+        jr      nz,.copy
+        ld      (next),de
+        or      a
+        ret
+
+; insert — the entry just packed into the pointer table, kept sorted by
 ; name: a binary search for the first entry that sorts after it, the
 ; pointers from there moved up one, the new one stored.
 insert: ld      hl,0
@@ -169,8 +212,13 @@ insert: ld      hl,0
         add     hl,de
         ld      e,(hl)
         inc     hl
-        ld      d,(hl)                  ; de -> the entry at mid, its name first
-        ld      hl,(next)               ; hl -> the new name
+        ld      d,(hl)                  ; de -> the entry at mid
+        ld      hl,E_NAME
+        add     hl,de
+        ex      de,hl                   ; de -> its name
+        ld      hl,(entry)
+        ld      bc,E_NAME
+        add     hl,bc                   ; hl -> the new name
         call    str_cmp                 ; CF when DE's sorts first
         jr      c,.right
         jr      z,.right                ; equal names go after
@@ -203,7 +251,7 @@ insert: ld      hl,0
         add     hl,hl
         ld      de,ptrs
         add     hl,de
-        ld      de,(next)
+        ld      de,(entry)
         ld      (hl),e
         inc     hl
         ld      (hl),d
@@ -225,26 +273,21 @@ print_all:
         ld      e,(hl)
         inc     hl
         ld      d,(hl)
-        ex      de,hl
-        ld      d,h
-        ld      e,l                     ; hl -> the record, de -> its name
+        ex      de,hl                   ; hl -> the entry
         call    print_ent
         ld      hl,(idx)
         inc     hl
         ld      (idx),hl
         jr      .loop
 
-; print_ent — HL -> a DIRENT_SIZE record, DE -> the name to print: one
-; line, the long form's columns first with -l.
+; print_ent — HL -> a pool entry: one line, the long form's columns first
+; with -l.
 print_ent:
-        push    de
         ld      (rec),hl
         ld      a,(opt_flags)
         bit     0,a
         jp      z,.name
-        ld      de,DE_ATTR
-        add     hl,de
-        ld      c,(hl)
+        ld      c,(hl)                  ; E_ATTR
         ld      a,'d'
         bit     4,c
         call    flag
@@ -263,7 +306,7 @@ print_ent:
         ld      a,' '
         call    out_putc
         ld      hl,(rec)
-        ld      de,DE_SIZE
+        ld      de,E_SIZE
         add     hl,de
         ld      e,(hl)
         inc     hl
@@ -279,7 +322,7 @@ print_ent:
         ld      a,' '
         call    out_putc
         ld      hl,(rec)
-        ld      de,DE_MTIME
+        ld      de,E_MTIME
         add     hl,de
         ld      e,(hl)
         inc     hl
@@ -351,7 +394,9 @@ print_ent:
         call    dec2
         ld      a,' '
         call    out_putc
-.name:  pop     hl
+.name:  ld      hl,(rec)
+        ld      de,E_NAME
+        add     hl,de
         call    out_puts
         ld      a,10
         jp      out_putc
@@ -390,6 +435,7 @@ s_many:  db     ": too many entries",10,0
         bss     fd,1
         bss     count,2
         bss     next,2
+        bss     entry,2
         bss     over,1
         bss     lo,2
         bss     hi,2
@@ -398,7 +444,8 @@ s_many:  db     ": too many entries",10,0
         bss     rec,2
         bss     tw,2
         bss     ent,DIRENT_SIZE
-LS_MAX  equ     (3EE8h-__bss)/(DIRENT_SIZE+2)
-        assert  LS_MAX >= 400
-        bss     ptrs,LS_MAX*2
-        bss     recs,LS_MAX*DIRENT_SIZE
+LS_PTRS equ     512                     ; entries the table holds: a root's
+        bss     ptrs,LS_PTRS*2
+POOL_END equ    P0_TOP
+        assert  POOL_END-__bss >= 8192  ; the pool: 8K at the least
+        bss     pool,POOL_END-__bss
