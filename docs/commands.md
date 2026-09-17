@@ -21,9 +21,12 @@ word the shell was given and `ERRNO` one of the names in
 [`docs/syscalls.md`](syscalls.md), *Errors*; the command goes on to the
 next file and ends with status 1 if any failed.
 
-Names are FAT short names: at most eight characters, a dot and three,
-matched without regard to case and shown in lower case. A name that is
-not one cannot be made (`EINVAL`).
+Names are what a PC would write: up to 255 characters, matched without
+regard to case and shown as written; one that fits eight characters, a
+dot and three is stored short, any other with the long-name entries a PC
+writes and a short alias (`MYDOCU~1.TXT`) that names it too. A name with
+`" * / : < > ? \ |` or a character outside ASCII, or ending in a dot or
+a space, cannot be made (`EINVAL`).
 
 ## cat
 

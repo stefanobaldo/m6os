@@ -74,7 +74,7 @@ or past the volume's end is refused before the driver is called: nothing
 in the kernel can reach the partition table or a neighbouring partition
 through a volume. One sector moves per driver call, so the time a driver
 keeps interrupts disabled stays inside one 60 Hz frame and the tick is
-delayed, never lost. The kernel keeps a cache of 24 sectors, written
+delayed, never lost. The kernel keeps a cache of 22 sectors, written
 through: a write reaches the disk before the call that made it returns,
 so there is nothing to flush and a card pulled after a call has everything
 the call wrote. Whole, aligned sectors go from the driver straight into a
@@ -107,11 +107,17 @@ root of a volume leads to `/mnt` — or to `/` on the boot volume — and
 `mnt` is a real directory on every volume but at the root of the boot
 volume, where the kernel's `/mnt` shadows it.
 
-Names are FAT's short names: up to eight characters, a dot and up to three
-more, matched without regard to case and listed in lower case. A long
-name a PC wrote is not shown; the short name beside it is what the file
-is called here, and the long-name entries are left as they are. A name
-that does not fit the form names nothing.
+A name is what a PC would call the file: up to 255 characters, any but
+`" * / : < > ? \ |`, not ending in a dot or a space, matched without
+regard to case and shown as it was written. A name that fits eight
+characters, a dot and three is kept in the short entry alone, its case
+remembered when each part is all in one case; any other name is written
+the way a PC writes it, as a chain of long-name entries before a short
+alias (`MYDOCU~1.TXT`) that names the file too and is what an older
+system sees. Only ASCII is read and written: a character outside it is
+shown as `?`, and a name holding one opens by its alias. A path holds at
+most 255 bytes. Removing or renaming a file takes its long-name entries
+with it.
 
 Each process has a current directory, inherited by the processes it
 creates and changed with `chdir`; a path that does not begin with `/`
@@ -160,6 +166,7 @@ volume, 128 on a 4 GB one, where `mkdir` takes most of a second.
 
 ## Not yet
 
-Long names are neither shown nor made; the read-only attribute cannot
-be changed; a file's access date is never written; a `rename` across
-volumes is refused. A card changed while the system runs is not noticed.
+Names hold ASCII alone: a character outside it is shown as `?` and cannot
+be written. The read-only attribute cannot be changed; a file's access
+date is never written; a `rename` across volumes is refused. A card
+changed while the system runs is not noticed.

@@ -90,9 +90,10 @@ A buffer a system call is to fill must lie below `C000h`, the kernel's
 page: one that reaches it is refused with `EFAULT` and nothing is
 written.
 
-A path is a string of at most 127 bytes and a terminator: components
-separated by `/`, each a FAT name of up to eight characters, a dot and up
-to three more, matched without regard to case; `.` is the directory
+A path is a string of at most 255 bytes and a terminator: components
+separated by `/`, each a name of up to 255 characters — any but
+`" * / : < > ? \ |`, not ending in a dot or a space — matched without
+regard to case against the entry's long name or its short alias; `.` is the directory
 itself and `..` its parent. A path that begins with `/` starts at the
 root of the boot volume; any other starts at the process's current
 directory, which `chdir` sets and a child inherits. `/mnt` is the
@@ -350,15 +351,14 @@ offset is a signed 32-bit number in `DE:HL`, and the new position comes
 back the same way. A position past the end is allowed and a `read` there
 returns 0; a negative one is `EINVAL`.
 
-`stat` and `readdir` fill the same 24-byte record:
+`stat` and `readdir` fill the same 265-byte record:
 
 | Offset | Size | What |
 |---|---|---|
-| 0 | 13 | the name, `name.ext` in lower case, 0-terminated — `.` and `..` as they are |
-| 13 | 1 | the FAT attributes: `01h` read-only, `02h` hidden, `04h` system, `10h` directory, `20h` archive |
-| 14 | 4 | the size in bytes; 0 for a directory |
-| 18 | 4 | the modification time: the FAT date word, then the time word |
-| 22 | 2 | 0 |
+| 0 | 256 | the name, 0-terminated — the long name when the entry has one, else the short name as stored, lower-cased where its case bits say so; `.` and `..` as they are; what follows the terminator is left as it was |
+| 256 | 1 | the FAT attributes: `01h` read-only, `02h` hidden, `04h` system, `10h` directory, `20h` archive |
+| 257 | 4 | the size in bytes; 0 for a directory |
+| 261 | 4 | the modification time: the FAT date word, then the time word |
 
 `stat` describes what a path names; a volume's root is named by its
 letter, `/mnt` by `mnt`. `readdir` on a descriptor opened on a directory
