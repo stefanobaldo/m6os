@@ -92,9 +92,11 @@ lines:  ld      a,(fd)
         ret     z
         call    in_getc
         jr      c,.end
+        cp      10                      ; before out_putc, which takes A
+        jr      z,.lf
         call    out_putc
-        cp      10
-        jr      nz,.loop
+        jr      .loop
+.lf:    call    out_putc
         ld      hl,(left)
         dec     hl
         ld      (left),hl
