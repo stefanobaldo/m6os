@@ -4,8 +4,8 @@
 ;
 ; The line discipline: read on the keyboard, in canonical mode, returns
 ; edited lines. A layer over the raw read of kbd.asm, taken when the
-; terminal's mode is TTY_CANON — the default — and skipped, the raw read
-; being what it always was, in TTY_RAW.
+; terminal's mode is TTY_CANON — the default — or TTY_RECALL, and
+; skipped, the raw read being what it always was, in TTY_RAW.
 ;
 ; The line is the terminal's, not the process's: one buffer, ld_buf, that
 ; a reader fills one key event at a time — blocking as the raw read
@@ -26,6 +26,16 @@
 ; ^C, ends the line empty with an LF delivered: a shell at its prompt
 ; prints a fresh one.
 ;
+; TTY_RECALL is canonical mode for a program that keeps a history — the
+; shell: UP and DOWN, dropped in TTY_CANON, end the read with two bytes
+; handed to the reader — the arrow's own byte and an LF — and the line
+; kept open: its bytes, cursor and echo stay, and the next read goes on
+; editing it instead of starting one. ttyline replaces an open line, or
+; opens one, with the bytes the caller gives: the old line's cells
+; blanked, the new line echoed, the cursor at its end. So the shell reads
+; the arrow, looks the line up and puts it in place with ttyline, and
+; reads again. A line closes as any other; ttymode drops an open line.
+;
 ; The user buffer and length ride in IX and IY across a block, as the raw
 ; read's do — the frame saves them, and con_write, vdp_t2 and kbd_pop
 ; leave them alone — so two readers blocked at once each keep their own.
@@ -40,6 +50,9 @@ tty_read:
         pop     ix                      ; ix = the buffer
         push    bc
         pop     iy                      ; iy = the length
+        ld      a,(ld_open)
+        or      a
+        jp      nz,.loop                ; an open line: go on with it
         ; Bytes left over from the last line go first.
         ld      a,(ld_len)
         ld      hl,ld_pos
@@ -88,9 +101,37 @@ tty_read:
         jr      z,.eof
         cp      3                       ; a ^C nobody took
         jr      z,.intr
-        ld      hl,KS_TTY_KEY           ; everything else: the editor's
+        cp      1Eh                     ; UP
+        jr      z,.arrow
+        cp      1Fh                     ; DOWN
+        jr      z,.arrow
+.edit:  ld      hl,KS_TTY_KEY           ; everything else: the editor's
         call    tty_ks
         jr      .loop
+.arrow: ld      hl,tty_mode
+        bit     1,(hl)                  ; TTY_RECALL
+        jr      z,.edit                 ; not asked for: the editor drops it
+        ld      (ld_key),a
+        ld      a,1
+        ld      (ld_open),a
+        ; The arrow and an LF, from ld_key, not the line: n = min(the
+        ; length, 2); a reader asking for one byte gets the arrow alone.
+        ld      c,2
+        ld      a,iyh
+        or      a
+        jr      nz,.keyn
+        ld      a,iyl
+        cp      2
+        jr      nc,.keyn
+        ld      c,1
+.keyn:  ld      hl,ld_key
+        push    ix
+        pop     de
+        ld      b,0
+        push    bc
+        ldir
+        pop     bc
+        jp      .done
 .ret:   call    tty_end
         ld      a,(ld_len)
         cp      TTY_LINE-1
@@ -111,6 +152,7 @@ tty_read:
         call    tty_cursor_off
         ld      hl,0
         xor     a                       ; CF clear
+        ld      (ld_open),a
         ret
 .mid:   call    tty_end                 ; mid-line: what is there, no LF
         jr      .close
@@ -123,6 +165,7 @@ tty_read:
         call    con_putc
 .close: xor     a
         ld      (ld_pos),a
+        ld      (ld_open),a
 .deliver:
         ; n = min(the length, what is left); copy; advance.
         ld      a,(ld_len)
@@ -230,20 +273,74 @@ tty_cursor_off:
         ld      c,(hl)
         jp      vdp_cursor_off
 
-; sys_ttymode — SYS_TTYMODE: A = TTY_CANON or TTY_RAW. Out: L = the mode
-; that was. EINVAL for anything else. The mode is the terminal's; a
-; partial line stays in the buffer across a switch.
+; sys_ttymode — SYS_TTYMODE: A = TTY_CANON, TTY_RAW or TTY_RECALL. Out:
+; L = the mode that was. EINVAL for anything else. The mode is the
+; terminal's; a line delivered in part stays in the buffer across a
+; switch, an open line is dropped.
 sys_ttymode:
-        cp      TTY_RAW+1
+        cp      TTY_RECALL+1
         jr      nc,.inval
         ld      hl,tty_mode
         ld      l,(hl)
         ld      h,0
         ld      (tty_mode),a
-        xor     a                       ; CF clear
+        ld      a,(ld_open)
+        or      a
+        jr      z,.set
+        xor     a
+        ld      (ld_open),a
+        ld      (ld_len),a
+        ld      (ld_pos),a
+.set:   xor     a                       ; CF clear
         ret
 .inval: ld      a,E_INVAL
         scf
+        ret
+
+; sys_ttyline — SYS_TTYLINE: HL = a line, BC = its length, 0 to
+; TTY_LINE-1. The open line replaced by it, or one opened at the cursor:
+; the old line's cells blanked, the bytes copied, echoed, the cursor at
+; their end. EINVAL for a longer one, EFAULT for a buffer reaching page 3
+; (process 0's may be anywhere), both before anything is touched. The
+; copy is resident — the caller's buffer may be in page 2, which the
+; switched part takes — around two calls into the editor. Corrupts
+; everything. Its EINVAL exit is sys_ttymode's.
+sys_ttyline:
+        ld      a,b
+        or      a
+        jr      nz,sys_ttymode.inval
+        ld      a,c
+        cp      TTY_LINE
+        jr      nc,sys_ttymode.inval
+        call    k_ubuf
+        jp      c,pi_fault              ; refused, not written through
+        push    hl
+        push    bc
+        ld      a,(ld_open)
+        or      a
+        jr      nz,.open
+        xor     a                       ; nothing open: a line at the cursor
+        ld      (ld_len),a
+        ld      (ld_pos),a
+        ld      (ld_cur),a
+        ld      a,(con_col)
+        ld      (ld_col),a
+        ld      a,1
+        ld      (ld_open),a
+.open:  ld      a,15h                   ; ^U: the old line's cells blanked
+        ld      hl,KS_TTY_KEY
+        call    tty_ks
+        pop     bc
+        pop     hl
+        ld      a,c
+        ld      (ld_len),a
+        ld      de,ld_buf
+        or      a
+        jr      z,.set
+        ldir
+.set:   ld      hl,KS_TTY_SET
+        call    tty_ks
+        xor     a                       ; CF clear
         ret
 
 tty_mode:       db TTY_CANON            ; the terminal's mode
@@ -255,7 +352,10 @@ ld_pos:         db 0                    ; of them, delivered already
 ld_eof:         db 0                    ; a ^D on an empty line is owed
 ld_col:         db 0                    ; the column the line started at
 ld_cur:         db 0                    ; the cursor: an index, 0 to ld_len
+ld_open:        db 0                    ; the line is open (TTY_RECALL)
 ld_buf:         ds TTY_LINE             ; the line
+ld_key:         db 0,10                 ; what an arrow delivers
         ASSERT  ld_len == ld_state+LD_LEN && ld_pos == ld_state+LD_POS
         ASSERT  ld_eof == ld_state+LD_EOF && ld_col == ld_state+LD_COL
-        ASSERT  ld_cur == ld_state+LD_CUR && ld_buf == ld_state+LD_BUF
+        ASSERT  ld_cur == ld_state+LD_CUR && ld_open == ld_state+LD_OPEN
+        ASSERT  ld_buf == ld_state+LD_BUF
