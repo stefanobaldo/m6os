@@ -52,12 +52,14 @@ to install.
   boot sector, and lists the volumes it will mount as `/mnt/a`, `/mnt/b`, … with
   their sizes, the boot volume marked as `/`. Underneath, a sector is addressed
   by volume, refused past the volume's end, and moved one per driver call,
-  through a write-through cache of 24 sectors. The real-time clock is read as a
+  through a write-through cache of 22 sectors. The real-time clock is read as a
   FAT date and time. See [`docs/storage.md`](docs/storage.md).
 - Files. Every mounted volume is read as a FAT12 or FAT16
-  filesystem: paths with `/`, `.` and `..`, short names matched without regard
-  to case, a current directory per process, and eight file descriptors per
-  process inherited by its children. A whole sector read into a buffer on a
+  filesystem: paths with `/`, `.` and `..`, long names read and written the
+  way a PC does them — up to 255 characters, their case kept, a short alias
+  such as `MYDOCU~1.TXT` beside each — matched without regard to case, a
+  current directory per process, and eight file descriptors per process
+  inherited by its children. A whole sector read into a buffer on a
   256-byte boundary goes from the driver straight into the program's memory, so
   sequential reads run at the driver's speed.
 - Running a program from a file. `exec` replaces a process's image with a
