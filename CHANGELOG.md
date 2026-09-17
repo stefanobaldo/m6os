@@ -97,10 +97,15 @@ to install.
   way to clear a read-only bit from m6; `procinfo`, a process's row of the
   kernel's tables for tools that ship with the kernel.
 - Line editing on the keyboard. `read` from the keyboard returns whole
-  lines by default, echoed as they are typed and edited with BS, DEL and
-  ^U, TAB kept, ^D the end of input; `ttymode` switches to the raw
-  byte-per-key reading of before, for a program that draws its own
-  screen, and back. The mode is the terminal's, not a process's.
+  lines by default, echoed as they are typed and edited with a cursor
+  that moves inside the line: LEFT and RIGHT, HOME and ^E, characters
+  inserted at the cursor, BS and DEL rubbing out before and under it, ^U
+  the whole line, TAB kept, ^L the screen cleared with the prompt and the
+  line written again at the top, ^D the end of input; `ttymode` switches
+  to the raw byte-per-key reading of before, for a program that draws
+  its own screen, and back. The mode is the terminal's, not a process's.
+  A third mode, for a program with a history of lines, reports UP and
+  DOWN to the reader and keeps the line open; `ttyline` replaces it.
 - Signals. ^C or STOP ends the program in the foreground — every process
   that does not ignore `SIGINT`, so a shell ignores it and the commands
   it runs do not — and discards what was typed ahead of it; `kill` sends
@@ -123,7 +128,8 @@ to install.
   reported as they end, `*` and `?` over the names in a directory, `cd`
   and `exit`; a command's non-zero status printed as `[N]`; `sh -i` for
   the prompt and `sh < file` for a script. Commands are the programs in
-  `/bin`. See [`docs/shell.md`](docs/shell.md).
+  `/bin`. At the prompt, UP and DOWN bring back the last sixteen lines
+  run, to edit and run again. See [`docs/shell.md`](docs/shell.md).
 - The first commands: `echo`, `cat`, `wc`, `true` and `false`, each in one
   16K page, with the library under `src/lib/` that the rest are written
   with — buffered input and output, arguments and options, and messages
