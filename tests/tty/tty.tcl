@@ -101,8 +101,10 @@ proc cue {c} {
         16 { ack; ctap 0.4 c }
         17 { ack; ctap 0.4 c }
         18 { ack; typeline 0.3 {i g n} ; ctap 1.3 c ; tap 2.5 a ; tap 2.65 b ; tap 3.0 stop ; typeline 3.6 {q} }
-        22 { check_shell_rows ; ack; typeline 0.3 {a b left x}
-             at 1.5 {expect_screen "axb" "LEFT then x did not put x between a and b on the screen"} }
+        22 { check_shell_rows ; ack; set t [taps 0.3 {a b left}]
+             at [expr {$t + 0.2}] {check_cursor 1 "LEFT on the line being typed"}
+             set t [typeline [expr {$t + 0.4}] {x}]
+             at [expr {$t + 0.6}] {expect_screen "axb" "LEFT then x did not put x between a and b on the screen"} }
         23 { ack; typeline 0.3 {a b c home del}
              at 1.6 {expect_screen "bc" "HOME then DEL did not leave bc on the screen"} }
         24 { ack; typeline 0.3 {a b c left left bs}
@@ -115,8 +117,14 @@ proc cue {c} {
              tap [expr {$t + 0.4}] ret }
         27 { ack; taps 0.3 {a b left} ; ctap 0.8 l ; typeline 1.2 {x}
              at 1.8 {if {[lindex [rows] 0] ne "axb"} { problem "^L in the middle then x did not leave axb on the first row: \"[lindex [rows] 0]\"" }} }
-        28 { ack; typeline 0.3 {a tab b home x}
-             at 1.6 {expect_screen "xa      b" "x before a TAB did not shrink the TAB on the screen"} }
+        28 { ack; set t [taps 0.3 {a tab b}]
+             at [expr {$t + 0.2}] {check_cursor 9 "a TAB and b typed"}
+             tap [expr {$t + 0.4}] home
+             at [expr {$t + 0.7}] {check_cursor 0 "HOME from column 9, across a byte of the blink table"}
+             set t [taps [expr {$t + 0.9}] {x}]
+             at [expr {$t + 0.2}] {check_cursor 1 "an insert with the cursor drawn nine columns away"}
+             tap [expr {$t + 0.4}] ret
+             at [expr {$t + 1.0}] {expect_screen "xa      b" "x before a TAB did not shrink the TAB on the screen"} }
         29 { ack; taps 0.3 {a b up} ; typeline 1.5 {c}
              at 2.3 {expect_screen "abc" "the line UP left open did not go on to read abc on the screen"} }
         30 { ack; taps 0.3 {x down} ; typeline 1.2 {y}
@@ -140,6 +148,34 @@ proc check_wrap {} {
     if {$i < 0} { problem "after DEL across the wrap, no row reads 72 blanks then ab"; return }
     if {$i == 23} { problem "the wrapped line's first row is the last row: nothing wrapped"; return }
     if {[lindex $rs [expr {$i + 1}]] ne ""} { problem "the row below the wrapped line still reads \"[lindex $rs [expr {$i + 1}]]\"" }
+}
+
+# The cursor, in TEXT2, is one bit per cell in the blink table (V_BLINK,
+# ten bytes a row, the leftmost column the high bit): the only thing that
+# writes it is the line discipline, so while a line is being edited
+# exactly one cell blinks, on the cursor's column. A cell left behind by
+# an edit, or a cursor that stayed put while the cursor keys moved it, is
+# a bit here and nothing on the screen itself.
+proc blink_cells {} {
+    set out {}
+    for {set r 0} {$r < 24} {incr r} {
+        for {set i 0} {$i < 10} {incr i} {
+            set b [debug read "VRAM" [expr {0x0800 + $r * 10 + $i}]]
+            if {$b == 0} continue
+            for {set k 0} {$k < 8} {incr k} {
+                if {$b & (0x80 >> $k)} { lappend out [expr {$i * 8 + $k}] }
+            }
+        }
+    }
+    return $out
+}
+proc check_cursor {col what} {
+    set cs [blink_cells]
+    if {[llength $cs] != 1} {
+        problem "$what: [llength $cs] cells blink, columns \[[join $cs { }]\], not the cursor alone on column $col"
+        return
+    }
+    if {[lindex $cs 0] != $col} { problem "$what: the cursor blinks on column [lindex $cs 0], not $col" }
 }
 
 proc cue_poll {} {
