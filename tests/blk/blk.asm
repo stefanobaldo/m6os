@@ -745,13 +745,13 @@ t_entry:
         ld      de,KT_BUF_A             ; the file's sector, P1
         call    k_cmp512
         jp      nz,t_fail_cmp
-        ; A direct write of P3 from buffer 22 (slot 30) — the path 3.3 will
-        ; write data sectors through — while the cache holds the sector: the
+        ; A direct write of P3 from the buffer below the scratch one — the path
+        ; data sectors are written through — while the cache holds the sector: the
         ; next bget must miss and return P3, not the copy it had.
         ld      a,03Ch                  ; pattern P3
         call    k_fill_c
         ld      hl,KT_BUF_C
-        ld      de,8000h+ST_BUF+22*512
+        ld      de,8000h+ST_BUF+(BUF_SCRATCH-1)*512
         ld      bc,512
         ldir
         ld      hl,(K_BLK_CALLS)
@@ -761,7 +761,7 @@ t_entry:
         ld      hl,(t_rel)
         ld      de,(t_rel+2)
         call    t_seg_bc
-        ld      c,(ST_BUF+22*512)/256   ; buffer 22's first slot
+        ld      c,(ST_BUF+(BUF_SCRATCH-1)*512)/256 ; that buffer's first slot
         k_call  API_BWRITE_DIRECT
         t_leave
         jp      c,t_fail
@@ -941,11 +941,11 @@ t_entry:
         ld      a,(K_REC+KR_SEG64K+2)
         ld      ixl,a
         ld      hl,0A00h
-        ld      de,ST_BUF+22*512
+        ld      de,ST_BUF+(BUF_SCRATCH-1)*512
         ld      bc,512
         k_call  API_K_COPY
         t_leave
-        ld      hl,8000h+ST_BUF+22*512
+        ld      hl,8000h+ST_BUF+(BUF_SCRATCH-1)*512
         ld      de,KT_BUF_C
         call    k_cmp512
         jp      nz,t_fail_cmp

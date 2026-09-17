@@ -223,6 +223,7 @@ s_more2:    db  " more, not scanned",10,0
         include "kernel/ks_blk.asm"
         include "kernel/ks_fat.asm"
         include "kernel/ks_vfs.asm"
+        include "kernel/ks_lfn.asm"
         include "kernel/ks_exec.asm"
         include "kernel/ks_vfsw.asm"
 

@@ -104,6 +104,68 @@ dir_free_entry:
         k_call  API_BWRITE
         ret
 
+; dir_free_name — the entry at VR_DSEC/VR_DIDX of volume VR_VOL marked
+; deleted, after the VR_LN parts of its chain before it, from VR_LSEC/
+; VR_LIDX on, reached through the directory's (VV_VOL, VV_CLUS) scan;
+; every sector is written as it is left, the entry's last. CF with the
+; errno. Corrupts everything.
+dir_free_name:
+        ld      a,(SG+VR_LN)
+        or      a
+        jp      z,dir_free_entry
+        ld      (SG+VW_FN),a
+        call    dir_scan_start
+        ret     c
+.find:  call    dir_scan_next
+        ret     c
+        jr      z,.io                   ; the chain's sector is not there
+        push    hl
+        push    de
+        ld      bc,(SG+VR_LSEC)
+        or      a
+        sbc     hl,bc
+        jr      nz,.other
+        ex      de,hl
+        ld      bc,(SG+VR_LSEC+2)
+        or      a
+        sbc     hl,bc
+.other: pop     de
+        pop     hl
+        jr      nz,.find
+        ld      a,(SG+VR_LIDX)
+.sector:
+        ld      (SG+VW_EIDX),a
+        ld      a,(SG+VR_VOL)
+        k_call  API_BGET
+        ret     c
+.part:  push    hl
+        ld      a,(SG+VW_EIDX)
+        call    ent_addr
+        ld      (hl),FE_FREE
+        pop     hl
+        ld      a,(SG+VW_FN)
+        dec     a
+        ld      (SG+VW_FN),a
+        jr      z,.last
+        ld      a,(SG+VW_EIDX)
+        inc     a
+        ld      (SG+VW_EIDX),a
+        cp      16
+        jr      c,.part
+        k_call  API_BWRITE
+        ret     c
+        call    dir_scan_next
+        ret     c
+        jr      z,.io
+        xor     a
+        jr      .sector
+.last:  k_call  API_BWRITE
+        ret     c
+        jp      dir_free_entry
+.io:    ld      a,E_IO
+        scf
+        ret
+
 ; vfs_busy — VR_* = a file or directory: CF with E_BUSY when an open-file
 ; row points at it — any row when A = 0, a writer's (OFF_WR) when A = 1.
 ; Matched by first cluster, or, for an empty file, by the entry's sector
@@ -251,46 +313,197 @@ dir_zero_cluster:
         or      a
         ret
 
-; dir_alloc_entry — the directory (VV_VOL, VV_CLUS): HL -> a free slot in
-; a valid buffer, VW_ESEC/VW_EIDX its sector and index. The first deleted
-; or end-of-directory entry; the entry after a taken end-of-directory slot
-; is 00h already — the rest of the sector was, the rest of a cluster is
-; zeroed when it is made, and the chain's end is the directory's. A full
-; subdirectory grows by a cluster, zeroed whole and linked in the table's
-; buffer; a full root is E_NOSPC. CF with the errno. Corrupts everything.
-dir_alloc_entry:
-        call    dir_scan_start
+; dir_new_entry — the directory (VV_VOL, VV_CLUS) and the new component,
+; the lookup's last, prepared by lfn_prepare; A = the attribute, DE = the
+; first cluster, VW_DATE/VW_TIME the stamp: a new entry, size 0, written
+; with the parts its name needs; VR_* then describe it as a lookup would.
+; CF with the errno; the table may be left dirty. Corrupts everything.
+dir_new_entry:
+        ld      (SG+VW_NATTR),a
+        ld      (SG+VW_NCLUS),de
+        ld      hl,SG+VR_ENT
+        ld      b,FE_SIZEOF
+.zero:  ld      (hl),0
+        inc     hl
+        djnz    .zero
+        ld      a,(SG+VW_NATTR)
+        ld      (SG+VR_ENT+FE_ATTR),a
+        ld      hl,(SG+VW_TIME)
+        ld      (SG+VR_ENT+FE_CTIME),hl
+        ld      (SG+VR_ENT+FE_MTIME),hl
+        ld      hl,(SG+VW_DATE)
+        ld      (SG+VR_ENT+FE_CDATE),hl
+        ld      (SG+VR_ENT+FE_ADATE),hl
+        ld      (SG+VR_ENT+FE_MDATE),hl
+        ld      hl,(SG+VW_NCLUS)
+        ld      (SG+VR_ENT+FE_CLUS),hl
+        ; falls into dir_new_name
+
+; dir_new_name — the directory (VV_VOL, VV_CLUS); VR_ENT from FE_ATTR on
+; prepared — attribute, times, cluster, size; the new component at (VV_P)
+; for VL_WANT bytes, with what lfn_prepare and the lookup's scan found
+; for it: VW_NLFN parts and VW_ALIAS, or VV_NAME and VV_NT for a short
+; name alone, and the run at VW_RSEC/VW_RIDX when VW_RFOUND. The parts
+; and the short entry are written there — the run continuing into a
+; cluster added at the chain's end when it runs out, or starting in one
+; when none was found; a full root is E_NOSPC. Every sector is written
+; as it is left, the short entry's last. VR_* then describe the short
+; entry as a lookup would, its chain included. CF with the errno.
+; Corrupts everything.
+dir_new_name:
+        ld      a,(SG+VW_NLFN)
+        or      a
+        jr      z,.shortn
+        call    lfn_digit
         ret     c
-.sector:
+        ld      hl,SG+VW_ALIAS
+        ld      de,SG+VR_ENT+FE_NAME
+        ld      bc,11
+        ldir
+        xor     a
+        ld      (SG+VR_ENT+FE_NT),a
+        ld      hl,SG+VR_ENT+FE_NAME
+        call    lfn_sum
+        ld      (SG+VL_SUM),a           ; what every part carries
+        jr      .place
+.shortn:
+        ld      hl,SG+VV_NAME
+        ld      de,SG+VR_ENT+FE_NAME
+        ld      bc,11
+        ldir
+        ld      a,(SG+VV_NT)
+        ld      (SG+VR_ENT+FE_NT),a
+.place: ld      a,(SG+VW_RFOUND)
+        or      a
+        jr      nz,.known
+        ld      hl,0FFFFh               ; no run: a sector no scan reaches,
+        ld      (SG+VW_RSEC),hl         ; so the scan runs out and grows
+        ld      (SG+VW_RSEC+2),hl
+.known: call    dir_scan_start
+        ret     c
+.find:  call    dir_scan_next
+        ret     c
+        jr      z,.grow
+        push    hl
+        push    de
+        ld      bc,(SG+VW_RSEC)
+        or      a
+        sbc     hl,bc
+        jr      nz,.other
+        ex      de,hl
+        ld      bc,(SG+VW_RSEC+2)
+        or      a
+        sbc     hl,bc
+.other: pop     de
+        pop     hl
+        jr      nz,.find
+        ld      a,(SG+VW_RIDX)
+        jr      .at
+.grow:  call    dir_grow                ; the next sector is the new cluster's
+        ret     c
         call    dir_scan_next
         ret     c
-        jr      z,.full
+        ld      (SG+VW_RSEC),hl         ; the run starts there
+        ld      (SG+VW_RSEC+2),de
+        xor     a
+        ld      (SG+VW_RIDX),a
+.at:    ld      (SG+VW_EIDX),a
         ld      (SG+VW_ESEC),hl
         ld      (SG+VW_ESEC+2),de
         ld      a,(SG+VV_VOL)
         k_call  API_BGET
         ret     c
-        ld      b,16
-        ld      c,0
-.entry: ld      a,(hl)
+        ld      a,(SG+VW_NLFN)
+        ld      (SG+VW_PN),a            ; the part to write next; 0 the entry
+.slot:  push    hl
+        ld      a,(SG+VW_PN)
         or      a
-        jr      z,.take                 ; FE_END
-        cp      FE_FREE
-        jr      z,.take
-        ld      de,FE_SIZEOF
-        add     hl,de
-        inc     c
-        djnz    .entry
-        jr      .sector
-.take:  ld      a,c
+        jr      z,.entry
+        call    lfn_part                ; (corrupts everything: the slot's
+        pop     hl                      ; address comes after it)
+        push    hl
+        ld      a,(SG+VW_EIDX)
+        call    ent_addr
+        ex      de,hl                   ; de -> the slot
+        ld      hl,SG+VW_PENT
+        ld      bc,FE_SIZEOF
+        ldir
+        ld      hl,SG+VW_PN
+        dec     (hl)
+        pop     hl
+        ld      a,(SG+VW_EIDX)          ; the next slot: in this sector, or
+        inc     a                       ; in the next once this is written
         ld      (SG+VW_EIDX),a
+        cp      16
+        jr      c,.slot
+        k_call  API_BWRITE
+        ret     c
+        call    dir_scan_next
+        ret     c
+        jr      nz,.next
+        call    dir_grow
+        ret     c
+        call    dir_scan_next
+        ret     c
+.next:  xor     a
+        ld      (SG+VW_EIDX),a
+        ld      (SG+VW_ESEC),hl
+        ld      (SG+VW_ESEC+2),de
+        ld      a,(SG+VV_VOL)
+        k_call  API_BGET
+        ret     c
+        jr      .slot
+.entry: ld      a,(SG+VW_EIDX)
+        call    ent_addr
+        ex      de,hl                   ; de -> the slot
+        ld      hl,SG+VR_ENT
+        ld      bc,FE_SIZEOF
+        ldir
+        pop     hl
+        k_call  API_BWRITE
+        ret     c
+        ; VR_*: the new entry, as a lookup would leave it.
+        xor     a
+        ld      (SG+VR_KIND),a          ; VK_ENTRY
+        ld      a,(SG+VV_VOL)
+        ld      (SG+VR_VOL),a
+        ld      hl,(SG+VR_ENT+FE_CLUS)
+        ld      (SG+VR_CLUS),hl
+        ld      a,(SG+VR_ENT+FE_ATTR)
+        ld      (SG+VR_ATTR),a
+        ld      hl,SG+VR_ENT+FE_SIZE
+        ld      de,SG+VR_SIZE
+        ld      bc,4
+        ldir
+        ld      hl,SG+VR_ENT+FE_MTIME
+        ld      de,SG+VR_MTIME
+        ld      bc,4
+        ldir
+        ld      hl,SG+VW_ESEC
+        ld      de,SG+VR_DSEC
+        ld      bc,5
+        ldir
+        ld      a,(SG+VW_NLFN)
+        ld      (SG+VR_LN),a
+        ld      hl,SG+VW_RSEC
+        ld      de,SG+VR_LSEC
+        ld      bc,5
+        ldir
+        ld      a,1
+        ld      (SG+VV_HASENT),a
         or      a
         ret
-.full:  ld      hl,(SG+VV_CLUS)
+
+; dir_grow — the directory (VV_VOL, VV_CLUS), scanned to its end: a
+; cluster allocated, zeroed and linked after VV_SCLUS, its last, and the
+; scan's cursor set to it, so dir_scan_next yields its first sector. A
+; root, a fixed area, is E_NOSPC. CF with the errno. Corrupts everything.
+dir_grow:
+        ld      hl,(SG+VV_CLUS)
         ld      a,h
         or      l
-        jr      z,.nospc                ; the root: a fixed area
-        ld      hl,(SG+VV_SCLUS)        ; the chain's last cluster
+        jr      z,.nospc
+        ld      hl,(SG+VV_SCLUS)
         ld      (SG+VW_TAIL),hl
         ld      a,(SG+VV_VOL)
         call    fat_alloc
@@ -305,84 +518,19 @@ dir_alloc_entry:
         call    fat_set
         ret     c
         ld      hl,(SG+VW_NEWC)
+        ld      (SG+VV_SCLUS),hl
         ld      a,(SG+VV_VOL)
         call    fat_sector
         ret     c
-        ld      (SG+VW_ESEC),hl
-        ld      (SG+VW_ESEC+2),de
-        xor     a
-        ld      (SG+VW_EIDX),a
-        ld      a,(SG+VV_VOL)
-        k_call  API_BGET                ; a hit: zeroed last
-        ret     c
+        ld      (SG+VV_SSEC),hl
+        ld      (SG+VV_SSEC+2),de
+        ld      l,(ix+M_SPC)
+        ld      h,0
+        ld      (SG+VV_SN),hl
         or      a
         ret
 .nospc: ld      a,E_NOSPC
         scf
-        ret
-
-; dir_new_entry — the directory (VV_VOL, VV_CLUS), the name VV_NAME, A =
-; the attribute, DE = the first cluster, VW_DATE/VW_TIME the stamp: a new
-; entry, size 0, written; VR_* then describe it as a lookup would. CF with
-; the errno; the table may be left dirty. Corrupts everything.
-dir_new_entry:
-        ld      (SG+VW_NATTR),a
-        ld      (SG+VW_NCLUS),de
-        call    dir_alloc_entry
-        ret     c
-        push    hl
-        ld      hl,SG+VR_ENT
-        ld      b,FE_SIZEOF
-.zero:  ld      (hl),0
-        inc     hl
-        djnz    .zero
-        ld      hl,SG+VV_NAME
-        ld      de,SG+VR_ENT+FE_NAME
-        ld      bc,11
-        ldir
-        ld      a,(SG+VW_NATTR)
-        ld      (SG+VR_ENT+FE_ATTR),a
-        ld      hl,(SG+VW_TIME)
-        ld      (SG+VR_ENT+FE_CTIME),hl
-        ld      (SG+VR_ENT+FE_MTIME),hl
-        ld      hl,(SG+VW_DATE)
-        ld      (SG+VR_ENT+FE_CDATE),hl
-        ld      (SG+VR_ENT+FE_ADATE),hl
-        ld      (SG+VR_ENT+FE_MDATE),hl
-        ld      hl,(SG+VW_NCLUS)
-        ld      (SG+VR_ENT+FE_CLUS),hl
-        pop     de                      ; the slot
-        push    de
-        ld      hl,SG+VR_ENT
-        ld      bc,FE_SIZEOF
-        ldir
-        pop     hl
-        call    buf_base
-        k_call  API_BWRITE
-        ret     c
-        ; VR_*: the new entry.
-        xor     a
-        ld      (SG+VR_KIND),a          ; VK_ENTRY
-        ld      a,(SG+VV_VOL)
-        ld      (SG+VR_VOL),a
-        ld      hl,(SG+VW_NCLUS)
-        ld      (SG+VR_CLUS),hl
-        ld      a,(SG+VW_NATTR)
-        ld      (SG+VR_ATTR),a
-        ld      hl,0
-        ld      (SG+VR_SIZE),hl
-        ld      (SG+VR_SIZE+2),hl
-        ld      hl,(SG+VW_TIME)
-        ld      (SG+VR_MTIME),hl
-        ld      hl,(SG+VW_DATE)
-        ld      (SG+VR_MTIME+2),hl
-        ld      hl,SG+VW_ESEC
-        ld      de,SG+VR_DSEC
-        ld      bc,5
-        ldir
-        ld      a,1
-        ld      (SG+VV_HASENT),a
-        or      a
         ret
 
 ; wr_truncate — VR_* = a file's entry: rewritten with size 0, no cluster
@@ -1198,7 +1346,7 @@ ks_unlink:
         xor     a                       ; any row
         call    vfs_busy
         ret     c
-        call    dir_free_entry
+        call    dir_free_name
         ret     c
         ld      hl,(SG+VR_CLUS)
         ld      a,h
@@ -1220,7 +1368,13 @@ ks_unlink:
 ks_mkdir:
         call    vfs_getpath
         ret     c
+        ld      a,1
+        ld      (SG+VW_CREATE),a
         call    vfs_lookup
+        push    af
+        xor     a
+        ld      (SG+VW_CREATE),a
+        pop     af
         jp      nc,.exist
         cp      E_NOENT
         scf                             ; cp cleared the carry
@@ -1370,6 +1524,8 @@ ks_rmdir:
         call    vfs_busy
         ret     c
         ; Empty? Every entry but ., .., deleted and long-name ones fails it.
+        ld      hl,(SG+VV_CLUS)         ; the parent, for the removal
+        ld      (SG+VW_ODCLUS),hl
         ld      a,(SG+VR_VOL)
         ld      (SG+VV_VOL),a
         ld      hl,(SG+VR_CLUS)
@@ -1402,7 +1558,9 @@ ks_rmdir:
         add     hl,de
         djnz    .e
         jr      .sector
-.empty: call    dir_free_entry
+.empty: ld      hl,(SG+VW_ODCLUS)
+        ld      (SG+VV_CLUS),hl
+        call    dir_free_name
         ret     c
         ld      hl,(SG+VR_CLUS)
         ld      a,(SG+VR_VOL)
@@ -1469,7 +1627,16 @@ ks_rename:
         ld      de,SG+VW_OENT
         ld      bc,FE_SIZEOF
         ldir
-        ; The new name.
+        ld      a,(SG+VR_LN)
+        ld      (SG+VW_OLN),a
+        ld      hl,SG+VR_LSEC
+        ld      de,SG+VW_OLSEC
+        ld      bc,5
+        ldir
+        ld      hl,(SG+VV_CLUS)         ; its directory, for the removal
+        ld      (SG+VW_ODCLUS),hl
+        ; The new name, looked up as a creation would, the entry being
+        ; moved no match for it: a change of case alone is a rename too.
         ld      hl,SG+VW_PATH2
         ld      de,SG+VV_PATH
         ld      bc,PATH_MAX
@@ -1478,7 +1645,15 @@ ks_rename:
         ld      (SG+VV_P),hl
         xor     a
         ld      (SG+VW_NEW),a
+        ld      a,1
+        ld      (SG+VW_CREATE),a
+        ld      (SG+VW_EXCL),a
         call    vfs_lookup
+        push    af
+        xor     a
+        ld      (SG+VW_CREATE),a
+        ld      (SG+VW_EXCL),a
+        pop     af
         jr      nc,.exists
         cp      E_NOENT
         scf                             ; cp cleared the carry
@@ -1497,22 +1672,7 @@ ks_rename:
         ld      a,(SG+VR_KIND)
         cp      VK_ENTRY
         jp      nz,.exist               ; a root, /mnt, . or ..
-        ; The same entry: nothing to do.
-        ld      a,(SG+VR_VOL)
-        ld      hl,SG+VW_OVOL
-        cp      (hl)
-        jr      nz,.other
-        ld      hl,SG+VR_DSEC
-        ld      de,SG+VW_OSEC
-        ld      b,5
-.same:  ld      a,(de)
-        cp      (hl)
-        jr      nz,.other
-        inc     hl
-        inc     de
-        djnz    .same
-        xor     a
-        ret
+        ; (The entry being moved is never found: the lookup left it out.)
 .other: ld      a,(SG+VR_ATTR)
         ld      hl,SG+VW_OATTR
         or      (hl)
@@ -1571,27 +1731,17 @@ ks_rename:
 .doit:  ld      a,(SG+VW_NEW)
         or      a
         jr      nz,.over
-        ; A new slot in the new name's directory: the old entry with the
-        ; new name.
+        ; The old entry, written under the new name where the lookup
+        ; found room for it, its parts before it.
         ld      a,(SG+VW_DVOL)
         ld      (SG+VV_VOL),a
         ld      hl,(SG+VW_DCLUS)
         ld      (SG+VV_CLUS),hl
-        call    dir_alloc_entry
-        jp      c,wr_finish
-        push    hl
-        ld      hl,SG+VV_NAME           ; the new name, the lookup's last
-        ld      de,SG+VW_OENT
-        ld      bc,11
-        ldir
-        pop     de
-        push    de
         ld      hl,SG+VW_OENT
+        ld      de,SG+VR_ENT
         ld      bc,FE_SIZEOF
         ldir
-        pop     hl
-        call    buf_base
-        k_call  API_BWRITE
+        call    dir_new_name
         jp      c,wr_finish
         jr      .unlinkold
 .over:  ; Over the file that has the name: its slot keeps its name.
@@ -1619,7 +1769,16 @@ ks_rename:
         ldir
         ld      a,(SG+VW_OVOL)
         ld      (SG+VR_VOL),a
-        call    dir_free_entry
+        ld      (SG+VV_VOL),a
+        ld      hl,(SG+VW_ODCLUS)
+        ld      (SG+VV_CLUS),hl
+        ld      a,(SG+VW_OLN)
+        ld      (SG+VR_LN),a
+        ld      hl,SG+VW_OLSEC
+        ld      de,SG+VR_LSEC
+        ld      bc,5
+        ldir
+        call    dir_free_name
         jp      c,wr_finish
         ; A moved directory's .. names its new parent.
         ld      a,(SG+VW_OATTR)

@@ -890,6 +890,12 @@ ks_cache_init:
         ld      de,OFT_SIZE
         add     hl,de
         djnz    .rows
+        xor     a                       ; no creation, no chain in progress
+        ld      (SG+VW_CREATE),a        ; (ks_vfs.asm, ks_lfn.asm)
+        ld      (SG+VW_EXCL),a
+        ld      (SG+VW_GATHER),a
+        ld      (SG+VL_N),a
+        ld      (SG+VR_LN),a
         ret
 
 ; ks_bget — A = volume, DE:HL = sector -> HL = the buffer, in page 1; CF

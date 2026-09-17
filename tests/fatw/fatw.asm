@@ -1337,7 +1337,7 @@ p_be:       db  "/mnt/b/e.txt",0
 p_ro:       db  "/ro.txt",0
 p_none:     db  "/tmp/none",0
 p_root:     db  "/",0
-p_long83:   db  "/tmp/toolongname.txt",0
+p_long83:   db  "/tmp/bad?name.txt",0    ; no name at all: ? is refused
 p_d1:       db  "/tmp/d1",0
 p_d2:       db  "/tmp/d1/d2",0
 p_d3:       db  "/tmp/d1/d2/d3",0

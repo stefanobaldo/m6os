@@ -327,7 +327,7 @@ print:  ld      hl,(n)
         inc     hl
         jr      .loop
 
-TOP      equ    3EE8h
+TOP      equ    P0_TOP
 s_large: db     "input too large",0
 
         include "lib/out.inc"

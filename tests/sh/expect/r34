@@ -1,8 +1,13 @@
-drain
-fails
-gap
-inner
-procs
+DRAIN
+FAILS
+GAP
+INNER
+PROCS
+SPEW
+SPIN
+STAMP
+TICK
+WORDS
 r1
 r10
 r11
@@ -39,8 +44,3 @@ r6e
 r7
 r8
 r9
-spew
-spin
-stamp
-tick
-words
