@@ -154,6 +154,15 @@ to install.
   and goes on with SPACE, RET or `q` — `ls -l | more`. For it, `read` on the
   console now takes from the keyboard, so a program whose input is a pipe
   can still read what is typed.
+- MSX-DOS 2 programs. `dos name.com [args]` runs a `.COM` program with the
+  machine to itself — the MSX-DOS 2 layout around it, a 53K TPA, the BIOS
+  live, the mapper support routines — and hands the machine back when it
+  ends, its termination code the status; a command word ending in `.com`
+  runs through `dos` by itself. The console functions and the mapper
+  support are served; the file functions come next. Three system calls
+  come with it: `segalloc` and `segfree` give a process 16K segments beyond
+  its pages, `segmap` puts one into page 1 or 2 and keeps it there. See
+  [`docs/dos.md`](docs/dos.md).
 
 ### Fixed
 
