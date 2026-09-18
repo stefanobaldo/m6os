@@ -301,7 +301,7 @@ start:
         ld      (REC+KR_MEMCAP),a
         ld      hl,ksimage
         ld      (REC+KR_KSEG_SRC),hl
-        ld      hl,tblock_end-ksimage   ; the image and, after it, the block
+        ld      hl,ksimage_end-ksimage
         ld      (REC+KR_KSEG_LEN),hl
         call    ld_takeover
         jp      fail                    ; it returns only with A = F3h
@@ -561,36 +561,19 @@ nx_ramslot1 equ RAMAD1
 ld_image    equ kimage
 ld_rec      equ REC
 ld_block    equ 0                   ; nothing above the image: the block
-ld_block_len equ 0                  ; rides in the switched image's segment
+ld_block_len equ 0                  ; runs where it lies, in page 0
         include "loader/takeover.asm"
 
-; Everything above runs, or is read, while a driver call has switched page
-; 1 away, so it stays in page 0; the two images and the block below are
-; only copied once page 1 is RAM again, and may extend into it.
-        ASSERT  $ < 4000h
-kimage:
-        incbin  "build/kernel.bin"
-kimage_end:
-ksimage:
-        incbin  "build/kseg.bin"
-ksimage_end:
-        ASSERT  ksimage_end < 8000h
-
-; The second half, assembled for K_IMAGE_END (build/kernel.exp), where the
-; loader copies it, above the image in page 3. It runs once the kernel has
-; booted and listed the volumes, as process 0, whose page 2 is the storage
-; segment: a buffer the cache returns at 4000h+offset is at 8000h+offset
-; here. The block layer's entries are called under the window and the
-; storage gate, which the block enters and leaves around each call; the
-; test's own data lives in page 3, where neither hides it.
-; The block follows the switched image in this file and is copied with it
-; into the image's segment (KR_KSEG_LEN covers both), which is process 0's
-; page 0: it runs there, at its offset in that segment, where neither the
-; storage gate nor a switch of page 1 can take it away — and it costs no
-; segment and no room in page 3, which the resident has outgrown.
+; The second half, in page 0 of the loader's memory, which the kernel
+; keeps as process 0's page 0 so the block runs where it lies — and where
+; neither the storage gate nor a switch of page 1 can take it away, which
+; a block in page 1 could not say. It runs once the kernel has booted and
+; listed the volumes, as process 0, whose page 2 is the storage segment: a
+; buffer the cache returns at 4000h+offset is at 8000h+offset here. The
+; block layer's entries are called under the window and the storage gate,
+; which the block enters and leaves around each call; the test's own data
+; lives in this block.
 tblock:
-        ASSERT  tblock == ksimage_end
-        DISP    tblock-ksimage
 
     macro t_enter
         kwin_enter
@@ -1139,6 +1122,18 @@ t_buf:      dw  0
 t_rel:      ds  4
 t_date:     dw  0
 t_time:     dw  0
-        ENT
 tblock_end:
-        ASSERT  $ < 8000h
+        ASSERT  tblock_end < 4000h      ; the block, in page 0
+
+; Everything above runs, or is read, while a driver call has switched page
+; 1 away, so it stays in page 0; the two images below are
+; only copied once page 1 is RAM again, and may extend into it.
+        ASSERT  $ < 4000h
+kimage:
+        incbin  "build/kernel.bin"
+kimage_end:
+ksimage:
+        incbin  "build/kseg.bin"
+ksimage_end:
+        ASSERT  ksimage_end < 8000h
+

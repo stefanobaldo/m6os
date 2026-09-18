@@ -505,7 +505,7 @@ start:
         ld      (REC+KR_MEMCAP),a       ; no cap
         ld      hl,ksimage              ; the switched part of the kernel
         ld      (REC+KR_KSEG_SRC),hl
-        ld      hl,tblock_end-ksimage   ; the image and, after it, the block
+        ld      hl,ksimage_end-ksimage
         ld      (REC+KR_KSEG_LEN),hl
         call    ld_takeover
         jp      fail                    ; it returns only with A = F3h
@@ -830,32 +830,16 @@ nx_ramslot1 equ RAMAD1
 ld_image    equ kimage
 ld_rec      equ REC
 ld_block    equ 0                   ; nothing above the image: the block
-ld_block_len equ 0                  ; rides in the switched image's segment
+ld_block_len equ 0                  ; runs where it lies, in page 0
         include "loader/takeover.asm"
 
 ; The resident image, copied to K_BASE by the takeover.
-; Everything above runs, or is read, while a driver call or an inter-slot
-; call may have switched page 1 away, so it stays in page 0; the two images
-; and the block below are only copied once page 1 is RAM again, and may
-; extend into it, never into page 2, where the tests' buffers are.
-        ASSERT  $ < 4000h
-kimage:
-        incbin  "build/kernel.bin"
-kimage_end:
-ksimage:
-        incbin  "build/kseg.bin"
-ksimage_end:
-        ASSERT  ksimage_end < 8000h     ; the resident copies it from pages 0-1
-
-; The second half. It follows the switched image in this file and is
-; copied with it into the image's segment (KR_KSEG_LEN covers both), which
-; is process 0's page 0: it runs there, at its offset in that segment, and
-; costs no room in page 3, which the resident has outgrown. It runs once
-; the kernel has booted, with pages 1 and 2 free, and reaches the resident
-; through the jump table. Step numbers continue the loader's.
+; The second half, in page 0 of the loader's memory, which the kernel
+; keeps as process 0's page 0 so the block runs where it lies — and where
+; a driver call's switch of page 1 never hides it. It runs once the kernel
+; has booted, with pages 1 and 2 free, and reaches the resident through
+; the jump table. Step numbers continue the loader's.
 tblock:
-        ASSERT  tblock == ksimage_end
-        DISP    tblock-ksimage
 t_entry:
 ; --- step 8: destroy the Nextor kernel's RAM segments ------------------
         ld      a,8
@@ -1245,7 +1229,19 @@ t_rtc_first: dw 0
 t_rtc_last: dw  0
 t_loop_fn:  dw  0
 t_secnum:   ds  4
-        ENT
 tblock_end:
+        ASSERT  tblock_end < 4000h      ; the block, in page 0
 
-        ASSERT  $ < 8000h
+; Everything above runs, or is read, while a driver call or an inter-slot
+; call may have switched page 1 away, so it stays in page 0; the two images
+; below are only copied once page 1 is RAM again, and may
+; extend into it, never into page 2, where the tests' buffers are.
+        ASSERT  $ < 4000h
+kimage:
+        incbin  "build/kernel.bin"
+kimage_end:
+ksimage:
+        incbin  "build/kseg.bin"
+ksimage_end:
+        ASSERT  ksimage_end < 8000h     ; the resident copies it from pages 0-1
+

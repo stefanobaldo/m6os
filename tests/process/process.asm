@@ -115,7 +115,7 @@ start:
         ld      (REC+KR_MEMCAP),a       ; no cap
         ld      hl,ksimage              ; the switched part of the kernel
         ld      (REC+KR_KSEG_SRC),hl
-        ld      hl,tblock_end-ksimage   ; the image and, after it, the block
+        ld      hl,ksimage_end-ksimage
         ld      (REC+KR_KSEG_LEN),hl
         call    ld_takeover
         jp      fail                    ; it returns only with A = F3h
@@ -249,7 +249,7 @@ nx_ramslot1 equ RAMAD1
 ld_image    equ kimage
 ld_rec      equ REC
 ld_block    equ 0                   ; nothing above the image: the block
-ld_block_len equ 0                  ; rides in the switched image's segment
+ld_block_len equ 0                  ; runs where it lies, in page 1
         include "loader/takeover.asm"
 
 ; Everything above runs, or is read, while a driver call or an inter-slot
@@ -265,17 +265,13 @@ ksimage:
 ksimage_end:
 
 
-; The second half, assembled for its place in the switched image's segment
-; — process 0's page 0 — where the
-; loader copies it: the test's code and data, and the user images after
-; them. It runs as process 0.
-; The block follows the switched image in this file and is copied with it
-; into the image's segment (KR_KSEG_LEN covers both), which is process 0's
-; page 0: it runs there, at its offset in that segment, costing no segment
-; and no room in page 3, which the resident has outgrown.
+; The second half, in page 1 of the loader's memory, which the kernel
+; keeps as process 0's page 1 so the block runs where it lies. It runs as
+; process 0 once the kernel has booted: the test's code and data, and the
+; user images after them.
 tblock:
-        ASSERT  tblock == ksimage_end
-        DISP    tblock-ksimage
+        ASSERT  tblock >= 4000h         ; in page 1: the loader's boot segment,
+                                        ; which the kernel keeps as process 0's
 t_entry:
 ; --- step 5: the window, kernel-side ---------------------------------------
         ld      a,5
@@ -294,7 +290,8 @@ t_entry:
         k_call  API_CON_PUTS
         k_call  API_MEM_INFO
         ld      (t_free0),bc            ; free now: usable - page 3 - the
-        ld      hl,-3                   ; switched image - the scratch page
+        ld      hl,-4                   ; switched image - the scratch page
+                                        ; - this block's page 1, kept
         add     hl,de
         or      a
         sbc     hl,bc
@@ -592,7 +589,6 @@ t_t0:       dw  0
 t_ctl:      dw  0
 t_res:      dw  0
 t_sw:       dw  0
-        ENT
 
 ; The user programs, each assembled for P0_PROG and copied there by spawn.
 ; They call the kernel through K_SYS and nothing else. They live in the
@@ -653,7 +649,7 @@ u_hello_k:
 .digit: db      "?",10
         ENT
 u_hello_k_end:
-u_hello      equ (tblock-ksimage)+(u_hello_k-tblock)
+u_hello      equ u_hello_k
 u_hello_end  equ u_hello+(u_hello_k_end-u_hello_k)
 
 ; u_ret — a program that simply returns: status 0 through P0_EXIT.
@@ -662,7 +658,7 @@ u_ret_k:
         ret
         ENT
 u_ret_k_end:
-u_ret      equ (tblock-ksimage)+(u_ret_k-tblock)
+u_ret      equ u_ret_k
 u_ret_end  equ u_ret+(u_ret_k_end-u_ret_k)
 
 ; u_jp0 — a program that jumps to 0: the same.
@@ -671,7 +667,7 @@ u_jp0_k:
         jp      0
         ENT
 u_jp0_k_end:
-u_jp0      equ (tblock-ksimage)+(u_jp0_k-tblock)
+u_jp0      equ u_jp0_k
 u_jp0_end  equ u_jp0+(u_jp0_k_end-u_jp0_k)
 
 ; u_stack3 — three pages: the stack starts at BFFEh, in the page the window
@@ -710,7 +706,7 @@ u_stack3_k:
 .msglen equ     $-.msg
         ENT
 u_stack3_k_end:
-u_stack3      equ (tblock-ksimage)+(u_stack3_k-tblock)
+u_stack3      equ u_stack3_k
 u_stack3_end  equ u_stack3+(u_stack3_k_end-u_stack3_k)
 
 ; The three timing loops: T_ITER iterations of push bc, sixteen argument
@@ -737,7 +733,7 @@ u_ctl_k:
         sys     SYS_EXIT
         ENT
 u_ctl_k_end:
-u_ctl      equ (tblock-ksimage)+(u_ctl_k-tblock)
+u_ctl      equ u_ctl_k
 u_ctl_end  equ u_ctl+(u_ctl_k_end-u_ctl_k)
 
 u_res_k:
@@ -757,7 +753,7 @@ u_res_k:
         sys     SYS_EXIT
         ENT
 u_res_k_end:
-u_res      equ (tblock-ksimage)+(u_res_k-tblock)
+u_res      equ u_res_k
 u_res_end  equ u_res+(u_res_k_end-u_res_k)
 
 u_sw_k:
@@ -777,7 +773,7 @@ u_sw_k:
         sys     SYS_EXIT
         ENT
 u_sw_k_end:
-u_sw      equ (tblock-ksimage)+(u_sw_k-tblock)
+u_sw      equ u_sw_k
 u_sw_end  equ u_sw+(u_sw_k_end-u_sw_k)
 
 tblock_end:

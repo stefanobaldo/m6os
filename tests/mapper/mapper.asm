@@ -140,7 +140,7 @@ start:
         ld      (REC+KR_TEST),hl
         ld      hl,ksimage              ; the switched part of the kernel
         ld      (REC+KR_KSEG_SRC),hl
-        ld      hl,tblock_end-ksimage   ; the image and, after it, the block
+        ld      hl,ksimage_end-ksimage
         ld      (REC+KR_KSEG_LEN),hl
         call    ld_takeover
         jp      fail                    ; it returns only with A = F3h
@@ -393,33 +393,14 @@ nx_ramslot1 equ RAMAD1
 ld_image    equ kimage
 ld_rec      equ REC
 ld_block    equ 0                   ; nothing above the image: the block
-ld_block_len equ 0                  ; rides in the switched image's segment
+ld_block_len equ 0                  ; runs where it lies, in page 0
         include "loader/takeover.asm"
 
-; Everything above runs, or is read, while a driver call or an inter-slot
-; call may have switched page 1 away, so it stays in page 0; the two images
-; and the block below are only copied once page 1 is RAM again, and may
-; extend into it, never into page 2, where the tests' buffers are.
-        ASSERT  $ < 4000h
-kimage:
-        incbin  "build/kernel.bin"
-kimage_end:
-ksimage:
-        incbin  "build/kseg.bin"
-ksimage_end:
-        ASSERT  ksimage_end < 8000h     ; the resident copies it from pages 0-1
-
-; The second half, assembled for K_IMAGE_END (build/kernel.exp), where the
-; loader copies it. Pages 1 and 2 are free windows here; the test's own
-; data lives in this block, in page 3, so switching page 2 never hides it.
-; The block follows the switched image in this file and is copied with it
-; into the image's segment (KR_KSEG_LEN covers both), which is process 0's
-; page 0: it runs there, at its offset in that segment, where neither the
-; storage gate nor a switch of page 1 can take it away — and it costs no
-; segment and no room in page 3, which the resident has outgrown.
+; The second half, in page 0 of the loader's memory, which the kernel
+; keeps as process 0's page 0 so the block runs where it lies — and where
+; a switch of page 1 or 2 never hides it, both being free windows here.
+; The test's own data lives in this block.
 tblock:
-        ASSERT  tblock == ksimage_end
-        DISP    tblock-ksimage
 t_entry:
 ; --- step 5: the count, against what Nextor saw ------------------------
         ld      a,5
@@ -886,7 +867,19 @@ t_t0:       dw  0
 t_count2:   dw  0
 t_segs:     ds  256
 t_seen:     ds  256
-        ENT
 tblock_end:
+        ASSERT  tblock_end < 4000h      ; the block, in page 0
 
-        ASSERT  $ < 8000h
+; Everything above runs, or is read, while a driver call or an inter-slot
+; call may have switched page 1 away, so it stays in page 0; the two images
+; below are only copied once page 1 is RAM again, and may
+; extend into it, never into page 2, where the tests' buffers are.
+        ASSERT  $ < 4000h
+kimage:
+        incbin  "build/kernel.bin"
+kimage_end:
+ksimage:
+        incbin  "build/kseg.bin"
+ksimage_end:
+        ASSERT  ksimage_end < 8000h     ; the resident copies it from pages 0-1
+
