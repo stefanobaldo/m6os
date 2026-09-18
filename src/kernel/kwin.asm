@@ -96,15 +96,42 @@ k_owed_con:
 .alone: pop     af
         ret
 
-; k_sw_s — the shared form of k_switched_s: a K_SYS entry is a 7-byte stub,
-; ld ix,KS_X / jp k_sw_s, instead of the 30 bytes the macro expands to.
+; k_sw_s — the shared form of k_switched_s: a K_SYS entry is a 6-byte stub,
+; ld ix,KS_X / jr k_sw_s, instead of the 30 bytes the macro expands to.
 ; IX is not an argument register and is undefined after every syscall.
-; A, HL, DE, BC reach the body untouched; ~30 T more than the macro.
+; A, HL, DE, BC reach the body untouched; ~30 T more than the macro. The
+; stubs stand on both sides of k_sw_s, within a jr's reach — every
+; switched syscall's but sysconf's, which is the round trip the process
+; test measures and keeps the macro's form (sys.asm).
     macro k_sw_stub target
         ld      ix,target
-        jp      k_sw_s
+        jr      k_sw_s
     endm
 
+k_sw_open:
+        k_sw_stub KS_OPEN
+k_sw_close:
+        k_sw_stub KS_CLOSE
+k_sw_lseek:
+        k_sw_stub KS_LSEEK
+k_sw_stat:
+        k_sw_stub KS_STAT
+k_sw_readdir:
+        k_sw_stub KS_READDIR
+k_sw_chdir:
+        k_sw_stub KS_CHDIR
+k_sw_exec:
+        k_sw_stub KS_EXEC
+k_sw_read:
+        k_sw_stub KS_READ
+k_sw_unlink:
+        k_sw_stub KS_UNLINK
+k_sw_mkdir:
+        k_sw_stub KS_MKDIR
+k_sw_rmdir:
+        k_sw_stub KS_RMDIR
+k_sw_rename:
+        k_sw_stub KS_RENAME
 k_sw_s:
         ld      (k_usp),sp
         ld      sp,k_sstack
@@ -113,6 +140,32 @@ k_sw_s:
         call    .go
         jp      k_gate_ret_s
 .go:    jp      (ix)
+k_sw_spawnv:
+        k_sw_stub KS_SPAWNV
+k_sw_getcwd:
+        k_sw_stub KS_GETCWD
+k_sw_chmod:
+        k_sw_stub KS_CHMOD
+k_sw_time:
+        k_sw_stub KS_RTC_READ           ; SYS_TIME is the clock's reading
+k_sw_procinfo:
+        k_sw_stub KS_PROCINFO
+k_sw_segalloc:
+        k_sw_stub KS_SEGALLOC
+k_sw_segfree:
+        k_sw_stub KS_SEGFREE
+k_sw_segmap:
+        k_sw_stub KS_SEGMAP
+k_sw_kill:
+        k_sw_stub KS_KILL
+k_sw_signal:
+        k_sw_stub KS_SIGNAL
+k_sw_dosenter:
+        k_sw_stub KS_DOSENTER
+k_sw_ttymode:
+        k_sw_stub KS_TTYMODE
+k_sw_ttyline:
+        k_sw_stub KS_TTYLINE
 
 k_usp:          dw 0            ; the process's stack pointer during a
                                 ; switched syscall

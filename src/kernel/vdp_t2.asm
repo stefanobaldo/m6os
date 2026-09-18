@@ -18,7 +18,8 @@
 ; bit; the font at V_PAT. The font is whatever the previous system had —
 ; the machine's own ROM font, loaded by its BIOS — found through the R#4
 ; that system wrote (its shadow, captured in the record) and moved to
-; V_PAT if it is elsewhere, which it is after a 40-column SCREEN 0.
+; V_PAT if it is elsewhere, which it is after a 40-column SCREEN 0; the
+; move is boot code (boot.asm), the ports it uses are set here.
 ;
 ; Timing: consecutive data-port accesses in the loops below are 28
 ; T-states apart in nominal Z80 counts, 31 with the MSX's wait state on
@@ -32,21 +33,19 @@
 ; interrupt handler reads S#0 and that resets the port's byte latch;
 ; data-port accesses between two addresses need no such care.
 
-; vdp_init — the ports from the record, the font, the blink table, the
-; registers. The blink table is cleared before R#3 points at it and R#13
-; turns blinking on: V_BLINK is where TEXT1 keeps its font, an MSX2 BIOS
-; setting 80 columns leaves the last 40-column font there — the boot's, at
-; least — and whatever is there blinks on screen for a frame. It is
-; cleared after the font is moved, which may read it. Corrupts everything.
+; vdp_init — the ports from the record, the blink table, the registers.
+; The blink table is cleared before R#3 points at it and R#13 turns
+; blinking on: V_BLINK is where TEXT1 keeps its font, an MSX2 BIOS setting
+; 80 columns leaves the last 40-column font there — the boot's, at least —
+; and whatever is there blinks on screen for a frame. The font is moved to
+; V_PAT once, at boot, before this runs the first time (k_main, boot.asm);
+; a later call — an MSX-DOS program's exit — finds it where that
+; program's BIOS keeps SCREEN 0's, which is V_PAT. Corrupts everything.
 vdp_init:
         ld      a,(K_REC+KR_VDPWR)
         ld      (vdp_dat),a
         inc     a
         ld      (vdp_ctl),a
-        ld      a,(K_REC+KR_VDPREG+4)   ; R#4: A16-A11 of the font
-        and     3Fh
-        cp      V_PAT>>11
-        call    nz,vdp_move_font
         ld      hl,V_BLINK              ; the blink table: all zero
         call    vdp_setwrt
         ld      a,(vdp_dat)
@@ -105,50 +104,6 @@ vdp_regs:
         db      00h,80h+14              ; VRAM A16-A14
         db      00h,80h+15              ; S#0 is what IN reads
 VDP_NREGS equ   ($-vdp_regs)/2
-
-; vdp_move_font — A = the previous system's R#4: copy the 2048-byte font
-; from where it says to V_PAT, 64 bytes at a time through con_linebuf.
-; A16-A14 are ignored: no BIOS keeps SCREEN 0's font above 16K. Corrupts
-; everything.
-vdp_move_font:
-        and     07h
-        add     a,a
-        add     a,a
-        add     a,a
-        ld      h,a
-        ld      l,0                     ; hl = the source
-        ld      de,V_PAT
-        ld      b,2048/64
-.chunk: push    bc
-        push    de
-        push    hl
-        call    vdp_setrd
-        ld      a,(vdp_dat)
-        ld      c,a
-        ld      b,64
-        ld      hl,con_linebuf
-.rd:    ini
-        jr      nz,.rd
-        pop     hl
-        ld      bc,64
-        add     hl,bc
-        ex      (sp),hl                 ; hl = the destination, source saved
-        call    vdp_setwrt
-        ld      a,(vdp_dat)
-        ld      c,a
-        ld      b,64
-        push    hl
-        ld      hl,con_linebuf
-.wr:    outi
-        jr      nz,.wr
-        pop     hl
-        ld      bc,64
-        add     hl,bc
-        ex      de,hl                   ; de = the next destination
-        pop     hl                      ; hl = the next source
-        pop     bc
-        djnz    .chunk
-        ret
 
 ; vdp_setwrt / vdp_setrd — HL = VRAM address; the next data-port access
 ; goes there. Corrupts AF; preserves BC, DE, HL.

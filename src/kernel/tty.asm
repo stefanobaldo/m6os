@@ -223,9 +223,9 @@ tty_end:
         ld      hl,KS_TTY_KEY
 ; tty_ks — HL = an entry of the switched part, A = its argument: the
 ; call, the way k_switched makes one — the stack moved to k_sstack, since
-; the process's may be in page 2, and the window in — with the line's
-; state in IX and the console's cursor in IY for the callee, and the
-; caller's IX and IY kept. k_usp is free here: sys_read on the keyboard
+; the process's may be in page 2, and the window in — with the caller's
+; IX and IY kept; the callee finds the line's state and the console's
+; cursor through the header (K_LDSTATE, K_CONCUR). k_usp is free here: sys_read on the keyboard
 ; is resident, never entered through the gate. The switch a tick may have
 ; marked as owed inside is paid at the read's return, as for any tick
 ; that lands in the loop. Corrupts everything but IX, IY.
@@ -234,8 +234,6 @@ tty_ks:
         push    iy
         ld      (k_usp),sp
         ld      sp,k_sstack
-        ld      ix,ld_state
-        ld      iy,con_row
         kwin_enter
         call    .go
         kwin_leave

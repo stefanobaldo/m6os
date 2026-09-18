@@ -117,11 +117,16 @@ $(foreach b,$(patsubst src/bin/%.asm,%,$(BIN_SRCS)),$(eval $(call bin_rule,$(b))
 # One line per binary, "SIZE <name> <bytes>": what the build reports today
 # and what size limits are later checked against. kernel.bin is the resident
 # image, the number the 16K target is measured against; kseg.bin the
-# switched part, against the window's 16K.
+# switched part, against the window's 16K. Then "ROOM kernel <bytes>": what
+# the resident leaves below the address it must end under, read from the
+# labels the image exports.
 sizes: $(KERNEL) $(KSEG) $(LEG) $(M6COM) $(BIN_BINS) $(TEST_BINS) $(PROG_BINS)
 	@for f in $(KERNEL) $(KSEG) $(LEG) $(M6COM) $(BIN_BINS) $(TEST_BINS) $(PROG_BINS); do \
 	    printf 'SIZE %s %s\n' "$$(basename $$f)" "$$(wc -c < $$f | tr -d ' ')"; \
 	done
+	@roof=$$(sed -n 's/^K_IMAGE_ROOF: EQU 0x0*\([0-9A-Fa-f]*\)$$/\1/p' build/kernel.exp); \
+	end=$$(sed -n 's/^K_IMAGE_END: EQU 0x0*\([0-9A-Fa-f]*\)$$/\1/p' build/kernel.exp); \
+	printf 'ROOM kernel %d\n' $$(( 0x$$roof - 0x$$end ))
 
 check-sjasmplus:
 	@v=$$($(SJASMPLUS) --nologo --version 2>&1 || true); \

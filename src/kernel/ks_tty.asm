@@ -6,7 +6,8 @@
 ; the cursor, entered from tty_read (tty.asm) through KS_TTY_KEY with the
 ; byte in A. The line's state — length, cursor, the column it started at,
 ; the bytes — is the resident's, reached through IX as LD_* lay it out;
-; the console's cursor, row then column, through IY. The screen is
+; the console's cursor, row then column, through IY; both entries load
+; them from the header (K_LDSTATE, K_CONCUR). The screen is
 ; written through the resident's console, which handles TAB and the wrap
 ; at CON_COLS; where a byte's cell is on the screen is computed here the
 ; same way (lt_pos), relative to the line's first row, and the cursor is
@@ -21,8 +22,11 @@
 ; ks_tty_set — the line replaced by ttyline (tty.asm): its bytes and
 ; length in place, the cursor at 0 and the console's cursor on the
 ; line's first cell, the old line's cells blanked already. The line
-; written, the cursor put at its end. Corrupts everything but IX, IY.
+; written, the cursor put at its end. Corrupts everything; IX and IY
+; come out as the header names them.
 ks_tty_set:
+        ld      ix,(K_LDSTATE)
+        ld      iy,(K_CONCUR)
         ld      c,0
         call    lt_write
         ld      a,(ix+LD_LEN)
@@ -30,9 +34,11 @@ ks_tty_set:
         ld      a,(ix+LD_LEN)
         jp      lt_place
 
-; ks_tty_key — A = the byte. IX -> the line's state, IY -> the console's
-; cursor. Corrupts everything but IX, IY.
+; ks_tty_key — A = the byte. Corrupts everything; IX and IY come out as
+; the header names them.
 ks_tty_key:
+        ld      ix,(K_LDSTATE)
+        ld      iy,(K_CONCUR)
         cp      7Fh
         jp      z,lt_del
         cp      20h
