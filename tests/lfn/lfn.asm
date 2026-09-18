@@ -1129,8 +1129,11 @@ t_names:    dw  0
 t_pat:      dw  0
 t_off:      dw  0
 t_seen:     ds  16
-t_rec:      ds  DIRENT_SIZE
-t_buf:      ds  PATH_MAX            ; the longest read into it is a path
+; The record and the buffer live in the storage segment's test area, in
+; page 2 of process 0 (KT_BUF_*), not in this block: page 1's room after
+; the two kernel images is what the block has, and it ran out.
+t_rec       equ KT_BUF_B            ; DIRENT_SIZE bytes of the 512
+t_buf       equ KT_BUF_A            ; PATH_MAX: the longest read into it is a path
 
 
 tblock_end:

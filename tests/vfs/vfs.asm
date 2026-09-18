@@ -1040,7 +1040,10 @@ t_fd:       db  0
 t_want:     db  0
 t_names:    dw  0
 t_seen:     ds  32
-t_rec:      ds  DIRENT_SIZE
+; The record lives in the storage segment's test area, in page 2 of
+; process 0 (KT_BUF_B), not in this block: page 1's room after the two
+; kernel images is what the block has, and it ran out.
+t_rec       equ KT_BUF_B            ; DIRENT_SIZE bytes of the 512
 t_buf:      ds  16
 
 ; The user programs, assembled for P0_PROG and copied there by spawn. They

@@ -168,3 +168,4 @@ k_sw_chmod:
         k_sw_stub KS_CHMOD
 k_sw_time:
         k_sw_stub KS_RTC_READ           ; SYS_TIME is the clock's reading
+

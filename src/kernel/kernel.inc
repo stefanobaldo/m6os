@@ -53,6 +53,9 @@ K_BLK_ROOT      equ K_BASE+497  ; db: the row that is the boot volume, /;
                                 ;     VOL_NONE when none is
 K_BLK_CALLS     equ K_BASE+498  ; dw: driver calls made by the block layer
 K_BLK_LASTERR   equ K_BASE+500  ; db: the driver's code from the last one
+K_DOSPID        equ K_BASE+501  ; db: the pid of the legacy process (dos.asm),
+                                ;     0 when no .COM program is running
+K_DOSP0         equ K_BASE+502  ; db: that process's original page-0 segment
 K_MAP           equ K_BASE+504  ; 4: the segment in each page, as the kernel
                                 ;    believes it: from the record at boot,
                                 ;    then proc_run's and sys_exit's; the
@@ -256,7 +259,28 @@ SYS_TTYLINE     equ 32          ; HL = a line, BC = its length, 0 to
                                 ; TTY_LINE-1: the line being edited
                                 ; replaced by it, or one opened; EINVAL,
                                 ; EFAULT
-SYS_N           equ 33          ; entries given a syscall so far
+; The legacy subsystem (dos.asm; src/leg/ is the layer, src/bin/dos.asm the
+; program that sets a .COM up): a process maps segments of its own into
+; pages 1 and 2, fills one with the layer and a copy of the kernel's page
+; 3, and crosses into it.
+SYS_DOSENTER    equ 33          ; A = the legacy page-3 segment, the
+                                ; caller's, filled as src/leg/leg.asm
+                                ; expects, pages 1 and 2 mapped by segmap
+                                ; to the program's: the caller becomes the
+                                ; program and the call does not return;
+                                ; EPERM (process 0), EBUSY (a .COM runs
+                                ; already), EINVAL (not the caller's
+                                ; segment)
+SYS_SEGALLOC    equ 34          ; -> HL = A = a segment owned by the
+                                ; caller, freed at its exit; ENOMEM; EPERM
+                                ; (process 0)
+SYS_SEGFREE     equ 35          ; A = a segment of the caller's, not one
+                                ; of its pages: freed; EINVAL
+SYS_SEGMAP      equ 36          ; A = a page, 1 or 2; B = a segment of the
+                                ; caller's: mapped there, and kept there
+                                ; across syscalls and switches; EINVAL
+                                ; (the page, or not the caller's segment)
+SYS_N           equ 37          ; entries given a syscall so far
 WNOHANG         equ 1           ; waitpid: do not block
 PROCINFO_SIZE   equ P_SIZE+PX_SIZE ; the row, then the extension row
 
@@ -886,6 +910,38 @@ VW_ZBV          equ ST_VFSW+241 ;    the volume and
 VW_ZBS          equ ST_VFSW+242 ; 4: sector its header names
 VW_T            equ ST_VFSW+246 ; 8: scratch
 
+; The legacy subsystem (dos.asm; src/leg/leg.asm is the layer). While a
+; .COM program runs, page 3 shows a segment of its own — TPA to CFFFh, the
+; layer from LEG_BASE, a copy of the kernel's page 3 from K_HINGE up — and
+; the resident's page 3 comes back only to serve a syscall. The hinge is
+; K_HINGE_LEN bytes at the same address in both images: two stubs that
+; swap page 3 and point the page-0 interrupt vector at the handler the
+; image in place has, and a small stack for the crossing. dosexec_finish
+; writes both stubs at every launch.
+K_HINGE         equ 0F100h      ; the hinge; the resident ends below it
+K_HINGE_LEN     equ 64
+K_HINGE2        equ K_HINGE+17  ; the second stub: the legacy page 3 back
+K_HINGE_STUBS   equ 34          ; the two stubs' bytes
+K_HINGE_SP      equ K_HINGE+K_HINGE_LEN ; the crossing's stack, downward
+LEG_BASE        equ 0D000h      ; the layer: six CP/M version bytes,
+LEG_BDOS        equ 0D006h      ;   the BDOS entry — the TPA's top —
+LEG_VEC         equ 0D010h      ;   nine JPs: entry, a syscall's return,
+                                ;   the interrupt trampoline, EXTBIO,
+                                ;   RDSLT, WRSLT, CALSLT, ENASLT, CALLF
+LEG_VARS        equ 0D030h      ;   what dos fills before dosenter:
+LEG_SEGS        equ LEG_VARS+0  ;   3: the segments in pages 0-2 (the
+                                ;      layer's PUT_Pn shadow from then on)
+LEG_SEG3        equ LEG_VARS+3  ;   the legacy page-3 segment itself
+LEG_DRIVE       equ LEG_VARS+4  ;   the current drive, 0 = A:
+LEG_STARTED     equ LEG_VARS+5  ;   0 until the program has been entered
+LEG_FD          equ LEG_VARS+6  ;   the .COM file, open for reading
+LEG_SIZE        equ LEG_VARS+7  ;   2: its size
+LEG_PARAMS      equ 0D040h      ;   128: the tail as typed, 0-terminated
+LEG_BIOS        equ 0D100h      ;   the CP/M BIOS jump table, 17 entries
+LEG_MAX         equ K_HINGE-LEG_BASE ; the layer's largest length
+LEG_TPA         equ LEG_BDOS-P0_PROG ; the largest .COM
+LEG_EXIT        equ 0FFh        ; in C' at a crossing: k_dos_exit, A = code
+
 ; Page 0. Every page 0 the kernel runs with carries these two things and
 ; nothing else is required of it: the interrupt entry, and the secondary
 ; slot switching stub, which must execute outside page 3 because writing
@@ -906,6 +962,17 @@ B_LINLEN        equ 0F3B0h      ; columns in use
 B_CRTCNT        equ 0F3B1h      ; rows on screen
 B_TXTNAM        equ 0F3B3h      ; SCREEN 0 name table
 B_CSRY          equ 0F3DCh      ; cursor row, 1-based
+B_CSRX          equ 0F3DDh      ; cursor column, 1-based
+B_HOKVLD        equ 0FB20h      ; bit 0: EXTBIO is installed
+B_RAMAD0        equ 0F341h      ; RAM slot of each page (RAMAD0-3)
+B_GETPNT        equ 0F3FAh      ; the BIOS key buffer's read pointer
+B_OLDKEY        equ 0FBDAh      ; 11: the keyboard matrix at the last scan
+B_NEWKEY        equ 0FBE5h      ; 11: and at this one
+B_CHSNS         equ 009Ch       ; BIOS: Z when no key waits
+B_CHGET         equ 009Fh       ; BIOS: A = the next key, waiting for one
+B_CHPUT         equ 00A2h       ; BIOS: A to the screen
+B_BREAKX        equ 00B7h       ; BIOS: CF when CTRL+STOP is held
+B_ENASLT        equ 0024h       ; BIOS: A = slot, HL = address
 B_JIFFY         equ 0FC9Eh      ; BIOS tick counter, dead after the takeover
 B_SCRMOD        equ 0FCAFh      ; current screen mode
 B_EXPTBL        equ 0FCC1h      ; per primary slot: 80h if expanded
