@@ -104,6 +104,10 @@ k_sys:
         jp      sys_kill                ; SYS_KILL (sig.asm)
         jp      sys_signal              ; SYS_SIGNAL (sig.asm)
         jp      sys_ttyline             ; SYS_TTYLINE (tty.asm)
+        jp      sys_dosenter            ; SYS_DOSENTER (dos.asm)
+        jp      sys_segalloc            ; SYS_SEGALLOC
+        jp      sys_segfree             ; SYS_SEGFREE
+        jp      sys_segmap              ; SYS_SEGMAP
         DUP     K_SYS_N-SYS_N
         jp      sys_enosys
         EDUP
@@ -116,6 +120,10 @@ k_bcalls:
         dw      0
 k_lasterr:
         db      0
+k_dospid:
+        db      0                       ; the legacy process's pid (dos.asm)
+k_dosp0:
+        db      0                       ; and its original page-0 segment
         block   K_MAP-$
 k_map:  ds      4                       ; the segment in each page
 k_cur:  dw      K_PROC                  ; the current row (sched.asm)
@@ -139,6 +147,8 @@ k_pipebuf:
         ASSERT  k_root == K_BLK_ROOT
         ASSERT  k_bcalls == K_BLK_CALLS
         ASSERT  k_lasterr == K_BLK_LASTERR
+        ASSERT  k_dospid == K_DOSPID
+        ASSERT  k_dosp0 == K_DOSP0
         ASSERT  k_map == K_MAP
         ASSERT  k_cur == K_CUR
         ASSERT  k_pid == K_PID
@@ -169,6 +179,7 @@ nx_ramslot1     equ K_REC+KR_RAMAD+1
         include "kernel/pipe.asm"
         include "kernel/sig.asm"
         include "kernel/tty.asm"
+        include "kernel/dos.asm"
         include "kernel/sys.asm"
         include "kernel/main.asm"
 
@@ -180,6 +191,7 @@ k_sstack:
 k_stack:
         ds      512
 k_end:
+        ASSERT  k_end <= K_HINGE        ; the hinge lies above the image
 
 ; Exported for programs that assemble a block to run at K_END, for a
 ; harness that wants to know when the kernel idles, and for a test that
