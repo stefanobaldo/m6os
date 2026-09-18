@@ -76,7 +76,7 @@ sys_close:
         xor     a                       ; CF clear
         ret
 .sw:    ld      a,c
-        k_sw_stub KS_CLOSE
+        jp      k_sw_close
 
 ; sys_getpid — SYS_GETPID. Out: HL = pid.
 sys_getpid:
@@ -90,58 +90,9 @@ sys_enosys:
         scf
         ret
 
-; The K_SYS entry of every switched syscall: its stub (kwin.asm). The
-; filesystem's run under the storage gate too, through k_sw_s.
+; sysconf's K_SYS entry: the plain switched call, k_switched, with no
+; storage gate and no indirection — it is the switched round trip the
+; process test measures against its line, and it stays what was measured.
+; Every other switched syscall's stub stands beside k_sw_s (kwin.asm).
 k_sw_sysconf:
         k_switched KS_SYSCONF
-k_sw_open:
-        k_sw_stub KS_OPEN
-k_sw_close:
-        k_sw_stub KS_CLOSE
-k_sw_lseek:
-        k_sw_stub KS_LSEEK
-k_sw_stat:
-        k_sw_stub KS_STAT
-k_sw_readdir:
-        k_sw_stub KS_READDIR
-k_sw_chdir:
-        k_sw_stub KS_CHDIR
-k_sw_exec:
-        k_sw_stub KS_EXEC
-k_sw_read:
-        k_sw_stub KS_READ
-k_sw_unlink:
-        k_sw_stub KS_UNLINK
-k_sw_mkdir:
-        k_sw_stub KS_MKDIR
-k_sw_rmdir:
-        k_sw_stub KS_RMDIR
-k_sw_rename:
-        k_sw_stub KS_RENAME
-k_sw_spawnv:
-        k_sw_stub KS_SPAWNV
-k_sw_getcwd:
-        k_sw_stub KS_GETCWD
-k_sw_chmod:
-        k_sw_stub KS_CHMOD
-k_sw_time:
-        k_sw_stub KS_RTC_READ           ; SYS_TIME is the clock's reading
-k_sw_procinfo:
-        k_sw_stub KS_PROCINFO
-k_sw_segalloc:
-        k_sw_stub KS_SEGALLOC
-k_sw_segfree:
-        k_sw_stub KS_SEGFREE
-k_sw_segmap:
-        k_sw_stub KS_SEGMAP
-k_sw_kill:
-        k_sw_stub KS_KILL
-k_sw_signal:
-        k_sw_stub KS_SIGNAL
-k_sw_dosenter:
-        k_sw_stub KS_DOSENTER
-k_sw_ttymode:
-        k_sw_stub KS_TTYMODE
-k_sw_ttyline:
-        k_sw_stub KS_TTYLINE
-

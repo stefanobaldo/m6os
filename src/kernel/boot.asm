@@ -8,8 +8,9 @@
 ; before the first pipe — and the first pipe_write overwrites it. Nothing
 ; here may be reached once k_main has jumped on: the routines are k_main
 ; itself and what it calls once and nothing else calls — the interrupt
-; vector, mapper detection and the allocator's tables, the loading of the
-; switched part, and the boot failure. The console's and the keyboard's
+; vector, the font moved to where the console keeps it, mapper detection
+; and the allocator's tables, the loading of the switched part, and the
+; boot failure. The console's and the keyboard's
 ; set-up stay resident: the exit of an MSX-DOS program runs them again
 ; (k_dos_check, dos.asm). The scheduler's first row and the release of the
 ; loader's pages run in the switched part (KS_BOOT, ks_boot.asm). The image
@@ -32,6 +33,14 @@
 k_main:
         call    k_irq_init
         ei
+        ld      a,(K_REC+KR_VDPWR)      ; the VDP's ports, for the font move
+        ld      (vdp_dat),a
+        inc     a
+        ld      (vdp_ctl),a
+        ld      a,(K_REC+KR_VDPREG+4)   ; R#4: A16-A11 of the font; elsewhere
+        and     3Fh                     ; than V_PAT, it is moved — before the
+        cp      V_PAT>>11               ; blink table over it is cleared
+        call    nz,vdp_move_font
         call    con_init
         call    kbd_init
         ld      hl,K_REC+KR_SEG64K      ; what is in each page now
@@ -380,4 +389,48 @@ kwin_load:
         ret
 .noseg: ld      a,0F5h
         or      a
+        ret
+
+; vdp_move_font — A = the previous system's R#4: copy the 2048-byte font
+; from where it says to V_PAT, 64 bytes at a time through con_linebuf.
+; A16-A14 are ignored: no BIOS keeps SCREEN 0's font above 16K. Corrupts
+; everything.
+vdp_move_font:
+        and     07h
+        add     a,a
+        add     a,a
+        add     a,a
+        ld      h,a
+        ld      l,0                     ; hl = the source
+        ld      de,V_PAT
+        ld      b,2048/64
+.chunk: push    bc
+        push    de
+        push    hl
+        call    vdp_setrd
+        ld      a,(vdp_dat)
+        ld      c,a
+        ld      b,64
+        ld      hl,con_linebuf
+.rd:    ini
+        jr      nz,.rd
+        pop     hl
+        ld      bc,64
+        add     hl,bc
+        ex      (sp),hl                 ; hl = the destination, source saved
+        call    vdp_setwrt
+        ld      a,(vdp_dat)
+        ld      c,a
+        ld      b,64
+        push    hl
+        ld      hl,con_linebuf
+.wr:    outi
+        jr      nz,.wr
+        pop     hl
+        ld      bc,64
+        add     hl,bc
+        ex      de,hl                   ; de = the next destination
+        pop     hl                      ; hl = the next source
+        pop     bc
+        djnz    .chunk
         ret

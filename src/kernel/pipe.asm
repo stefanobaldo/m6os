@@ -265,8 +265,9 @@ pipe_write:
         ld      (pp_len),iy
         call    pi_row
         ld      (pp_row),hl
-        ld      de,PI_READERS
-        add     hl,de
+        inc     hl
+        inc     hl
+        inc     hl                      ; PI_READERS
         ld      a,(hl)
         or      a
         jr      z,.noreader
@@ -585,8 +586,9 @@ pi_count:
         and     0Fh
         ld      (pp_n),a
         call    pi_row
-        ld      de,PI_READERS
-        add     hl,de
+        inc     hl
+        inc     hl
+        inc     hl                      ; PI_READERS
         bit     4,c                     ; FD_PIPE_W has it, FD_PIPE_R not
         ret     z
         inc     hl                      ; PI_WRITERS

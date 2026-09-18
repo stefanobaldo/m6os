@@ -10,8 +10,8 @@
 ; VDP backend, the keyboard, the Nextor driver call, the segment
 ; allocator, the kernel window and the syscall gate, the scheduler and its
 ; process table, the process, the resident syscalls, and init. The boot
-; sequence — k_main, mapper detection, the loading of the switched part
-; (boot.asm) — runs once and lies under the pipe buffers, which overwrite
+; sequence — k_main, the font's move, mapper detection, the loading of the
+; switched part (boot.asm) — runs once and lies under the pipe buffers, which overwrite
 ; it; the scheduler's first row is
 ; set up from the switched part (KS_BOOT). The cold part of the kernel is
 ; that second image, kseg.asm, switched into page 2 on demand; it calls
@@ -234,6 +234,7 @@ k_end:
 ; terminal's line, the keyboard queue and the kernel stack's watermark.
 K_IMAGE_END     equ k_end
 K_STACK_LOW     equ k_stack
+K_IMAGE_ROOF    equ K_HINGE             ; what the image must end below
 K_IDLE_HALT     equ sched_idle_halt
 K_PIPE_TAB      equ k_pipe
 K_SIGFLAG       equ k_sigflag
@@ -245,6 +246,7 @@ K_LD_LEN        equ ld_len
 K_KBCOUNT       equ kbd_count
         EXPORT  K_IMAGE_END
         EXPORT  K_STACK_LOW
+        EXPORT  K_IMAGE_ROOF
         EXPORT  K_IDLE_HALT
         EXPORT  K_PIPE_TAB
         EXPORT  K_SIGFLAG

@@ -352,12 +352,6 @@ con_newline:
         ld      a,10
         jp      con_putc
 
-; con_dec8 — A in decimal. Corrupts AF, DE, HL.
-con_dec8:
-        ld      l,a
-        ld      h,0
-        jp      con_dec16
-
 ; con_hex16 / con_hex8 — HL / A in hexadecimal. Preserve BC, DE, HL.
 con_hex16:
         ld      a,h
