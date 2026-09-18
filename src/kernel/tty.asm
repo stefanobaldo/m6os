@@ -281,79 +281,9 @@ tty_cursor_off:
         ld      c,(hl)
         jp      vdp_cursor_off
 
-; sys_ttymode — SYS_TTYMODE: A = TTY_CANON, TTY_RAW or TTY_RECALL. Out:
-; L = the mode that was. EINVAL for anything else. The mode is the
-; terminal's; a line delivered in part stays in the buffer across a
-; switch, an open line is dropped.
-sys_ttymode:
-        cp      TTY_RECALL+1
-        jr      nc,.inval
-        ld      hl,tty_mode
-        ld      l,(hl)
-        ld      h,0
-        ld      (tty_mode),a
-        ld      a,(ld_open)
-        or      a
-        jr      z,.set
-        xor     a
-        ld      (ld_open),a
-        ld      (ld_len),a
-        ld      (ld_pos),a
-.set:   xor     a                       ; CF clear
-        ret
-.inval: ld      a,E_INVAL
-        scf
-        ret
-
-; sys_ttyline — SYS_TTYLINE: HL = a line, BC = its length, 0 to
-; TTY_LINE-1. The open line replaced by it, or one opened at the cursor:
-; the old line's cells blanked, the bytes copied, echoed, the cursor at
-; their end. EINVAL for a longer one, EFAULT for a buffer reaching page 3
-; (process 0's may be anywhere), both before anything is touched. The
-; copy is resident — the caller's buffer may be in page 2, which the
-; switched part takes — around two calls into the editor. Corrupts
-; everything. Its EINVAL exit is sys_ttymode's.
-sys_ttyline:
-        ld      a,b
-        or      a
-        jr      nz,sys_ttymode.inval
-        ld      a,c
-        cp      TTY_LINE
-        jr      nc,sys_ttymode.inval
-        call    k_ubuf
-        jp      c,pi_fault              ; refused, not written through
-        push    hl
-        push    bc
-        ld      a,(ld_open)
-        or      a
-        jr      nz,.open
-        xor     a                       ; nothing open: a line at the cursor
-        ld      (ld_len),a
-        ld      (ld_pos),a
-        ld      (ld_cur),a
-        ld      a,(con_col)
-        ld      (ld_col),a
-        ld      a,1
-        ld      (ld_open),a
-.open:  ld      a,15h                   ; ^U: the old line's cells blanked
-        ld      hl,KS_TTY_KEY
-        call    tty_ks
-        pop     bc
-        pop     hl
-        ld      a,c
-        ld      (ld_len),a
-        ld      de,ld_buf
-        or      a
-        jr      z,.set
-        ldir
-.set:   ld      hl,KS_TTY_SET
-        call    tty_ks
-        xor     a                       ; CF clear
-        ret
-
-tty_mode:       db TTY_CANON            ; the terminal's mode
-; The line's state, laid out as LD_* in kernel.inc say: the editor in the
-; switched part reaches it through IX.
+; The line's state, laid out as LD_* in kernel.inc say: the editor and
+; the two terminal syscalls in the switched part reach it through IX,
+; from K_LDSTATE; the mode is part of it.
 ld_state:
 ld_len:         db 0                    ; bytes in the line
 ld_pos:         db 0                    ; of them, delivered already
@@ -361,9 +291,10 @@ ld_eof:         db 0                    ; a ^D on an empty line is owed
 ld_col:         db 0                    ; the column the line started at
 ld_cur:         db 0                    ; the cursor: an index, 0 to ld_len
 ld_open:        db 0                    ; the line is open (TTY_RECALL)
+tty_mode:       db TTY_CANON            ; the terminal's mode
 ld_buf:         ds TTY_LINE             ; the line
 ld_key:         db 0,10                 ; what an arrow delivers
         ASSERT  ld_len == ld_state+LD_LEN && ld_pos == ld_state+LD_POS
         ASSERT  ld_eof == ld_state+LD_EOF && ld_col == ld_state+LD_COL
         ASSERT  ld_cur == ld_state+LD_CUR && ld_open == ld_state+LD_OPEN
-        ASSERT  ld_buf == ld_state+LD_BUF
+        ASSERT  tty_mode == ld_state+LD_MODE && ld_buf == ld_state+LD_BUF

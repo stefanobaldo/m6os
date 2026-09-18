@@ -45,6 +45,18 @@ K_SYS           equ K_BASE+112  ; K_SYS_N entries of JP, 3 bytes each: the
                                 ;     syscall returns ENOSYS
 K_SYS_N         equ 48
 K_REC           equ K_BASE+256  ; the capture record, KREC_SIZE bytes
+K_KBDLAST       equ K_BASE+392  ; dw: -> the keyboard scan's baseline, 11
+                                ;     bytes (kbd.asm)
+K_LDSTATE       equ K_BASE+394  ; dw: -> the terminal's line state, laid out
+                                ;     as LD_* (tty.asm)
+K_CONCUR        equ K_BASE+396  ; dw: -> the console's cursor: the row, then
+                                ;     the column (con.asm)
+K_DOSTMPL       equ K_BASE+398  ; dw: -> the hinge's two stubs, K_HINGE_STUBS
+                                ;     bytes, the image dosenter copies (dos.asm)
+                                ; The four name resident objects the switched
+                                ; part reaches by address, which the header
+                                ; otherwise does not give it. The record's
+                                ; room to grow ends at K_KBDLAST.
 K_VOL           equ K_BASE+400  ; the volume table (blk.asm): VOL_N rows of
                                 ;     VOL_SIZE bytes, filled at boot by the
                                 ;     switched part, read by blk_rw
@@ -85,7 +97,7 @@ K_API2          equ K_BASE+2048 ; API2_N entries of JP, 3 bytes each: what
                                 ;     beyond K_API, which is full; the same
                                 ;     rules — the order is fixed and only
                                 ;     grows. The image's code starts after it
-API2_N          equ 2
+API2_N          equ 12
 NOFILE          equ 8
 FD_NONE         equ 0FFh
 FD_CON          equ 0FEh        ; the console: write
@@ -175,6 +187,17 @@ API_ROW_READ    equ 31          ; A = a row -> HL -> its CON_COLS cells
 ; The second table's entries (kernel.asm). Contracts are the routines' own.
 API2_MEM_OWN    equ 0           ; A = segment, B = the new owner (mem.asm)
 API2_MEM_RELEASE equ 1          ; A = a segment reserved at boot: freed
+API2_MEM_OWNER  equ 2           ; A = segment -> A = its owner byte
+API2_CON_INIT   equ 3           ; the console up (con.asm)
+API2_KBD_INIT   equ 4           ; the keyboard's baseline (kbd.asm)
+API2_VDP_CLEAR_ROWS equ 5       ; A = first row, B = count: spaces
+API2_PX_ROW     equ 6           ; A = pid -> HL -> its extension row
+API2_SIG_SEND   equ 7           ; HL = a row, C = a signal; under di
+API2_SIG_BIT    equ 8           ; A = a signal -> A = its PX_SIGIGN bit; CF
+API2_SIG_STUB   equ 9           ; the current process dies of its signal
+API2_CON_CURSOR equ 10          ; -> L = the console's row, H = its column
+API2_DOS_TAIL   equ 11          ; dosenter's crossing: the pages back, the
+                                ; hinge's second stub; never returns
 
 ; The syscalls (sys.asm, proc.asm, kseg.asm) and their table indices. A
 ; process calls K_SYS+3*n. Arguments in A, HL, DE, BC as each syscall says;
@@ -334,7 +357,8 @@ LD_COL          equ 3           ; the column the line started at
 LD_CUR          equ 4           ; the cursor: an index, 0 to the length
 LD_OPEN         equ 5           ; the line is open: the next read goes on
                                 ; with it instead of starting one
-LD_BUF          equ 6           ; the line, TTY_LINE bytes
+LD_MODE         equ 6           ; the terminal's mode: TTY_*
+LD_BUF          equ 7           ; the line, TTY_LINE bytes
 
 O_RDONLY        equ 0           ; open's flags: the access mode in bits 0-1
 O_WRONLY        equ 1           ; (3 is EINVAL), then
@@ -456,6 +480,17 @@ KS_GETCWD       equ KS_TABLE2+48 ; (ks_vfs.asm)
 KS_CHMOD        equ KS_TABLE2+51 ; (ks_vfsw.asm)
 KS_TTY_KEY      equ KS_TABLE2+54 ; the line editor: A = a key (ks_tty.asm)
 KS_TTY_SET      equ KS_TABLE2+57 ; the line replaced: echoed, cursor at its end
+KS_DOS_CHECK    equ KS_TABLE2+60 ; an MSX-DOS program's exit (ks_sys.asm):
+                                ; IX -> kbd_last, IY -> con_row; A kept
+KS_PROCINFO     equ KS_TABLE2+63 ; the cold syscalls, through k_sw_s
+KS_SEGALLOC     equ KS_TABLE2+66
+KS_SEGFREE      equ KS_TABLE2+69
+KS_SEGMAP       equ KS_TABLE2+72
+KS_KILL         equ KS_TABLE2+75
+KS_SIGNAL       equ KS_TABLE2+78
+KS_DOSENTER     equ KS_TABLE2+81 ; never returns: API2_DOS_TAIL
+KS_TTYMODE      equ KS_TABLE2+84
+KS_TTYLINE      equ KS_TABLE2+87
 
 ; The window (kwin.asm) and the storage gate: what is in page 2 and page 1
 ; while the switched part of the kernel runs. kwin_enter puts the switched

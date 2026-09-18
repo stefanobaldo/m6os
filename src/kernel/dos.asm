@@ -18,13 +18,18 @@
 ; hinge's stack; the program's own stack, in the legacy copy of page 3, is
 ; never touched while the resident is in.
 ;
-; The kernel's part is small and resident. A process that will become a
-; program allocates segments (segalloc), maps two of them into its pages 1
-; and 2 (segmap, which keeps them there across every switch) and fills a
-; third with the layer and a copy of this page — all in user mode; then
-; dosenter writes the hinge into both images, marks the process and
-; crosses into the layer, which loads the program through read and enters
-; it. A crossing back into the kernel carries a syscall: its arguments in
+; The kernel's part is small. A process that will become a program
+; allocates segments (segalloc), maps two of them into its pages 1 and 2
+; (segmap, which keeps them there across every switch) and fills a third
+; with the layer and a copy of this page — all in user mode; then dosenter
+; writes the hinge into both images, marks the process and crosses into
+; the layer, which loads the program through read and enters it. What is
+; resident is the crossing itself — k_dos_call, a hot path — the hinge's
+; template, which names it, and dos_tail, the last step of dosenter,
+; which gives the process its pages back and cannot run from the window
+; it closes. The rest — dosenter, segalloc, segfree, segmap, and the
+; exit's check that puts the console and the keyboard back — runs once
+; per program and lives in the switched part (ks_sys.asm). A crossing back into the kernel carries a syscall: its arguments in
 ; A, HL, DE, BC as the syscall wants them (AF in AF' across the stub,
 ; which uses A), its number in C', and the segments the program has in
 ; pages 0-2 — its own or PUT_Pn's — in IXL, IXH, IYH, written to K_MAP
@@ -37,81 +42,6 @@
 ;
 ; One legacy process at a time: the hinge's stubs name its segments, and
 ; K_DOSPID in the header says whose they are.
-
-; sys_dosenter — SYS_DOSENTER: A = the legacy page-3 segment, the
-; caller's, filled by the caller as the layer expects; the caller's pages
-; 1 and 2 hold the program's through segmap. The hinge into this page
-; and into the legacy copy, the BIOS's cursor in that copy put where the
-; console's is, the row marked, and the second stub taken. Never returns
-; on success. E_PERM (process 0), E_BUSY (a legacy process exists),
-; E_INVAL (a segment not the caller's).
-sys_dosenter:
-        ld      c,a
-        ld      a,(k_pid)
-        or      a
-        jr      z,.perm
-        ld      b,a
-        ld      a,(K_DOSPID)
-        or      a
-        jr      nz,.busy
-        ld      l,c
-        ld      h,0
-        ld      de,mem_owner
-        add     hl,de
-        ld      a,(hl)
-        cp      b
-        jr      nz,.inval
-        ld      a,c
-        ld      (kd_leg),a              ; the ldir below takes BC
-        ; The hinge into this page: the template, its two segments patched.
-        ld      hl,dos_tmpl
-        ld      de,K_HINGE
-        ld      bc,K_HINGE_STUBS
-        ldir
-        ld      a,(k_map+3)
-        ld      (K_HINGE+1),a           ; this page's segment
-        ld      a,(kd_leg)
-        ld      (K_HINGE2+1),a          ; the legacy segment
-        ; Into the legacy copy, through page 2, with the cursor.
-        di
-        out     (0FEh),a
-        ld      hl,K_HINGE
-        ld      de,K_HINGE-4000h
-        ld      bc,K_HINGE_STUBS
-        ldir
-        ld      a,(con_row)
-        inc     a
-        ld      (B_CSRY-4000h),a
-        ld      a,(con_col)
-        inc     a
-        ld      (B_CSRX-4000h),a
-        ld      a,(k_map+2)
-        out     (0FEh),a
-        ; The row: three pages, its page 0 remembered, SIGINT ignored.
-        ld      hl,(k_cur)
-        ld      de,P_NPAGES
-        add     hl,de
-        ld      (hl),3
-        inc     hl
-        ld      a,(hl)
-        ld      (K_DOSP0),a
-        ld      a,(k_pid)
-        ld      (K_DOSPID),a
-        call    px_row
-        ld      de,PX_SIGIGN
-        add     hl,de
-        set     0,(hl)                  ; SIGIGN_INT
-        ld      sp,K_HINGE_SP
-        jp      K_HINGE2
-.perm:  ld      a,E_PERM
-        scf
-        ret
-.busy:  ld      a,E_BUSY
-        scf
-        ret
-.inval: ld      a,E_INVAL
-        scf
-        ret
 
 ; dos_tmpl — the hinge's two stubs, K_HINGE_STUBS bytes copied to K_HINGE
 ; with the segment of each "ld a,n" patched. Position-independent but for
@@ -174,179 +104,14 @@ k_dos_call:
         jp      sys_exit                ; A = the code; k_dos_check inside
 kd_jp:  jp      0                       ; the operand is the syscall's entry
 
-; k_dos_check — the first thing sys_exit does, on the syscall stack, with
-; interrupts as they were: nothing unless the dying process is the legacy
-; one. Then: the process's original page 0 back in page 0, so that the
-; interrupt vector is there whatever the program mapped; the PSG silenced;
-; the console up again, keeping the screen and the cursor when the program
-; left SCREEN 0 at 80 columns and clearing it otherwise — read from the
-; BIOS variables in the legacy copy, through page 2; the keyboard's
-; baseline taken from the matrix as it is, so a key still held does not
-; register; K_DOSPID cleared. Preserves A (the status).
-k_dos_check:
-        push    af
-        ld      hl,K_DOSPID
-        ld      a,(k_pid)
-        cp      (hl)
-        jp      nz,.out
-        ld      (hl),0
-        di
-        ld      a,(K_DOSP0)
-        ld      (k_map+0),a
-        out     (0FCh),a
-        ei
-        ld      a,8                     ; PSG channels A, B, C silent
-        call    .psg0
-        ld      a,9
-        call    .psg0
-        ld      a,10
-        call    .psg0
-        ld      a,(K_HINGE2+1)          ; the legacy segment, into page 2
-        out     (0FEh),a
-        ld      a,(B_SCRMOD-4000h)
-        ld      (kd_scr),a
-        ld      a,(B_LINLEN-4000h)
-        ld      (kd_cols),a
-        ld      a,(B_CSRY-4000h)
-        ld      (kd_row),a
-        ld      a,(B_CSRX-4000h)
-        ld      (kd_col),a
-        ld      a,(k_map+2)
-        out     (0FEh),a
-        call    con_init
-        ld      a,(kd_scr)
-        or      a
-        jr      nz,.clear
-        ld      a,(kd_cols)
-        cp      CON_COLS
-        jr      nz,.clear
-        ld      a,(kd_row)
-        dec     a
-        cp      CON_ROWS
-        jr      c,.row
-        ld      a,CON_ROWS-1
-.row:   ld      (con_row),a
-        ld      a,(kd_col)
-        dec     a
-        cp      CON_COLS
-        jr      c,.col
-        xor     a
-.col:   ld      (con_col),a
-        jr      .kbd
-.clear: xor     a
-        ld      b,CON_ROWS
-        call    vdp_clear_rows
-        xor     a
-        ld      (con_row),a
-        ld      (con_col),a
-.kbd:   call    kbd_init
-        ld      hl,kbd_last             ; the matrix as it is now is the
-        ld      b,11                    ; scan's baseline: a key still held
-        ld      c,0                     ; — the RET that ended the program —
-.row2:  in      a,(PPI_C)               ; is not a new press
-        and     0F0h
-        or      c
-        out     (PPI_C),a
-        in      a,(PPI_B)
-        ld      (hl),a
-        inc     hl
-        inc     c
-        djnz    .row2
-.out:   pop     af
-        ret
-.psg0:  out     (0A0h),a
-        xor     a
-        out     (0A1h),a
-        ret
+; dos_tail — API2_DOS_TAIL, from the switched dosenter (ks_sys.asm) with
+; interrupts off and the hinge written: the process's pages 1 and 2 back
+; — the storage gate and the window are left here, since the crossing
+; never returns through the gate — and the second stub taken on the
+; hinge's stack. Never returns.
+dos_tail:
+        k_stgate_leave
+        kwin_leave
+        ld      sp,K_HINGE_SP
+        jp      K_HINGE2
 
-; sys_segalloc — SYS_SEGALLOC: a segment for the caller, owner its pid,
-; freed with everything else at its exit. Out: HL = A = the segment.
-; E_NOMEM; E_PERM from process 0, whose segments nobody frees.
-sys_segalloc:
-        ld      a,(k_pid)
-        or      a
-        jr      z,.perm
-        ld      b,a
-        call    mem_alloc
-        jr      c,.nomem
-        ld      l,a
-        ld      h,0
-        or      a
-        ret
-.nomem: ld      a,E_NOMEM
-        scf
-        ret
-.perm:  ld      a,E_PERM
-        scf
-        ret
-
-; sys_segfree — SYS_SEGFREE: A = a segment: freed, when it is the caller's
-; and not one of its pages. E_INVAL otherwise. Out: HL = 0.
-sys_segfree:
-        ld      hl,(k_cur)
-        ld      de,P_SEG
-        add     hl,de
-        cp      (hl)
-        jr      z,.inval
-        inc     hl
-        cp      (hl)
-        jr      z,.inval
-        inc     hl
-        cp      (hl)
-        jr      z,.inval
-        ld      hl,k_pid
-        ld      b,(hl)
-        call    mem_free
-        jr      c,.inval
-        ld      hl,0
-        or      a
-        ret
-.inval: ld      a,E_INVAL
-        scf
-        ret
-
-; sys_segmap — SYS_SEGMAP: A = a page, 1 or 2; B = a segment the caller
-; owns. It becomes the process's page — P_SEG, K_MAP and the mapper — so
-; that the gate and the scheduler keep it there. E_INVAL for another
-; page or another owner. Out: HL = 0.
-sys_segmap:
-        dec     a
-        cp      2
-        jr      nc,.inval               ; page 0 or 3
-        inc     a
-        ld      c,a                     ; the page
-        ld      l,b
-        ld      h,0
-        ld      de,mem_owner
-        add     hl,de
-        ld      a,(k_pid)
-        cp      (hl)
-        jr      nz,.inval
-        ld      hl,(k_cur)
-        ld      de,P_SEG
-        add     hl,de
-        ld      e,c
-        ld      d,0
-        add     hl,de
-        di
-        ld      (hl),b
-        ld      hl,k_map
-        add     hl,de
-        ld      (hl),b
-        ld      a,c
-        add     a,0FCh
-        ld      c,a
-        out     (c),b
-        ei
-        ld      hl,0
-        or      a
-        ret
-.inval: ld      a,E_INVAL
-        scf
-        ret
-
-kd_leg:         db 0            ; sys_dosenter: the legacy segment
-kd_scr:         db 0            ; k_dos_check's readings of the legacy copy
-kd_cols:        db 0
-kd_row:         db 0
-kd_col:         db 0

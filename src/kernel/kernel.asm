@@ -99,23 +99,31 @@ k_sys:
         jp      k_sw_spawnv             ; SYS_SPAWNV, in the switched part
         jp      sys_waitpid             ; SYS_WAITPID (proc.asm)
         jp      sys_sleep               ; SYS_SLEEP (px.asm)
-        jp      sys_procinfo            ; SYS_PROCINFO (sys.asm)
+        jp      k_sw_procinfo           ; SYS_PROCINFO, in the switched part
         jp      k_sw_getcwd             ; SYS_GETCWD, in the switched part
         jp      k_sw_time               ; SYS_TIME, the same
         jp      k_sw_chmod              ; SYS_CHMOD, the same
-        jp      sys_ttymode             ; SYS_TTYMODE (tty.asm)
-        jp      sys_kill                ; SYS_KILL (sig.asm)
-        jp      sys_signal              ; SYS_SIGNAL (sig.asm)
-        jp      sys_ttyline             ; SYS_TTYLINE (tty.asm)
-        jp      sys_dosenter            ; SYS_DOSENTER (dos.asm)
-        jp      sys_segalloc            ; SYS_SEGALLOC
-        jp      sys_segfree             ; SYS_SEGFREE
-        jp      sys_segmap              ; SYS_SEGMAP
+        jp      k_sw_ttymode            ; SYS_TTYMODE, in the switched part
+        jp      k_sw_kill               ; SYS_KILL, the same
+        jp      k_sw_signal             ; SYS_SIGNAL, the same
+        jp      k_sw_ttyline            ; SYS_TTYLINE, the same
+        jp      k_sw_dosenter           ; SYS_DOSENTER, the same
+        jp      k_sw_segalloc           ; SYS_SEGALLOC, the same
+        jp      k_sw_segfree            ; SYS_SEGFREE, the same
+        jp      k_sw_segmap             ; SYS_SEGMAP, the same
         DUP     K_SYS_N-SYS_N
         jp      sys_enosys
         EDUP
 k_rec:  ds      KREC_SIZE
-        block   K_VOL-$                 ; where the record grows
+        block   K_KBDLAST-$             ; where the record grows
+k_kbdlast:
+        dw      kbd_last                ; what the switched part reaches by
+k_ldstate:                              ; address (kernel.inc)
+        dw      ld_state
+k_concur:
+        dw      con_row
+k_dostmpl:
+        dw      dos_tmpl
 k_vol:  ds      VOL_N*VOL_SIZE          ; the volume table (blk.asm)
 k_nvol: db      0
 k_root: db      VOL_NONE
@@ -143,6 +151,16 @@ k_pipebuf:                              ; the pipe buffers (pipe.asm), and
 k_api2:
         jp      mem_own                 ; API2_MEM_OWN
         jp      mem_release             ; API2_MEM_RELEASE
+        jp      mem_owner_of            ; API2_MEM_OWNER
+        jp      con_init                ; API2_CON_INIT
+        jp      kbd_init                ; API2_KBD_INIT
+        jp      vdp_clear_rows          ; API2_VDP_CLEAR_ROWS
+        jp      px_row                  ; API2_PX_ROW
+        jp      sig_send                ; API2_SIG_SEND
+        jp      sig_bit                 ; API2_SIG_BIT
+        jp      sig_stub                ; API2_SIG_STUB
+        jp      con_cursor              ; API2_CON_CURSOR
+        jp      dos_tail                ; API2_DOS_TAIL
         ASSERT  k_ticks == K_TICKS
         ASSERT  k_probe == K_PROBE
         ASSERT  k_probe_slot == K_PROBE_SLOT
@@ -151,6 +169,10 @@ k_api2:
         ASSERT  k_api == K_API
         ASSERT  k_sys == K_SYS
         ASSERT  k_rec == K_REC
+        ASSERT  k_kbdlast == K_KBDLAST
+        ASSERT  k_ldstate == K_LDSTATE
+        ASSERT  k_concur == K_CONCUR
+        ASSERT  k_dostmpl == K_DOSTMPL
         ASSERT  k_vol == K_VOL
         ASSERT  k_nvol == K_BLK_NVOL
         ASSERT  k_root == K_BLK_ROOT
