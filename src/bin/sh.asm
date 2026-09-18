@@ -821,7 +821,9 @@ spawn_stage:
         ld      de,s_exit
         call    str_cmp
         jp      z,do_exit
-.child: ld      a,0FFh
+.child: xor     a
+        ld      (dosretry),a
+        ld      a,0FFh
         ld      (o_in),a
         ld      (o_out),a
         ld      (o_err),a
@@ -936,7 +938,68 @@ spawn_stage:
         pop     af
 .spawned:
         jr      nc,.ok
-        ld      de,(argv)
+        ; A .com program? ENOEXEC or ENOENT for a word ending in .com,
+        ; not yet retried: the same command through /bin/dos.
+        cp      E_NOEXEC
+        jr      z,.dotcom
+        cp      E_NOENT
+        jr      nz,.nodos
+.dotcom:
+        push    af
+        ld      a,(dosretry)
+        or      a
+        jr      nz,.nodospop
+        ld      hl,(argv)
+        call    str_len                 ; bc = the word's length
+        ld      a,b
+        or      a
+        jr      nz,.suffix
+        ld      a,c
+        cp      4
+        jr      c,.nodospop
+.suffix:
+        add     hl,bc
+        dec     hl                      ; the last byte
+        ld      de,s_com+3
+        ld      b,4
+.cmp:   ld      a,(hl)
+        or      20h                     ; a letter lower-cased; . unchanged
+        ex      de,hl
+        cp      (hl)
+        ex      de,hl
+        jr      nz,.nodospop
+        dec     hl
+        dec     de
+        djnz    .cmp
+        pop     af
+        ld      a,1
+        ld      (dosretry),a
+        ; argv one word up: argv[0] becomes dos, the word its argument.
+        ld      a,(argc_s)
+        ld      l,a
+        ld      h,0
+        add     hl,hl
+        ld      de,argv+1
+        add     hl,de                   ; hl -> the terminator's high byte
+        ld      d,h
+        ld      e,l
+        inc     de
+        inc     de
+        ld      a,(argc_s)
+        inc     a
+        add     a,a
+        ld      c,a
+        ld      b,0                     ; bc = (argc + 1) words
+        lddr
+        ld      hl,s_dos
+        ld      (argv),hl
+        ld      hl,argc_s
+        inc     (hl)
+        ld      hl,s_bindos
+        jp      .spawn
+.nodospop:
+        pop     af
+.nodos: ld      de,(argv)
         call    err_file
 .failed:
         xor     a                       ; no child
@@ -1122,6 +1185,9 @@ s_prompt: db    " $ ",0
 s_q:      db    "?",0
 s_dot:    db    ".",0
 s_root:   db    "/",0
+s_dos:      db  "dos",0
+s_bindos:   db  "/bin/dos",0
+s_com:      db  ".com",0
 s_bin:    db    "/bin/",0
 s_cd:     db    "cd",0
 s_exit:   db    "exit",0
@@ -1148,6 +1214,7 @@ s_syntax: db    "syntax error",0
         bss     nstage,1
         bss     bg,1
         bss     is_last,1
+        bss     dosretry,1
         bss     rkind,1
         bss     prev_r,1
         bss     next_r,1

@@ -1,0 +1,164 @@
+# m6 — a Unix-like operating system for the MSX
+# Copyright (c) 2026 Stefano Baldo
+# SPDX-License-Identifier: BSD-3-Clause
+#
+# The harness's half of the legacy test. The machine boots M6.COM and the
+# kernel runs /etc/rc through the shell, whose programs are raw .COM
+# files run through dos; what they print goes to the screen through the
+# BIOS, so the checks read rows. When the script's last line shows, this
+# types at the login shell — a program that reads a line, ps, a program
+# that marks its legacy page 3 and waits for a key — and gives the
+# verdict, since the product has no mailbox.
+set show_screen 1
+set problems {}
+set machine [machine_info config_name]
+
+proc problem {what} {
+    lappend ::problems $what
+    puts stderr "dos.tcl: $what"
+}
+proc rows {} {
+    if {[catch {get_screen} s]} { return {} }
+    set out {}
+    foreach r [split $s \n] { lappend out [string trimright $r] }
+    return $out
+}
+proc has_row {want} {
+    foreach r [rows] { if {$r eq $want} { return 1 } }
+    return 0
+}
+proc count_rows {want} {
+    set n 0
+    foreach r [rows] { if {$r eq $want} { incr n } }
+    return $n
+}
+proc expect_screen {want msg} { if {![has_row $want]} { problem $msg } }
+proc expect_absent {want msg} { if {[has_row $want]} { problem $msg } }
+
+# The matrix: row and mask of every key typed here (kbd_map in
+# src/kernel/kbd.asm, the international layout).
+array set key {
+    a {2 0x40} c {3 0x01} d {3 0x02} e {3 0x04} h {3 0x20} i {3 0x40}
+    l {4 0x02} m {4 0x04} n {4 0x08} o {4 0x10} p {4 0x20} s {5 0x01}
+    t {5 0x02} w {5 0x10} x {5 0x20} y {5 0x40} 7 {0 0x80} / {2 0x10}
+    . {2 0x08} space {8 0x01} ret {7 0x80}
+}
+proc down {k} { keymatrixdown {*}$::key($k) }
+proc up {k}   { keymatrixup   {*}$::key($k) }
+proc at {t script} { after time $t $script }
+proc tap {t k} {
+    at $t [list down $k]
+    at [expr {$t + 0.07}] [list up $k]
+}
+proc taps {t keys} {
+    foreach k $keys {
+        tap $t $k
+        set t [expr {$t + 0.15}]
+    }
+    return $t
+}
+proc typeline {t keys} {
+    set t [taps $t $keys]
+    tap $t ret
+    return [expr {$t + 0.15}]
+}
+
+# The script's end: the login shell's prompt is on the screen.
+set stamps {}
+proc wait_rc {} {
+    if {[has_row "rc done"] && [has_row {/ $}]} {
+        puts stderr "dos.tcl: rc done at [format %.2f [machine_info time]] s"
+        foreach r [rows] { if {[string is integer -strict $r]} { lappend ::stamps $r } }
+        check_rc
+        type_at_shell
+        return
+    }
+    after time 0.2 wait_rc
+}
+after time 0.5 wait_rc
+
+proc check_rc {} {
+    expect_screen "rc start" "rc start not on the screen"
+    expect_screen {[7]} "exit7's _TERM with 7 was not reported as \[7\]"
+    expect_screen "jp0" "jp0 did not print before its jp 0"
+    expect_screen "ret" "ret did not print before its ret"
+    if {$::machine eq "m6-msx2-128k"} {
+        expect_screen "mapper ok noseg" "the mapper program did not end in mapper ok noseg on the 128K machine, where nothing is free"
+    } else {
+        expect_screen "mapper ok seg" "the mapper program did not end in mapper ok seg on the 4 MB machine"
+    }
+    expect_screen "dos: nofile.com: ENOENT" "the shell's .com fallback did not reach dos for a missing file"
+    set hellos [count_rows "hello from dos"]
+    if {$::machine eq "m6-msx2-128k"} {
+        expect_screen "dos: /dos/hello.com: ENOMEM" "the launch beside a live sleep was not refused with ENOMEM on the 128K machine"
+        if {$hellos != 2} { problem "hello from dos printed $hellos times, not 2, on the 128K machine" }
+    } else {
+        expect_absent "dos: /dos/hello.com: ENOMEM" "the launch beside a live sleep was refused on the 4 MB machine"
+        if {$hellos != 3} { problem "hello from dos printed $hellos times, not 3, on the 4 MB machine" }
+    }
+    # The console line's figure, a hint: the row conout 10000: N ticks.
+    set found 0
+    foreach r [rows] {
+        if {[regexp {^conout 10000: (\d+) ticks$} $r -> n]} {
+            set found 1
+            puts stderr [format "harness: %s: 10 000 _CONOUTs through the BIOS: %d ticks, %.1f ms each (an emulator's figure: a hint)" $::test $n [expr {$n * 1000.0 / 60 / 10000}]]
+        }
+    }
+    if {!$found} { problem "con10k did not print its ticks" }
+}
+
+proc type_at_shell {} {
+    # A line read by _BUFIN and written back with its length.
+    set t [typeline 0.5 {d o s space / d o s / e c h o . c o m}]
+    set t [typeline [expr {$t + 1.5}] {t y p e d space l i n e}]
+    at [expr {$t + 1.0}] {expect_screen "typed line 10" "the line typed into _BUFIN did not come back with its length"}
+    # ps: init, the shell, ps itself, and nothing else — the programs'
+    # rows and segments are gone.
+    set t [typeline [expr {$t + 1.2}] {p s}]
+    at [expr {$t + 1.0}] check_ps
+    # The swap: M6 in the legacy page 3 while the program waits, the
+    # kernel's own bytes there once the prompt is back.
+    set t [typeline [expr {$t + 1.2}] {d o s space / d o s / s w a p . c o m}]
+    at [expr {$t + 1.5}] {
+        expect_screen "swap: M6 at C800h, press a key" "swap did not print its line"
+        if {[peek 0xC800] != 0x4D || [peek 0xC801] != 0x36} {
+            problem [format "C800h reads %02X %02X while the program runs, not M6: the legacy page 3 is not in" [peek 0xC800] [peek 0xC801]]
+        }
+    }
+    tap [expr {$t + 1.7}] space
+    at [expr {$t + 2.7}] {
+        if {[peek 0xC800] == 0x4D && [peek 0xC801] == 0x36} {
+            problem "C800h still reads M6 after the program ended: the kernel's page 3 is not back"
+        }
+        if {[lindex [rows] end] ne {} && ![has_row {/ $}]} { problem "no prompt after swap" }
+        finish_up
+    }
+}
+
+proc check_ps {} {
+    set rs [rows]
+    set i [lsearch -exact $rs "PID PPID ST PG"]
+    if {$i < 0} { problem "ps printed no header"; return }
+    set body [lrange $rs [expr {$i + 1}] end]
+    set n 0
+    foreach r $body {
+        if {[regexp {^ *\d+ +(\d+|-) +[A-Z] +\d+$} $r]} { incr n } else { break }
+    }
+    if {$n != 3} { problem "ps shows $n rows, not 3 (init, the shell, ps)" }
+    if {[lindex $body $n] ne {/ $}} { problem "no prompt after ps's rows" }
+}
+
+proc finish_up {} {
+    if {[llength $::stamps] == 2} {
+        set ticks [expr {[lindex $::stamps 1] - [lindex $::stamps 0]}]
+        puts stderr [format "harness: %s: dos of a 30K program, sixty in a row: %d ticks, %.1f ms each, a ceiling on the 600 ms line (an emulator's figure: a hint)" \
+            $::test $ticks [expr {$ticks * 1000.0 / 60 / 58}]]
+    } else {
+        problem "[llength $::stamps] stamps on the screen, not 2"
+    }
+    if {[llength $::problems]} {
+        finish 1 "FAIL: [join $::problems {; }]"
+    } else {
+        finish 0 "PASS ([format %.1f [machine_info time]] s emulated)"
+    }
+}
