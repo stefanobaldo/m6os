@@ -22,7 +22,9 @@
 ; with HL = 0 — so that the child, resumed on it by the scheduler, comes
 ; back from the call with 0 where the parent gets the pid. fork copies
 ; every page of the parent into segments of the child's, the frame with
-; them, and drops its own copy of the frame on the way out. vfork copies
+; them, and drops its own copy of the frame on the way out; the row, the
+; segments and the inheritance are spawn's own steps, pr_new and
+; pr_start, which both call. vfork copies
 ; nothing: the child runs on the parent's pages and stack, the parent
 ; sleeps until the child exits, and the return address the child's pushes
 ; overwrite is kept in the parent's row. A vfork child does nothing but
@@ -80,40 +82,9 @@ sp_create:
         or      a
         sbc     hl,bc                   ; minus its length
         jp      c,.inval                ; it does not fit
-        ; A row.
-        ld      hl,K_PROC
-        ld      b,NPROC-1
-.row:   ld      a,l
-        add     a,P_SIZE
-        ld      l,a
-        ld      a,(hl)
-        or      a                       ; PS_FREE
-        jr      z,.got
-        djnz    .row
-        ld      a,E_AGAIN
-        scf
-        ret
-.got:   ld      (sp_row),hl
-        ld      a,l
-        rrca
-        rrca
-        rrca
-        rrca                            ; the pid: the row's index
-        ld      (sp_pid),a
-        ; The segments, as that pid.
         ld      a,(sp_pages)
-        ld      c,a
-        ld      hl,(sp_row)
-        ld      de,P_SEG
-        add     hl,de
-.alloc: ld      a,(sp_pid)
-        ld      b,a
-        call    mem_alloc
-        jp      c,.nomem
-        ld      (hl),a
-        inc     hl
-        dec     c
-        jr      nz,.alloc
+        call    pr_new                  ; a row, the pid, the segments
+        ret     c                       ; E_AGAIN or E_NOMEM
         ; Each page in turn through the window: the header in page 0, the
         ; program's slice in every page it reaches.
         ld      hl,P0_PROG
@@ -180,9 +151,68 @@ sp_create:
         call    pr_frame
         ld      a,(k_map+2)
         out     (0FEh),a
-        ; The row.
-        ld      hl,(sp_row)
         ld      de,(sp_sp)
+        jp      pr_start                ; the row, the inheritance, the ring
+.inval: ld      a,E_INVAL
+        scf
+        ret
+
+; pr_new — A = pages: a free row, the pid it means, A segments allocated
+; as that pid into its P_SEG — the first half of making a process, shared
+; by spawn and fork. Out: CF clear with sp_row, sp_pid and sp_pages set;
+; CF with E_AGAIN (no row free) or E_NOMEM (a segment short; whatever was
+; taken is back). Corrupts everything.
+pr_new:
+        ld      (sp_pages),a
+        ld      hl,K_PROC
+        ld      b,NPROC-1
+.row:   ld      a,l
+        add     a,P_SIZE
+        ld      l,a
+        ld      a,(hl)
+        or      a                       ; PS_FREE
+        jr      z,.got
+        djnz    .row
+        ld      a,E_AGAIN
+        scf
+        ret
+.got:   ld      (sp_row),hl
+        ld      a,l
+        rrca
+        rrca
+        rrca
+        rrca                            ; the pid: the row's index
+        ld      (sp_pid),a
+        ; The segments, as that pid.
+        ld      a,(sp_pages)
+        ld      c,a
+        ld      hl,(sp_row)
+        ld      de,P_SEG
+        add     hl,de
+.alloc: ld      a,(sp_pid)
+        ld      b,a
+        call    mem_alloc
+        jr      c,.nomem
+        ld      (hl),a
+        inc     hl
+        dec     c
+        jr      nz,.alloc
+        ret                             ; CF clear, from mem_alloc
+.nomem: ld      a,(sp_pid)
+        ld      b,a
+        call    mem_free_all            ; whatever was taken, back
+        ld      a,E_NOMEM
+        scf
+        ret
+
+; pr_start — DE = the child's initial stack pointer; sp_row, sp_pid and
+; sp_pages as pr_new left them, the pages filled: the second half — the
+; row (P_SP, P_PID, P_PPID the caller's, P_NPAGES, P_STATUS 0), the
+; directory and the descriptors inherited, the extension row, PS_RUN and
+; into the ring. Out: HL = A = the pid, CF clear. On the syscall stack.
+; Corrupts everything.
+pr_start:
+        ld      hl,(sp_row)
         inc     hl
         ld      (hl),e                  ; P_SP
         inc     hl
@@ -213,15 +243,6 @@ sp_create:
         ld      l,a
         ld      h,0
         or      a                       ; CF clear
-        ret
-.inval: ld      a,E_INVAL
-        scf
-        ret
-.nomem: ld      a,(sp_pid)
-        ld      b,a
-        call    mem_free_all            ; whatever was taken, back
-        ld      a,E_NOMEM
-        scf
         ret
 
 ; pr_frame — HL = the top of a process's highest page, in the window
@@ -1005,41 +1026,8 @@ fk_create:
         ld      de,P_NPAGES
         add     hl,de
         ld      a,(hl)
-        ld      (sp_pages),a
-        ; A row.
-        ld      hl,K_PROC
-        ld      b,NPROC-1
-.row:   ld      a,l
-        add     a,P_SIZE
-        ld      l,a
-        ld      a,(hl)
-        or      a                       ; PS_FREE
-        jr      z,.got
-        djnz    .row
-        ld      a,E_AGAIN
-        scf
-        ret
-.got:   ld      (sp_row),hl
-        ld      a,l
-        rrca
-        rrca
-        rrca
-        rrca                            ; the pid: the row's index
-        ld      (sp_pid),a
-        ; The segments, as that pid.
-        ld      a,(sp_pages)
-        ld      c,a
-        ld      hl,(sp_row)
-        ld      de,P_SEG
-        add     hl,de
-.alloc: ld      a,(sp_pid)
-        ld      b,a
-        call    mem_alloc
-        jp      c,.nomem
-        ld      (hl),a
-        inc     hl
-        dec     c
-        jr      nz,.alloc
+        call    pr_new                  ; a row, the pid, the segments
+        ret     c                       ; E_AGAIN or E_NOMEM: CF to fork's
         ; The copy: each page of the parent into the child's segment in
         ; the window. Page 0 stays where it is — the interrupt vector is
         ; there — so the parent's page 2 is read through page 1.
@@ -1074,46 +1062,8 @@ fk_create:
         out     (0FDh),a                ; the parent's pages back
         ld      a,(k_map+2)
         out     (0FEh),a
-        ; The row.
-        ld      hl,(sp_row)
-        ld      de,(k_usp)
-        inc     hl
-        ld      (hl),e                  ; P_SP: the frame's, in the copy
-        inc     hl
-        ld      (hl),d
-        inc     hl
-        ld      a,(sp_pid)
-        ld      (hl),a                  ; P_PID
-        inc     hl
-        ld      a,(k_pid)
-        ld      (hl),a                  ; P_PPID
-        inc     hl
-        ld      a,(sp_pages)
-        ld      (hl),a                  ; P_NPAGES
-        ld      hl,(sp_row)
-        ld      de,P_STATUS
-        add     hl,de
-        ld      (hl),0
-        ld      a,(sp_pid)
-        call    pr_inherit              ; the descriptors and the directory
-        ld      a,(sp_pid)
-        call    px_init                 ; the extension row
-        ld      hl,(sp_row)
-        ld      (hl),PS_RUN             ; P_STATE, then into the ring
-        di
-        call    sched_link
-        ei
-        ld      a,(sp_pid)
-        ld      l,a
-        ld      h,0
-        or      a                       ; CF clear
-        ret
-.nomem: ld      a,(sp_pid)
-        ld      b,a
-        call    mem_free_all            ; whatever was taken, back
-        ld      a,E_NOMEM
-        scf
-        ret
+        ld      de,(k_usp)              ; P_SP: the frame's, in the copy
+        jp      pr_start                ; the row, the inheritance, the ring
 
 ; sys_vfork — SYS_VFORK. Out: as fork's; CF with E_PERM from process 0 or
 ; E_AGAIN with no row free. The child takes the parent's pages and stack
