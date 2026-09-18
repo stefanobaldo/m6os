@@ -252,12 +252,12 @@ proc more_ls {} {
 }
 proc more_page {} {
     set rs [rows]
-    if {![string match -nocase "* cat" [lindex $rs 0]] || ![string match -nocase "* tee" [lindex $rs 22]]} {
-        problem "more's first screenful is not cat to tee: \"[lindex $rs 0]\" to \"[lindex $rs 22]\""
+    if {![string match -nocase "* cat" [lindex $rs 0]] || ![string match -nocase "* tail" [lindex $rs 22]]} {
+        problem "more's first screenful is not cat to tail: \"[lindex $rs 0]\" to \"[lindex $rs 22]\""
     }
     tap 0.3 ret
-    wait_for {[string match -nocase "* tr" [lindex [rows] 22]] && [lindex [rows] 23] eq "--More--"} more_line \
-        "RET at more's prompt did not show one more line, tr"
+    wait_for {[string match -nocase "* tee" [lindex [rows] 22]] && [lindex [rows] 23] eq "--More--"} more_line \
+        "RET at more's prompt did not show one more line, tee"
 }
 proc more_line {} {
     tap 0.3 space
@@ -278,7 +278,7 @@ proc more_quit {} {
 }
 proc more_done {} {
     set rs [rows]
-    if {[more_names $rs 1] ne {tee}} { problem "q at more's prompt left [more_names $rs 1] last, not tee" }
+    if {[more_names $rs 1] ne {tail}} { problem "q at more's prompt left [more_names $rs 1] last, not tail" }
     if {[lsearch -exact $rs "--More--"] >= 0} { problem "q left more's prompt on the screen" }
     set t [typeline 0.3 {e x i t}]
     at [expr {$t + 1.0}] check_relaunch

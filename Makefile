@@ -36,6 +36,10 @@ PROG_SRCS := $(wildcard tests/*/progs/*.asm)
 PROG_BINS := $(foreach p,$(PROG_SRCS),build/$(word 2,$(subst /, ,$(p))).progs/$(basename $(notdir $(p))))
 KERNEL    := build/kernel.bin
 KSEG      := build/kseg.bin
+# The legacy layer, src/leg/leg.asm, at its own address: what a .COM
+# program finds above its TPA, carried inside build/bin/dos.
+LEG       := build/leg.bin
+LEG_MAX   := 8448
 # The base utilities: src/bin/<name>.asm builds to build/bin/<name>, a raw
 # image for P0_PROG with the executable header (src/lib/prog.inc). Every
 # one fits one page: a file above PAGE_MAX bytes — 16K less the 256-byte
@@ -58,7 +62,7 @@ INCLUDES  := -Itests $(if $(wildcard src),-Isrc)
 
 .PHONY: all check check-sjasmplus check-openmsx check-tools fetch sizes clean distclean
 
-all: check-sjasmplus $(KERNEL) $(KSEG) $(M6COM) $(BIN_BINS) $(TEST_BINS) $(PROG_BINS) sizes
+all: check-sjasmplus $(KERNEL) $(KSEG) $(LEG) $(M6COM) $(BIN_BINS) $(TEST_BINS) $(PROG_BINS) sizes
 
 build:
 	mkdir -p build
@@ -72,6 +76,14 @@ $(KERNEL): src/kernel/kernel.asm tests/m6test.inc $(SRC_FILES) | build
 # a loader carries it and the resident copies it into a segment at boot.
 $(KSEG): src/kernel/kseg.asm $(SRC_FILES) | build
 	$(SJASMPLUS) --nologo --msg=war $(INCLUDES) --raw=$@ --lst=build/kseg.lst $<
+
+# The layer: a raw image at LEG_BASE, refused above its room below the
+# hinge; dos embeds it.
+$(LEG): src/leg/leg.asm $(SRC_FILES) | build
+	$(SJASMPLUS) --nologo --msg=war $(INCLUDES) --raw=$@ --lst=build/leg.lst $<
+	@s=$$(wc -c < $@ | tr -d ' '); [ "$$s" -le $(LEG_MAX) ] || { \
+	    echo "$@ is $$s bytes: the layer fits $(LEG_MAX) at most" >&2; rm -f $@; exit 1; }
+build/bin/dos: $(LEG)
 
 # A pattern rule cannot say tests/%/%.asm (only the first % is the stem), so
 # one explicit rule is generated per test.
@@ -106,8 +118,8 @@ $(foreach b,$(patsubst src/bin/%.asm,%,$(BIN_SRCS)),$(eval $(call bin_rule,$(b))
 # and what size limits are later checked against. kernel.bin is the resident
 # image, the number the 16K target is measured against; kseg.bin the
 # switched part, against the window's 16K.
-sizes: $(KERNEL) $(KSEG) $(M6COM) $(BIN_BINS) $(TEST_BINS) $(PROG_BINS)
-	@for f in $(KERNEL) $(KSEG) $(M6COM) $(BIN_BINS) $(TEST_BINS) $(PROG_BINS); do \
+sizes: $(KERNEL) $(KSEG) $(LEG) $(M6COM) $(BIN_BINS) $(TEST_BINS) $(PROG_BINS)
+	@for f in $(KERNEL) $(KSEG) $(LEG) $(M6COM) $(BIN_BINS) $(TEST_BINS) $(PROG_BINS); do \
 	    printf 'SIZE %s %s\n' "$$(basename $$f)" "$$(wc -c < $$f | tr -d ' ')"; \
 	done
 
