@@ -946,7 +946,7 @@ sys_waitpid:
 ; other, it returns at once: a process yielding to itself pays a compare,
 ; not a walk of the table and a save and restore of its own registers.
 sys_yield:
-        ld      a,(k_nrun)
+        ld      a,(K_NRUN)
         cp      2
         jr      nc,.go
         or      a                       ; CF clear

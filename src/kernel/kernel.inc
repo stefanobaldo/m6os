@@ -56,6 +56,9 @@ K_BLK_LASTERR   equ K_BASE+500  ; db: the driver's code from the last one
 K_DOSPID        equ K_BASE+501  ; db: the pid of the legacy process (dos.asm),
                                 ;     0 when no .COM program is running
 K_DOSP0         equ K_BASE+502  ; db: that process's original page-0 segment
+K_NRUN          equ K_BASE+503  ; db: rows in PS_RUN, the current one included
+                                ;     (sched.asm); the tick with one runnable
+                                ;     process costs a compare of it
 K_MAP           equ K_BASE+504  ; 4: the segment in each page, as the kernel
                                 ;    believes it: from the record at boot,
                                 ;    then proc_run's and sys_exit's; the
@@ -77,6 +80,12 @@ K_PX            equ K_BASE+896  ; the per-process extension table: NPROC
 K_PIPEBUF       equ K_BASE+1024 ; NPIPE pipe buffers of 256 bytes, 256-
                                 ;     aligned: byte i of pipe n is at
                                 ;     (high K_PIPEBUF + n) : i (pipe.asm)
+K_API2          equ K_BASE+2048 ; API2_N entries of JP, 3 bytes each: what
+                                ;     the switched part calls in the resident
+                                ;     beyond K_API, which is full; the same
+                                ;     rules — the order is fixed and only
+                                ;     grows. The image's code starts after it
+API2_N          equ 2
 NOFILE          equ 8
 FD_NONE         equ 0FFh
 FD_CON          equ 0FEh        ; the console: write
@@ -159,6 +168,13 @@ API_ROW_READ    equ 31          ; A = a row -> HL -> its CON_COLS cells
     macro k_call n
         call    K_API+3*n
     endm
+    macro k_call2 n
+        call    K_API2+3*n
+    endm
+
+; The second table's entries (kernel.asm). Contracts are the routines' own.
+API2_MEM_OWN    equ 0           ; A = segment, B = the new owner (mem.asm)
+API2_MEM_RELEASE equ 1          ; A = a segment reserved at boot: freed
 
 ; The syscalls (sys.asm, proc.asm, kseg.asm) and their table indices. A
 ; process calls K_SYS+3*n. Arguments in A, HL, DE, BC as each syscall says;
@@ -415,6 +431,8 @@ KS_BINVAL       equ KS_BASE+21
 KS_BREAD_DIRECT equ KS_BASE+24
 KS_BWRITE_DIRECT equ KS_BASE+27
 KS_RTC_READ     equ KS_BASE+30
+KS_BOOT         equ KS_BASE+33  ; the scheduler's first row and the boot
+                                ; pages released (ks_boot.asm), once
 ; The table's first part ends before the interrupt entry at KS_BASE+0038h;
 ; it continues after the subslot stub, from KS_TABLE2.
 KS_TABLE2       equ KS_BASE+K_SSLOT+K_SSLOT_LEN
@@ -473,6 +491,25 @@ KS_TTY_SET      equ KS_TABLE2+57 ; the line replaced: echoed, cursor at its end
         ld      a,(K_MAP+1)
         out     (0FDh),a
         ex      af,af'
+    endm
+
+; kwin_call target — a kernel-side call into the switched part, on the
+; caller's own stack, which is in page 3. Every register reaches the callee
+; and comes back as it leaves them.
+    macro kwin_call target
+        kwin_enter
+        call    target
+        kwin_leave
+    endm
+
+; kwin_call_s target — kwin_call with the storage gate: what k_main uses
+; to enter the block layer's boot code.
+    macro kwin_call_s target
+        kwin_enter
+        k_stgate_enter
+        call    target
+        k_stgate_leave
+        kwin_leave
     endm
 
 ; A process (proc.asm, sched.asm): what it sees in page 0, and its row in

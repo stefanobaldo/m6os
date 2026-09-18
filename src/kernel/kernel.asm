@@ -7,15 +7,18 @@
 ; there after filling the capture record, then jumps to K_ENTRY.
 ;
 ; What is here: slot switching, the interrupt entry, the console and its
-; VDP backend, the keyboard, the Nextor driver call, memory — mapper
-; detection and the segment allocator — the kernel window and the syscall
-; gate, the scheduler and its process table, the process, the resident
-; syscalls, and k_main, the boot sequence, which ends by jumping wherever
-; the record says. The cold part of the kernel is a second image, kseg.asm,
-; switched into page 2 on demand. The image includes the tests' shared
-; definitions for the mailbox and the debug device. The stack is the last
-; thing in the image and its top is K_END; a loader may put a program's own
-; block above it.
+; VDP backend, the keyboard, the Nextor driver call, the segment
+; allocator, the kernel window and the syscall gate, the scheduler and its
+; process table, the process, the resident syscalls, and init. The boot
+; sequence — k_main, mapper detection, the loading of the switched part
+; (boot.asm) — runs once and lies under the pipe buffers, which overwrite
+; it; the scheduler's first row is
+; set up from the switched part (KS_BOOT). The cold part of the kernel is
+; that second image, kseg.asm, switched into page 2 on demand; it calls
+; the resident through K_API and K_API2. The image includes the tests'
+; shared definitions for the mailbox and the debug device. The stack is
+; the last thing in the image and its top is K_END; a loader may put a
+; program's own block above it.
         include "m6test.inc"
         include "nextor/nextor.inc"
         include "kernel/kernel.inc"
@@ -124,6 +127,7 @@ k_dospid:
         db      0                       ; the legacy process's pid (dos.asm)
 k_dosp0:
         db      0                       ; and its original page-0 segment
+k_nrun: db      0                       ; rows in the ring (sched.asm)
         block   K_MAP-$
 k_map:  ds      4                       ; the segment in each page
 k_cur:  dw      K_PROC                  ; the current row (sched.asm)
@@ -132,8 +136,13 @@ k_pid:  dw      0                       ; the current pid; the high byte stays 0
 k_proc: ds      NPROC*P_SIZE            ; the process table, one aligned page
 k_fd:   ds      NPROC*NOFILE            ; the descriptor table (proc.asm)
 k_px:   ds      NPROC*PX_SIZE           ; the extension table (px.asm)
-k_pipebuf:
-        ds      NPIPE*256               ; the pipe buffers (pipe.asm)
+k_pipebuf:                              ; the pipe buffers (pipe.asm), and
+        include "kernel/boot.asm"       ; under them the boot-once code,
+                                        ; which the first pipe overwrites
+        block   K_PIPEBUF+NPIPE*256-$   ; the overlay's ceiling: 1024 bytes
+k_api2:
+        jp      mem_own                 ; API2_MEM_OWN
+        jp      mem_release             ; API2_MEM_RELEASE
         ASSERT  k_ticks == K_TICKS
         ASSERT  k_probe == K_PROBE
         ASSERT  k_probe_slot == K_PROBE_SLOT
@@ -149,6 +158,7 @@ k_pipebuf:
         ASSERT  k_lasterr == K_BLK_LASTERR
         ASSERT  k_dospid == K_DOSPID
         ASSERT  k_dosp0 == K_DOSP0
+        ASSERT  k_nrun == K_NRUN
         ASSERT  k_map == K_MAP
         ASSERT  k_cur == K_CUR
         ASSERT  k_pid == K_PID
@@ -156,6 +166,8 @@ k_pipebuf:
         ASSERT  k_fd == K_FD
         ASSERT  k_px == K_PX
         ASSERT  k_pipebuf == K_PIPEBUF
+        ASSERT  k_api2 == K_API2
+        ASSERT  $ == K_API2+3*API2_N
 
 ; The driver module's two external needs, supplied by this image: its own
 ; slot switch, and the RAM slot for page 1 as captured.
@@ -187,17 +199,19 @@ nx_ramslot1     equ K_REC+KR_RAMAD+1
 ; own stack may be in the page the window takes.
         ds      256
 k_sstack:
-; The stack: mapper detection saves 256 bytes on it under its own frames.
+; The stack: process 0's, and the boot's. Filled with a pattern so that
+; a test can read how deep it went (K_STACK_LOW).
 k_stack:
-        ds      512
+        block   256,0A5h
 k_end:
         ASSERT  k_end <= K_HINGE        ; the hinge lies above the image
 
 ; Exported for programs that assemble a block to run at K_END, for a
 ; harness that wants to know when the kernel idles, and for a test that
 ; looks at the pipe table, the signal flag, the blocked-row counts, the
-; terminal's line and the keyboard queue.
+; terminal's line, the keyboard queue and the kernel stack's watermark.
 K_IMAGE_END     equ k_end
+K_STACK_LOW     equ k_stack
 K_IDLE_HALT     equ sched_idle_halt
 K_PIPE_TAB      equ k_pipe
 K_SIGFLAG       equ k_sigflag
@@ -208,6 +222,7 @@ K_TTY_MODE      equ tty_mode
 K_LD_LEN        equ ld_len
 K_KBCOUNT       equ kbd_count
         EXPORT  K_IMAGE_END
+        EXPORT  K_STACK_LOW
         EXPORT  K_IDLE_HALT
         EXPORT  K_PIPE_TAB
         EXPORT  K_SIGFLAG

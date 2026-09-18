@@ -2,6 +2,11 @@
 # /dos, run through dos; what it prints goes to the screen through the
 # BIOS, so the harness reads the rows. The last line is what it waits for.
 echo rc start
+# A pipe before the first program: the pipe buffers overwrite the kernel's
+# boot code, and a program's exit must need none of it — a regression there
+# fails here, not on a user's machine. A text line, not a number: the
+# harness reads every number on the screen as a timestamp.
+cat /etc/rc | grep buffers
 dos /dos/hello.com
 dos /dos/exit7.com
 dos /dos/jp0.com
