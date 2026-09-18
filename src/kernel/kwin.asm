@@ -35,15 +35,6 @@
 ; process waits one call at most. A tick landing between that test and
 ; the ret is paid at the next return.
 
-; kwin_call target — a kernel-side call into the switched part, on the
-; caller's own stack, which is in page 3. Every register reaches the callee
-; and comes back as it leaves them.
-    macro kwin_call target
-        kwin_enter
-        call    target
-        kwin_leave
-    endm
-
 ; k_switched target — the K_SYS entry of a syscall whose body is at target
 ; in the switched part.
     macro k_switched target
@@ -97,7 +88,7 @@ k_owed_con:
         push    af
         xor     a
         ld      (k_owed),a
-        ld      a,(k_nrun)
+        ld      a,(K_NRUN)
         cp      2
         jr      c,.alone
         push    hl
@@ -122,60 +113,6 @@ k_sw_s:
         call    .go
         jp      k_gate_ret_s
 .go:    jp      (ix)
-
-; kwin_call_s target — kwin_call with the storage gate: what k_main uses
-; to enter the block layer's boot code.
-    macro kwin_call_s target
-        kwin_enter
-        k_stgate_enter
-        call    target
-        k_stgate_leave
-        kwin_leave
-    endm
-
-; kwin_load — load the switched part from where the record says into a
-; segment of the kernel's. Out: Z if done, or if there is none to load
-; (K_KSEG stays 0); NZ with A = 0F4h when the source is not in pages 0-1
-; or the length is not 1 to 4000h, 0F5h when no segment is free. Corrupts
-; everything.
-kwin_load:
-        ld      hl,(K_REC+KR_KSEG_SRC)
-        ld      a,h
-        or      l
-        ret     z                       ; none: Z
-        ld      a,h
-        cp      80h
-        jr      nc,.bad                 ; not in pages 0-1
-        ld      de,(K_REC+KR_KSEG_LEN)
-        ld      a,d
-        or      e
-        jr      z,.bad                  ; empty
-        ld      a,d
-        cp      40h
-        jr      c,.fits
-        jr      nz,.bad                 ; above 4000h
-        ld      a,e
-        or      a
-        jr      nz,.bad
-.fits:  ld      b,MEM_KERNEL
-        call    mem_alloc
-        jr      c,.noseg
-        ld      (K_KSEG),a
-        out     (0FEh),a                ; the new segment into the window
-        ld      b,d
-        ld      c,e
-        ld      de,KS_BASE
-        ldir
-        ld      a,(k_map+2)
-        out     (0FEh),a
-        xor     a                       ; Z
-        ret
-.bad:   ld      a,0F4h
-        or      a                       ; NZ
-        ret
-.noseg: ld      a,0F5h
-        or      a
-        ret
 
 k_usp:          dw 0            ; the process's stack pointer during a
                                 ; switched syscall

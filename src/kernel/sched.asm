@@ -40,126 +40,14 @@
 ; coming in is planted in its frame (sig.asm): the frame is in the
 ; process's own pages, and this is the one place they are known to be in.
 
-; sched_init — row 0 and the scalars, before anything runs. Corrupts
-; everything.
-sched_init:
-        ld      hl,K_PROC
-        ld      (hl),PS_FREE
-        ld      de,K_PROC+1
-        ld      bc,NPROC*P_SIZE-1
-        ldir
-        ld      hl,K_PROC
-        ld      (hl),PS_RUN             ; process 0: runnable, pid 0, a
-        ld      (k_cur),hl              ; ring of one
-        ld      a,low K_PROC
-        ld      (K_PROC+P_NEXT),a
-        ld      hl,0
-        ld      (k_pid),hl
-        ld      a,1
-        ld      (k_nrun),a
-        ld      a,PP_NONE
-        ld      (K_PROC+P_PPID),a
-        ld      hl,k_map                ; its pages: what is mapped now,
-        ld      de,K_PROC+P_SEG         ; until sched_release_boot
-        ld      bc,3
-        ldir
-        ; Every descriptor closed, then process 0's three: the keyboard on
-        ; 0, the console on 1 and 2.
-        ld      hl,K_FD
-        ld      (hl),FD_NONE
-        ld      de,K_FD+1
-        ld      bc,NPROC*NOFILE-1
-        ldir
-        ld      a,FD_KBD
-        ld      (K_FD+0),a
-        ld      a,FD_CON
-        ld      (K_FD+1),a
-        ld      (K_FD+2),a
-        ; The extension table: zero, every row waiting on no pipe.
-        ld      hl,K_PX
-        ld      b,NPROC
-.px:    ld      (hl),0FFh               ; PX_WCHAN
-        inc     hl
-        xor     a
-        ld      c,PX_SIZE-1
-.pxz:   ld      (hl),a
-        inc     hl
-        dec     c
-        jr      nz,.pxz
-        djnz    .px
-        ret
-
-; sched_release_boot — once the switched image is loaded: the boot
-; segments of pages 0 and 1 go to the allocator, the boot segment of page
-; 2 stays as the kernel's scratch page, and process 0's pages 0 and 1
-; become the switched image's segment, which carries the vector and the
-; stub. With a program to run that lies below page 3 (KR_TEST), the boot
-; segment of the page it lies in is kept instead, as that page of process
-; 0's: the program is there, where the loader's memory had it, and runs in
-; place — a test whose block outgrew the room above the image in page 3,
-; which is where a smaller one still goes. A block in page 1 is what most
-; tests use; a block in page 0 is for one that switches page 1 away
-; itself — the storage gate, a driver call, a slot switch. The loader
-; wrote the vector and the stub into its page 0 before jumping here, so
-; that page serves as process 0's as the switched image's segment does.
-; With no switched image nothing changes hands. Corrupts everything.
-sched_release_boot:
-        ld      a,(K_KSEG)
-        or      a
-        ret     z
-        ld      b,MEM_KERNEL
-        call    mem_own                 ; the switched image's segment
-        ld      a,(K_REC+KR_SEG64K+2)
-        ld      b,MEM_KERNEL
-        call    mem_own                 ; the scratch page
-        ld      hl,(K_REC+KR_TEST)
-        ld      a,h
-        or      l
-        jr      z,.rel                  ; nothing to run
-        ld      a,h
-        cp      40h
-        jr      c,.keep0                ; a program in page 0
-        cp      0C0h
-        jr      c,.keep1                ; a program in page 1
-.rel:   ld      a,(K_REC+KR_SEG64K+0)
-        call    mem_release
-        ld      a,(K_REC+KR_SEG64K+1)
-        call    mem_release
-        ld      a,(K_KSEG)
-        jr      .page1
-.keep1: ld      a,(K_REC+KR_SEG64K+0)
-        call    mem_release
-        ld      a,(K_REC+KR_SEG64K+1)
-        ld      b,MEM_KERNEL
-        call    mem_own                 ; the program's page 1, kept
-.page1: ld      (K_PROC+P_SEG+1),a
-        ld      (k_map+1),a
-        out     (0FDh),a
-        ld      a,(K_KSEG)
-        ld      (K_PROC+P_SEG+0),a
-        ld      (k_map+0),a
-        out     (0FCh),a                ; the vector is in the new page 0
-        ret
-.keep0: ld      a,(K_REC+KR_SEG64K+0)
-        ld      b,MEM_KERNEL
-        call    mem_own                 ; the program's page 0, kept: it is
-        ld      (K_PROC+P_SEG+0),a      ; in page 0 and in k_map already
-        ld      a,(K_REC+KR_SEG64K+1)
-        call    mem_release
-        ld      a,(K_KSEG)
-        ld      (K_PROC+P_SEG+1),a
-        ld      (k_map+1),a
-        out     (0FDh),a
-        ret
-
 ; sched_link — HL = a row that becomes runnable: into the ring after the
 ; current row, or alone in it when it was empty. Corrupts AF, C, DE.
 sched_link:
-        ld      a,(k_nrun)
+        ld      a,(K_NRUN)
         or      a
         jr      z,.alone
         inc     a
-        ld      (k_nrun),a
+        ld      (K_NRUN),a
         ld      de,(k_cur)
         ld      a,e
         add     a,P_NEXT
@@ -174,7 +62,7 @@ sched_link:
         ld      (de),a                  ; new.next = what followed
         ret
 .alone: ld      a,1
-        ld      (k_nrun),a
+        ld      (K_NRUN),a
         ld      (k_cur),hl
         ld      a,l
         add     a,P_NEXT
@@ -283,7 +171,7 @@ sched_save_switch:
 ; put something in it and look again. exit and wait come here; a yield or
 ; a tick knows the ring holds two at least and takes sched_next.
 sched_next_idle:
-        ld      a,(k_nrun)
+        ld      a,(K_NRUN)
         or      a
         jr      nz,sched_next
         ei                              ; idle: nothing to run until a tick
@@ -364,8 +252,7 @@ sched_resume:
         ei
         reti
 
-; k_cur and k_pid are in the header (K_CUR, K_PID), where the switched
-; part reads them.
-k_nrun:         db 0            ; rows in PS_RUN, the current one included
+; k_cur, k_pid and k_nrun are in the header (K_CUR, K_PID, K_NRUN), where
+; the switched part reads and, at boot, writes them (ks_boot.asm).
 k_owed:         db 0            ; the current process owes a switch: a tick
                                 ; found it in the kernel with k_nrun >= 2

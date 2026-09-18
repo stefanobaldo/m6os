@@ -9,8 +9,9 @@
 ; a block the loader put above the image: the window kernel-side, a process
 ; that exercises every syscall and every error, a program that ends in ret
 ; and one that jumps to 0, a three-page process with its stack in page 2,
-; ENOMEM, and three processes that time the resident and the switched
-; paths. The report is on screen, the verdict in the mailbox.
+; ENOMEM, three processes that time the resident and the switched
+; paths, and the kernel stack's watermark. The report is on screen, the
+; verdict in the mailbox.
         include "m6test.inc"
         include "nextor/nextor.inc"
         include "kernel/kernel.inc"
@@ -456,7 +457,35 @@ t_entry:
         ld      a,0E6h
         jp      nc,t_fail
 
-; --- step 11: verdict ------------------------------------------------------
+; --- step 11: the kernel stack's watermark ---------------------------------
+        ld      a,11
+        ld      (t_step),a
+        ld      hl,t_k11
+        k_call  API_CON_PUTS
+        ld      hl,K_STACK_LOW          ; the stack's lowest byte; the image
+        ld      b,0                     ; fills all 256 with A5h
+        ld      c,0                     ; c = untouched bytes from the bottom
+.wm:    ld      a,(hl)
+        cp      0A5h
+        jr      nz,.wmdone
+        inc     hl
+        inc     c
+        djnz    .wm
+.wmdone:
+        ld      l,c
+        ld      h,0
+        push    hl
+        k_call  API_CON_DEC16
+        ld      hl,t_k11b
+        k_call  API_CON_PUTS
+        pop     hl
+        ld      de,64
+        or      a
+        sbc     hl,de
+        ld      a,0E7h
+        jp      c,t_fail                ; fewer than 64 bytes untouched
+
+; --- step 12: verdict ------------------------------------------------------
         ld      hl,t_pass
         k_call  API_CON_PUTS
         m6_verdict M6_PASS
@@ -576,6 +605,8 @@ t_k9:       db  "9 no segment: ",0
 t_k10:      db  "10 round trip over 524288 calls",10,0
 t_k10b:     db  "   resident: ",0
 t_k10c:     db  "   switched: ",0
+t_k11:      db  "11 kernel stack: ",0
+t_k11b:     db  " bytes untouched",10,0
 t_ticks:    db  " ticks = ",0
 t_us:       db  " us",10,0
 t_pass:     db  "PASS",10,0

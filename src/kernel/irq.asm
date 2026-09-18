@@ -23,27 +23,6 @@
 ; only. The BIOS's own handler — hooks, keyboard scan every third tick —
 ; never runs again.
 
-; k_irq_init — install the vector, select S#0, zero the counter. Call with
-; interrupts disabled; the caller enables them. Corrupts AF, BC, HL.
-k_irq_init:
-        ld      a,0C3h
-        ld      (K_INTRPT),a
-        ld      hl,K_ISR
-        ld      (K_INTRPT+1),hl
-        ld      a,(K_REC+KR_VDPRD)
-        inc     a
-        ld      (k_isr_in+1),a          ; the status port, into the IN below
-        ld      a,(K_REC+KR_VDPWR)
-        inc     a
-        ld      c,a
-        xor     a
-        out     (c),a                   ; R#15 = 0: S#0 is what IN reads
-        ld      a,80h+15
-        out     (c),a
-        ld      hl,0
-        ld      (K_TICKS),hl
-        ret
-
 ; k_isr — acknowledge the VDP, count, and switch when it is time.
 ; Preserves everything the interrupted code will see.
 k_isr:
@@ -68,7 +47,7 @@ k_isr_in:
         call    sig_isr                 ; may link rows: k_nrun read below
         pop     de
         pop     bc
-.sched: ld      a,(k_nrun)
+.sched: ld      a,(K_NRUN)
         cp      2
         jr      c,.ret                  ; nobody else to run
         ld      hl,5
