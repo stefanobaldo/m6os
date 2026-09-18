@@ -94,13 +94,15 @@ sched_init:
 ; 2 stays as the kernel's scratch page, and process 0's pages 0 and 1
 ; become the switched image's segment, which carries the vector and the
 ; stub. With a program to run that lies below page 3 (KR_TEST), the boot
-; segment of page 1 is kept instead, as process 0's page 1: the program
-; is there, where the loader's memory had it, and runs in place — a test
-; whose block outgrew the room above the image in page 3, which is where
-; a smaller one still goes. A program below page 1 was copied in with the
-; switched image (KR_KSEG_LEN covers it) and runs in process 0's page 0,
-; so nothing is kept for it. With no switched image nothing changes hands.
-; Corrupts everything.
+; segment of the page it lies in is kept instead, as that page of process
+; 0's: the program is there, where the loader's memory had it, and runs in
+; place — a test whose block outgrew the room above the image in page 3,
+; which is where a smaller one still goes. A block in page 1 is what most
+; tests use; a block in page 0 is for one that switches page 1 away
+; itself — the storage gate, a driver call, a slot switch. The loader
+; wrote the vector and the stub into its page 0 before jumping here, so
+; that page serves as process 0's as the switched image's segment does.
+; With no switched image nothing changes hands. Corrupts everything.
 sched_release_boot:
         ld      a,(K_KSEG)
         or      a
@@ -110,25 +112,26 @@ sched_release_boot:
         ld      a,(K_REC+KR_SEG64K+2)
         ld      b,MEM_KERNEL
         call    mem_own                 ; the scratch page
-        ld      a,(K_REC+KR_SEG64K+0)
-        call    mem_release
         ld      hl,(K_REC+KR_TEST)
         ld      a,h
         or      l
         jr      z,.rel                  ; nothing to run
         ld      a,h
         cp      40h
-        jr      c,.rel                  ; a program in page 0: it rides in the
-                                        ; switched image's segment
+        jr      c,.keep0                ; a program in page 0
         cp      0C0h
-        jr      c,.keep                 ; a program in page 1
-.rel:   ld      a,(K_REC+KR_SEG64K+1)
+        jr      c,.keep1                ; a program in page 1
+.rel:   ld      a,(K_REC+KR_SEG64K+0)
+        call    mem_release
+        ld      a,(K_REC+KR_SEG64K+1)
         call    mem_release
         ld      a,(K_KSEG)
         jr      .page1
-.keep:  ld      b,MEM_KERNEL
-        call    mem_own                 ; the program's page, kept
+.keep1: ld      a,(K_REC+KR_SEG64K+0)
+        call    mem_release
         ld      a,(K_REC+KR_SEG64K+1)
+        ld      b,MEM_KERNEL
+        call    mem_own                 ; the program's page 1, kept
 .page1: ld      (K_PROC+P_SEG+1),a
         ld      (k_map+1),a
         out     (0FDh),a
@@ -136,6 +139,17 @@ sched_release_boot:
         ld      (K_PROC+P_SEG+0),a
         ld      (k_map+0),a
         out     (0FCh),a                ; the vector is in the new page 0
+        ret
+.keep0: ld      a,(K_REC+KR_SEG64K+0)
+        ld      b,MEM_KERNEL
+        call    mem_own                 ; the program's page 0, kept: it is
+        ld      (K_PROC+P_SEG+0),a      ; in page 0 and in k_map already
+        ld      a,(K_REC+KR_SEG64K+1)
+        call    mem_release
+        ld      a,(K_KSEG)
+        ld      (K_PROC+P_SEG+1),a
+        ld      (k_map+1),a
+        out     (0FDh),a
         ret
 
 ; sched_link — HL = a row that becomes runnable: into the ring after the
