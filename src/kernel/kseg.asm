@@ -53,6 +53,16 @@
         jp      ks_chmod                ; KS_CHMOD (ks_vfsw.asm)
         jp      ks_tty_key              ; KS_TTY_KEY (ks_tty.asm)
         jp      ks_tty_set              ; KS_TTY_SET
+        jp      ks_dos_check            ; KS_DOS_CHECK (ks_sys.asm)
+        jp      ks_procinfo             ; KS_PROCINFO
+        jp      ks_segalloc             ; KS_SEGALLOC
+        jp      ks_segfree              ; KS_SEGFREE
+        jp      ks_segmap               ; KS_SEGMAP
+        jp      ks_kill                 ; KS_KILL
+        jp      ks_signal               ; KS_SIGNAL
+        jp      ks_dosenter             ; KS_DOSENTER
+        jp      ks_ttymode              ; KS_TTYMODE
+        jp      ks_ttyline              ; KS_TTYLINE
 
 ; ks_enosys — an entry whose body does not exist yet.
 ks_enosys:
@@ -231,6 +241,7 @@ s_more2:    db  " more, not scanned",10,0
         include "kernel/ks_exec.asm"
         include "kernel/ks_vfsw.asm"
         include "kernel/ks_tty.asm"
+        include "kernel/ks_sys.asm"
 
 ks_end:
         ASSERT  ks_end <= KS_BASE+4000h

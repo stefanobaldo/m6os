@@ -135,6 +135,16 @@ mem_free_all:
         pop     hl
         ret
 
+; mem_owner_of — A = segment: A = its owner byte (API2_MEM_OWNER, for the
+; switched part's checks). Corrupts DE, HL.
+mem_owner_of:
+        ld      l,a
+        ld      h,0
+        ld      de,mem_owner
+        add     hl,de
+        ld      a,(hl)
+        ret
+
 ; mem_own — A = segment, B = the new owner: a change of owner with no
 ; change to the free stack, for a segment that is not on it (the boot-time
 ; reserved ones the kernel keeps). Preserves BC, DE, HL.

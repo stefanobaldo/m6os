@@ -342,6 +342,11 @@ con_putc:
         pop     hl
         ret
 
+; con_cursor — L = the cursor's row, H = its column (API2_CON_CURSOR).
+con_cursor:
+        ld      hl,(con_row)
+        ret
+
 ; con_newline — a newline. Preserves BC, DE, HL.
 con_newline:
         ld      a,10

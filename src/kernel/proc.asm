@@ -414,8 +414,10 @@ sp_header:
 ; frame is about to be rebuilt.
 sys_exit:
         ld      sp,k_sstack
-        call    k_dos_check             ; the legacy process's console and
-        ld      hl,(k_cur)              ; keyboard back, if it is the one
+        kwin_call KS_DOS_CHECK          ; the legacy process's console and
+                                        ; keyboard back, if it is the one
+                                        ; (ks_sys.asm); A comes back
+        ld      hl,(k_cur)
         ld      de,P_STATUS
         add     hl,de
         ld      (hl),a

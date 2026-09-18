@@ -35,7 +35,9 @@
 ; row twice. A second signal is dropped while one is owed or armed, unless
 ; it is SIGKILL, which replaces the number; a signal its owner has come to
 ; ignore since it was sent is dropped when it would be planted (sig_owed).
-; kill of oneself marks and dies at once through the stub.
+; kill of oneself marks and dies at once through the stub. kill and
+; signal themselves are in the switched part (ks_sys.asm) and reach
+; sig_send, sig_bit and sig_stub through K_API2.
 
 ; sig_bit — A = a signal: A = its PX_SIGIGN bit, CF clear; CF set for
 ; SIGKILL or a number that is none of the four. Corrupts F.
@@ -363,93 +365,6 @@ sig_cur:
 .stuck: pop     hl
         ld      hl,k_sigflag
         set     1,(hl)                  ; SF_PEND: again next tick
-        ret
-
-; sys_kill — SYS_KILL: A = pid, B = a signal. The process named ends with
-; 128 + the signal, unless it ignores it; a zombie or an ignoring process
-; is success with no effect. EPERM for pid 0, EINVAL for a pid past the
-; table or a signal that is none of the four, ESRCH for a free row. A
-; process killing itself goes through sig_send like any other — which
-; leaves the signal owed on it — and then straight into sig_stub.
-sys_kill:
-        or      a
-        jr      z,.perm
-        cp      NPROC
-        jr      nc,.inval
-        ld      c,a                     ; c = the pid
-        ld      a,b
-        cp      SIGKILL
-        jr      z,.sigok
-        call    sig_bit
-        jr      c,.inval
-.sigok: ld      a,c
-        add     a,a
-        add     a,a
-        add     a,a
-        add     a,a
-        ld      l,a
-        ld      h,high K_PROC           ; hl -> the row
-        ld      a,(hl)
-        or      a
-        jr      z,.srch                 ; PS_FREE
-        ld      a,(k_pid)
-        cp      c                       ; Z: myself
-        push    af
-        ld      c,b                     ; c = the signal
-        di
-        call    sig_send                ; a = 1 if it was taken
-        ei
-        ld      c,a
-        pop     af
-        ld      a,c
-        jr      nz,.ok                  ; another process: done
-        or      a
-        jp      nz,sig_stub             ; myself, and not ignored: die now
-.ok:    or      a                       ; CF clear
-        ret
-.perm:  ld      a,E_PERM
-        scf
-        ret
-.inval: ld      a,E_INVAL
-        scf
-        ret
-.srch:  ld      a,E_SRCH
-        scf
-        ret
-
-; sys_signal — SYS_SIGNAL: A = a signal, B = SIG_DFL or SIG_IGN. Out: L =
-; the action that was. EINVAL for SIGKILL or a number that is none of the
-; other three. The mask is inherited by a child and kept across exec.
-sys_signal:
-        call    sig_bit
-        jr      c,.inval
-        ld      c,a                     ; c = the bit
-        ld      a,(k_pid)
-        call    px_row
-        ld      de,PX_SIGIGN
-        add     hl,de                   ; hl -> PX_SIGIGN
-        ld      a,(hl)
-        and     c
-        ld      e,SIG_DFL
-        jr      z,.was
-        ld      e,SIG_IGN
-.was:   ld      a,b
-        or      a
-        jr      z,.clear
-        ld      a,(hl)
-        or      c
-        ld      (hl),a
-        jr      .done
-.clear: ld      a,c
-        cpl
-        and     (hl)
-        ld      (hl),a
-.done:  ld      l,e
-        ld      h,0
-        xor     a                       ; CF clear
-        ret
-.inval: ld      a,E_INVAL
-        scf
         ret
 
 k_sigflag:      db 0                    ; SF_INT, SF_PEND

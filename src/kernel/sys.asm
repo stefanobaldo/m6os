@@ -5,8 +5,12 @@
 ; The resident syscalls: the ones on the hot path, whose K_SYS entry jumps
 ; straight to the body. exit, spawn, wait, waitpid, yield, fork and vfork
 ; are in proc.asm, read in kbd.asm, pipe in pipe.asm, sleep in px.asm;
-; sysconf is in the switched part (kseg.asm). Convention as kernel.inc states it: arguments in A, HL,
-; DE, BC; result in HL; CF set with the errno in A; nothing else preserved.
+; sysconf is in the switched part (kseg.asm), and so are the cold ones —
+; procinfo, segalloc, segfree, segmap, kill, signal, dosenter, ttymode,
+; ttyline (ks_sys.asm) — whose
+; stubs are here with the filesystem's. Convention as kernel.inc states
+; it: arguments in A, HL, DE, BC; result in HL; CF set with the errno in
+; A; nothing else preserved.
 
 ; fd_code — A = a descriptor: A = its byte in the current process's row of
 ; the descriptor table (FD_NONE for one at or past NOFILE). Preserves BC,
@@ -74,52 +78,6 @@ sys_close:
 .sw:    ld      a,c
         k_sw_stub KS_CLOSE
 
-; sys_procinfo — SYS_PROCINFO: A = pid, HL = a PROCINFO_SIZE buffer: the
-; process's row, then its extension row, copied as they are — the
-; kernel's own layout, which ps follows and nothing else should. E_INVAL
-; past NPROC, E_SRCH for a free row, E_FAULT for a buffer reaching page 3.
-sys_procinfo:
-        cp      NPROC
-        jr      nc,.inval
-        ld      d,a
-        ld      a,(k_pid)
-        or      a
-        ld      a,d
-        jr      z,.ok                   ; process 0's buffer may be anywhere
-        ld      a,h
-        cp      0C0h-1                  ; the 24 bytes must end below C000h
-        jr      c,.ok2
-        ld      a,E_FAULT
-        scf
-        ret
-.ok2:   ld      a,d
-.ok:    ex      de,hl                   ; de = the buffer
-        push    af
-        add     a,a
-        add     a,a
-        add     a,a
-        add     a,a
-        ld      l,a
-        ld      h,high K_PROC
-        ld      a,(hl)
-        or      a                       ; PS_FREE
-        jr      z,.srch
-        ld      bc,P_SIZE
-        ldir
-        pop     af
-        call    px_row
-        ld      bc,PX_SIZE
-        ldir
-        xor     a                       ; CF clear
-        ret
-.srch:  pop     af
-        ld      a,E_SRCH
-        scf
-        ret
-.inval: ld      a,E_INVAL
-        scf
-        ret
-
 ; sys_getpid — SYS_GETPID. Out: HL = pid.
 sys_getpid:
         ld      hl,(k_pid)
@@ -168,4 +126,22 @@ k_sw_chmod:
         k_sw_stub KS_CHMOD
 k_sw_time:
         k_sw_stub KS_RTC_READ           ; SYS_TIME is the clock's reading
+k_sw_procinfo:
+        k_sw_stub KS_PROCINFO
+k_sw_segalloc:
+        k_sw_stub KS_SEGALLOC
+k_sw_segfree:
+        k_sw_stub KS_SEGFREE
+k_sw_segmap:
+        k_sw_stub KS_SEGMAP
+k_sw_kill:
+        k_sw_stub KS_KILL
+k_sw_signal:
+        k_sw_stub KS_SIGNAL
+k_sw_dosenter:
+        k_sw_stub KS_DOSENTER
+k_sw_ttymode:
+        k_sw_stub KS_TTYMODE
+k_sw_ttyline:
+        k_sw_stub KS_TTYLINE
 
