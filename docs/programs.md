@@ -23,6 +23,10 @@ six bytes are the kernel's:
 MSX-DOS `.COM` program, which also begins at `0100h`, is never run by
 accident. `tests/m6prog.inc` has a macro that writes the header.
 
+An MSX-DOS 2 program — a `.COM` file, which also begins at `0100h` but
+has no such header — is run by `dos`, with the MSX-DOS 2 layout built
+around it for the run: [`dos.md`](dos.md).
+
 Because the image is what the memory holds, the same file can be started
 three ways: `spawnv` reads it from a volume into a new process, which is
 how the system starts programs; `exec` reads it from a volume over the

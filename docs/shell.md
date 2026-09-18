@@ -41,6 +41,12 @@ first being the word typed, not the path.
 A program that is not there is reported — `sh: nofile: ENOENT` — and the
 line goes on.
 
+A word ending in `.com`, in either case, names an MSX-DOS program:
+when it is not a native command the shell runs it through `dos`
+([`commands.md`](commands.md)), with the same arguments, so `ted.com
+t.txt` at the prompt is `dos ted.com t.txt`. [`dos.md`](dos.md) says
+what such a program gets.
+
 ## Pipelines
 
 `|` joins commands into a pipeline: each one's output is the next one's

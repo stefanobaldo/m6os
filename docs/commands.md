@@ -71,6 +71,16 @@ seconds printed are always even. A machine without a real-time clock,
 or one whose battery has gone, prints `1980-01-01 00:00:00`. `date` only
 reads the clock; there is no way to set it from m6.
 
+## dos
+
+`dos path [args...]` — runs an MSX-DOS 2 program, a `.COM` file, with the
+machine to itself, and returns when it ends; its MSX-DOS termination code
+is the status. A path whose last component has no dot and is not found is
+tried with `.com` appended. The arguments become the program's command
+tail, at most 127 bytes. [`docs/dos.md`](dos.md) is what the program
+finds, and what of MSX-DOS 2 is there. The shell runs a command word
+ending in `.com` through `dos` by itself.
+
 ## echo
 
 `echo [-n] word...` — the words separated by one blank and a newline,

@@ -32,9 +32,13 @@ loader prints its version, takes the machine over, lists the volumes it
 mounts and the memory it finds, runs `/etc/rc` if there is one, and gives
 you a shell. `M6 mem=128` caps the memory at 128K on a larger machine.
 
+An MSX-DOS 2 program on the card runs with `dos name.com`, or by its name
+alone when it ends in `.com`, and hands the machine back when it ends:
+[`docs/dos.md`](docs/dos.md) says what it finds.
+
 At the prompt, [`docs/shell.md`](docs/shell.md) is the language and
 [`docs/commands.md`](docs/commands.md) the commands: `cat`, `chmod`,
-`clear`, `cp`, `date`, `echo`, `false`, `grep`, `head`, `kill`, `ls`,
+`clear`, `cp`, `date`, `dos`, `echo`, `false`, `grep`, `head`, `kill`, `ls`,
 `mkdir`, `more`, `mv`, `ps`, `pwd`, `rm`, `rmdir`, `sleep`, `sort`, `tail`,
 `tee`, `tr`, `true`, `uniq` and `wc`. `exit` at the prompt starts a fresh shell.
 
@@ -48,6 +52,8 @@ At the prompt, [`docs/shell.md`](docs/shell.md) is the language and
   redirection, jobs and wildcards.
 - [`docs/commands.md`](docs/commands.md) — the commands in `/bin`, one
   section each.
+- [`docs/dos.md`](docs/dos.md) — running MSX-DOS 2 programs, and what they
+  find.
 - [`docs/programs.md`](docs/programs.md) — what a program in a file looks like,
   what it finds when the kernel starts it, and how the commands in `/bin`
   are written.

@@ -222,7 +222,11 @@ input is a file or a pipe reads what is typed there: `more` in
 | 30 | `kill` | `A` = pid, `B` = signal | — | `EPERM`: pid 0; `EINVAL`: pid past 15, or a signal that is none of the four; `ESRCH`: no such process |
 | 31 | `signal` | `A` = signal, `B` = 0 (the default) or 1 (ignore) | `L` = the action that was | `EINVAL`: `SIGKILL`, or not a signal |
 | 32 | `ttyline` | `HL` = bytes, `BC` = how many, 0 to 127 | — | `EINVAL`: more than 127; `EFAULT`: a buffer reaching page 3 |
-| 33–47 | — | — | — | `ENOSYS` |
+| 33 | `dosenter` | `A` = a segment of the caller's, filled as the legacy layer expects; pages 1 and 2 mapped with `segmap` (see *MSX-DOS programs*) | does not return | `EPERM`: process 0; `EBUSY`: an MSX-DOS program runs already; `EINVAL`: not the caller's segment |
+| 34 | `segalloc` | — | `HL` = `A` = a segment, the caller's | `ENOMEM`; `EPERM`: process 0 |
+| 35 | `segfree` | `A` = a segment of the caller's, not one of its pages | `HL` = 0 | `EINVAL` |
+| 36 | `segmap` | `A` = a page, 1 or 2; `B` = a segment of the caller's | `HL` = 0 | `EINVAL`: the page, or not the caller's segment |
+| 37–47 | — | — | — | `ENOSYS` |
 
 `write` to a descriptor that is the console goes to the screen and `read`
 from one that is the keyboard or the console takes from the keyboard, as
@@ -364,6 +368,27 @@ ignores it, or only a shell at its prompt is running — the byte 3 is
 queued in their place, which a canonical `read` delivers as an empty
 line and a raw one as itself, so that a shell prints a fresh prompt and
 an editor that ignores `SIGINT` sees the key.
+
+## Segments, and MSX-DOS programs
+
+A process owns pages 0–2; `segalloc` gives it a 16K segment beyond them,
+owned by it and returned with everything else when it exits, and
+`segfree` returns one early — never one of its own pages. `segmap` puts
+one of its segments into page 1 or 2 and keeps it there: the kernel
+records it as the process's page, so a system call that copies to or
+from a buffer in that page reaches the segment, and the page comes back
+mapped after every call and every switch. A segment mapped by writing
+the mapper register directly, without `segmap`, is lost at the first
+system call, whose return puts the recorded page back.
+
+`dosenter` is how a process becomes an MSX-DOS 2 program: the caller has
+built, in a segment of its own, the layer such a program finds above its
+TPA — [`dos.md`](dos.md) says what, and `/bin/dos` is the program that
+does it — and has its pages 1 and 2 mapped to the program's through
+`segmap`. The call swaps that segment into page 3 in place of the kernel's
+own, enters the layer, and never returns; the layer loads the program
+through `read` and runs it, and the process exits with the program's
+termination code as its status. One such program runs at a time.
 
 ## Files
 
