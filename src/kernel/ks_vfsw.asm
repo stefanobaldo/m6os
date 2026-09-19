@@ -837,8 +837,10 @@ ks_write:
         ld      a,(iy+OF_CLUS)
         ld      c,a
         ld      a,(iy+OF_CLUS+1)
+        ld      b,a
         or      c
         jr      z,.rebuild              ; OF_CLUS_NONE
+        ld      a,b                     ; both bytes FFh, not the low one
         and     c
         inc     a
         jp      nz,.havecl              ; not OF_CLUS_END
