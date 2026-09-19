@@ -15,6 +15,7 @@ O_CW        equ O_CREAT|O_WRONLY
 ; /tmp/b4k.bin: the same in 4K writes from page 0, timed. (c)
 ; /tmp/b1000.bin: the same in 1000-byte writes from an unaligned buffer.
 ; (d) b4k.bin reopened O_RDWR: 3000 bytes at 30000 inverted, the whole read
+; back. (e) /mnt/d/edge.bin, a file whose first cluster is 255, read
 ; back. Exits with 0, or the number of the check that failed.
 U_BUF0      equ 1000h           ; page 0, 256-aligned, 4K
 U_BUFU      equ 2001h           ; unaligned, 3000 bytes
@@ -216,6 +217,66 @@ start:
         ld      hl,.b4k
         call    .readback
         jp      nz,.x10
+        ; (e) A file whose first cluster is 255: big.bin holds clusters
+        ; 3-130 of the slave, pad.bin, 63488 bytes of whatever page 1
+        ; holds, takes 131-254, and edge.bin's three bytes land in 255 -
+        ; a cluster number whose low byte is the end mark's, which a
+        ; write once mistook for the chain's end and skipped. Read back.
+        ld      hl,.pad
+        ld      a,O_CW
+        sys     SYS_OPEN
+        jp      c,.x11
+        ld      (.fd),a
+        ld      b,4
+.wpad:  push    bc
+        ld      a,(.fd)
+        ld      hl,U_PAGE1
+        ld      bc,15872
+        sys     SYS_WRITE
+        pop     bc
+        jp      c,.x11
+        ld      de,15872
+        or      a
+        sbc     hl,de
+        jp      nz,.x11
+        djnz    .wpad
+        ld      a,(.fd)
+        sys     SYS_CLOSE
+        ld      hl,.edge
+        ld      a,O_CW
+        sys     SYS_OPEN
+        jp      c,.x12
+        ld      (.fd),a
+        ld      hl,.s_abc
+        ld      bc,3
+        sys     SYS_WRITE
+        jp      c,.x12
+        ld      a,(.fd)
+        sys     SYS_CLOSE
+        ld      hl,.edge
+        xor     a
+        sys     SYS_OPEN
+        jp      c,.x12
+        ld      (.fd),a
+        ld      hl,U_BUF0
+        ld      bc,4096
+        sys     SYS_READ
+        jp      c,.x12
+        ld      bc,3
+        or      a
+        sbc     hl,bc
+        jp      nz,.x12
+        ld      a,(.fd)
+        sys     SYS_CLOSE
+        ld      hl,U_BUF0
+        ld      de,.s_abc
+        ld      b,3
+.cmp:   ld      a,(de)
+        cp      (hl)
+        jp      nz,.x12
+        inc     hl
+        inc     de
+        djnz    .cmp
         xor     a
         sys     SYS_EXIT
 .x1:    ld      a,1
@@ -237,6 +298,10 @@ start:
 .x9:    ld      a,9
         sys     SYS_EXIT
 .x10:   ld      a,10
+        sys     SYS_EXIT
+.x11:   ld      a,11
+        sys     SYS_EXIT
+.x12:   ld      a,12
         sys     SYS_EXIT
 ; .tick — after a write whose starting ticks are on the stack under the
 ; return address: .t0 += the ticks it took. Preserves AF (the result) and
@@ -342,6 +407,9 @@ start:
 .big:   db      "/mnt/d/big.bin",0
 .b4k:   db      "/tmp/b4k.bin",0
 .b1000: db      "/tmp/b1000.bin",0
+.pad:   db      "/mnt/d/pad.bin",0
+.edge:  db      "/mnt/d/edge.bin",0
+.s_abc: db      "abc"
 .s_ticks: db    "writer: 64K/16K in ",0
 .s_ticks4: db   "writer: 64K/4K in ",0
 .s_ticks1000: db "writer: 64K/1000 in ",0
