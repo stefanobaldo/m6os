@@ -126,7 +126,7 @@ in it, and the Nextor ones, return `.IBDOS` (invalid function call,
 | `43h` `_OPEN` | a file, or a directory as a FIB, or a device: `CON` for the console, `NUL`, `AUX` and `PRN` for a sink that reads nothing |
 | `44h` `_CREATE` | a file, emptied when it exists unless bit 7 of `B` says so (`.FILEX`); with the directory bit a directory; the read-only, hidden and system bits set after |
 | `45h` `_CLOSE`, `46h` `_ENSURE`, `47h` `_DUP`, `5Fh` `_FLUSH` | as specified; `_ENSURE` and `_FLUSH` have nothing to do, every write reaches the disk as it is made |
-| `48h` `_READ`, `49h` `_WRITE` | the bytes moved in one piece; `.EOF` when a read finds none; `.IPARM` for a buffer that reaches into the kernel |
+| `48h` `_READ`, `49h` `_WRITE` | the bytes moved in one piece; `.EOF` when a read finds none; `.IPARM` for a buffer that reaches into the kernel; a write to a device in ASCII mode ends at the first `1Ah`, which is counted and not sent |
 | `4Ah` `_SEEK` | by the three methods; a position that would go negative is `.IPARM` |
 | `4Bh` `_IOCTL` | 0 the device or file status, with bit 6 for a file at its end; 1 ASCII or binary mode on a device; 2 and 3 whether input or output is ready; 4 the screen's size on the console |
 | `4Ch` `_HTEST` | whether the handle is the named file |

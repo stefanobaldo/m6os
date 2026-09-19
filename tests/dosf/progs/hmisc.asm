@@ -217,6 +217,49 @@
         ld      hl,1
         d_fn    _READ
         d_err   D_EOF
+        d_step  12                      ; a device in ASCII mode ends at ^Z
+        ld      de,s_con
+        xor     a
+        d_fn    _OPEN
+        d_ok
+        ld      a,b
+        ld      (h1),a
+        ld      de,s_ctlz
+        ld      hl,6
+        d_fn    _WRITE
+        d_ok
+        d_hlis  3                       ; "ab" out, the ^Z counted, "cd" not
+        ld      a,(h1)
+        ld      b,a
+        xor     a
+        d_fn    _IOCTL                  ; 0: the device's word, ASCII set
+        d_ok
+        bit     5,e
+        jp      z,t_fail
+        res     5,e                     ; 1: binary, and the whole buffer
+        ld      d,0                     ;    goes out, ^Z and all
+        ld      a,(h1)
+        ld      b,a
+        ld      a,1
+        d_fn    _IOCTL
+        d_ok
+        ld      a,(h1)
+        ld      b,a
+        ld      de,s_ctlz
+        ld      hl,6
+        d_fn    _WRITE
+        d_ok
+        d_hlis  6
+        ld      a,(h1)
+        ld      b,a
+        ld      de,s_crlf2
+        ld      hl,2
+        d_fn    _WRITE
+        d_ok
+        ld      a,(h1)
+        ld      b,a
+        d_fn    _CLOSE
+        d_ok
         d_step  11                      ; refused
         ld      c,67h
         call    BDOS
@@ -239,6 +282,8 @@ s_conh: db      'con handle',13,10
 m_nofil: db     'File not found',0
 m_isbfn: db     'Invalid sub-function number',0
 m_12:   db      'Error 12H',0
+s_ctlz: db      'ab',1Ah,'cd'
+s_crlf2: db     13,10
 h1:     db      0
 free:   dw      0
 buf:    ds      64
