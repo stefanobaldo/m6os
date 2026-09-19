@@ -24,11 +24,17 @@ SG_FD           equ K_FD                ; the descriptor table is resident
 ; ---------------------------------------------------------------------
 ; A process's memory
 
-; um_seg — A = a page 0-2: A = the segment behind it, from the three bytes
-; VV_SEGP points at — the process's P_SEG, or exec's new ones. Corrupts
-; DE, HL.
+; um_seg — A = a page 0-3: A = the segment behind it, from the three bytes
+; VV_SEGP points at — the process's P_SEG, or exec's new ones — or, for
+; page 3, the legacy segment the hinge's second stub names: the one
+; caller that asks for page 3 is a copy for the legacy process, whose
+; page 3 is its own (um_copy). Corrupts DE, HL.
 um_seg:
-        ld      l,a
+        cp      3
+        jr      nz,.page
+        ld      a,(K_HINGE2+1)          ; the legacy page-3 segment
+        ret
+.page:  ld      l,a
         ld      h,0
         ld      de,(SG+VV_SEGP)
         add     hl,de
@@ -82,8 +88,18 @@ um_copy:
         cp      2
         jr      z,.remap
         or      a
-        jr      nz,.direct              ; page 3: the kernel's, always mapped
-        ; Page 0 is mapped, but is it the page the caller means? An image
+        jr      z,.page0
+        ; Page 3: the kernel's, always mapped — unless the caller is the
+        ; legacy process, whose page 3 is a segment of its own that the
+        ; kernel's has displaced for the length of the call.
+        ld      a,(K_DOSPID)
+        or      a
+        jr      z,.direct
+        ld      hl,K_PID
+        cp      (hl)
+        jr      z,.remap
+        jr      .direct
+.page0: ; Page 0 is mapped, but is it the page the caller means? An image
         ; loading into fresh segments — a vfork child's exec, a spawnv —
         ; names another process's page 0, and a direct copy would land in
         ; the current one's.
@@ -143,32 +159,38 @@ um_copy:
 
 ; um_check — HL = a user address, BC = a length: CF with E_FAULT when the
 ; range reaches page 3, which is the kernel's — unless the caller is
-; process 0, whose own program may lie there. Every syscall that writes
+; process 0, whose own program may lie there, or the legacy process,
+; whose page 3 is its own up to the hinge. Every syscall that writes
 ; into a process's memory calls it first: a wrong buffer must refuse, not
 ; overwrite the resident. Preserves A, HL, BC, DE.
 um_check:
         push    af
-        ld      a,(K_PID)
-        or      a
-        jr      z,.ok                   ; process 0: page 3 is its own
-        ld      a,h
-        cp      0C0h
-        jr      nc,.efault              ; it starts there
         push    hl
         push    de
         ex      de,hl                   ; de = the address
-        ld      hl,0C000h
+        ld      hl,0C000h               ; the limit: the kernel's page
+        ld      a,(K_PID)
         or      a
-        sbc     hl,de                   ; hl = the room before page 3
+        jr      z,.ok                   ; process 0: page 3 is its own
+        ld      hl,K_DOSPID
+        cp      (hl)
+        ld      hl,0C000h
+        jr      nz,.limit
+        ld      hl,K_HINGE              ; the legacy process: up to the hinge
+.limit: or      a
+        sbc     hl,de                   ; hl = the room before the limit
+        jr      c,.efault               ; it starts past it
         or      a
         sbc     hl,bc                   ; minus the length: CF when short
-        pop     de
-        pop     hl
         jr      c,.efault
-.ok:    pop     af
+.ok:    pop     de
+        pop     hl
+        pop     af
         and     a                       ; CF clear, A as it came
         ret
 .efault:
+        pop     de
+        pop     hl
         pop     af
         ld      a,E_FAULT
         scf
@@ -189,16 +211,32 @@ um_peek:
         ret
 
 ; vfs_begin — the user addresses of this syscall are the current process's:
-; VV_SEGP -> its P_SEG. Preserves everything but the flags.
+; VV_SEGP -> its P_SEG — or K_MAP for the legacy process, whose crossing
+; wrote there what the program has in pages 0-2 now, PUT_Pn's included,
+; so that a transfer lands where the DOS says it does. Preserves
+; everything but the flags.
 vfs_begin:
+        push    af
         push    hl
         push    de
         ld      hl,(K_CUR)
         ld      de,P_SEG
         add     hl,de
-        ld      (SG+VV_SEGP),hl
+        ld      a,(K_DOSPID)
+        or      a
+        jr      z,.set
+        ld      de,K_PID
+        ld      a,(de)
+        ld      de,K_DOSPID
+        ex      de,hl
+        cp      (hl)
+        ex      de,hl
+        jr      nz,.set
+        ld      hl,K_MAP
+.set:   ld      (SG+VV_SEGP),hl
         pop     de
         pop     hl
+        pop     af
         ret
 
 ; ---------------------------------------------------------------------
@@ -982,6 +1020,49 @@ vr_record:
         ret
 s_mntname:      db  "mnt",0
 
+; vr_short — after vr_record: ST_LNAME rewritten in the short form — for
+; an entry its 8.3 alias in upper case, else the name vr_record gave —
+; 0-terminated and zero-filled to 13 bytes, then the locator: VR_VOL,
+; VR_CLUS, VR_DSEC and VR_DIDX (zeros for what has no entry). BC = 21.
+; Corrupts everything.
+vr_short:
+        ld      a,(SG+VR_KIND)
+        or      a                       ; VK_ENTRY
+        jr      nz,.noent
+        ld      hl,SG+VR_ENT+FE_NAME
+        ld      c,0                     ; no case bits: as stored
+        ld      de,SG+ST_LNAME
+        call    fe_name_out
+        jr      .pad
+.noent: ld      hl,SG+VR_DSEC
+        ld      b,5
+.zsec:  ld      (hl),0
+        inc     hl
+        djnz    .zsec
+.pad:   ld      hl,SG+ST_LNAME
+        ld      b,13
+.find:  ld      a,(hl)
+        or      a
+        jr      z,.fill
+        inc     hl
+        djnz    .find
+        jr      .loc
+.fill:  ld      (hl),0
+        inc     hl
+        djnz    .fill
+.loc:   ex      de,hl                   ; de -> ST_LNAME+13
+        ld      a,(SG+VR_VOL)
+        ld      (de),a
+        inc     de
+        ld      hl,SG+VR_CLUS
+        ld      bc,2
+        ldir
+        ld      hl,SG+VR_DSEC
+        ld      bc,5
+        ldir
+        ld      bc,13+DL_SIZE
+        ret
+
 ; ---------------------------------------------------------------------
 ; Descriptors and open files
 
@@ -1050,7 +1131,7 @@ fd_row:
 ; a row is taken.
 ks_open:
         ld      (SG+VW_FLAGS),a
-        and     ~(3|O_APPEND|O_CREAT|O_TRUNC) & 0FFh
+        and     ~(3|O_APPEND|O_CREAT|O_TRUNC|O_SHORT) & 0FFh
         jp      nz,.inval
         ld      a,(SG+VW_FLAGS)
         and     3
@@ -1196,8 +1277,12 @@ ks_open:
         ld      hl,(SG+VR_CLUS)
         ld      a,h
         or      l
-        jr      nz,.flags
+        jr      nz,.short
         ld      c,OFF_DIR|OFF_ROOT      ; cluster 0: the root directory
+.short: ld      a,(SG+VW_FLAGS)
+        and     O_SHORT
+        jr      z,.flags
+        set     6,c                     ; OFF_SHORT
         jr      .flags
 .file:  ld      a,(SG+VW_ACC)
         or      a
@@ -1312,8 +1397,14 @@ ks_lseek:
         scf
         ret
 
-; ks_stat — SYS_STAT: HL = path, DE = a DIRENT_SIZE buffer.
+; ks_stat — SYS_STAT: HL = path, DE = a DIRENT_SIZE buffer. ks_statl —
+; SYS_STATL: the same, the record in the short form (DE_LOC).
+ks_statl:
+        ld      a,1
+        jr      st_go
 ks_stat:
+        xor     a
+st_go:  ld      (SG+VV_SHORT),a
         ex      de,hl
         ld      bc,DIRENT_SIZE
         call    um_check                ; the record's buffer
@@ -1325,6 +1416,9 @@ ks_stat:
         call    vfs_lookup
         jr      c,.err
         call    vr_record
+        ld      a,(SG+VV_SHORT)
+        or      a
+        call    nz,vr_short
         pop     de
         push    de
         ld      hl,ST_LNAME             ; the name, bc bytes with its 0
@@ -1341,6 +1435,9 @@ ks_stat:
 
 ; ks_chdir — SYS_CHDIR: HL = path, a directory: the process's P_CWD.
 ks_chdir:
+        ld      a,h
+        or      l
+        jr      z,.loc
         call    vfs_getpath
         ret     c
         call    vfs_lookup
@@ -1368,6 +1465,29 @@ ks_chdir:
         ld      a,E_NOTDIR
         scf
         ret
+.loc:   ; DE -> a locator: the volume, then the cluster, as P_CWD has them.
+        call    vfs_begin
+        ex      de,hl
+        ld      de,VV_T
+        ld      bc,LOC_SIZE
+        call    um_in
+        ld      a,(SG+VV_T)
+        cp      VOL_NONE
+        jr      z,.locok
+        cp      VOL_N
+        jr      nc,.inval
+.locok: ld      hl,(K_CUR)
+        ld      de,P_CWD
+        add     hl,de
+        ex      de,hl
+        ld      hl,SG+VV_T
+        ld      bc,LOC_SIZE
+        ldir
+        xor     a
+        ret
+.inval: ld      a,E_INVAL
+        scf
+        ret
 
 ; ks_getcwd — SYS_GETCWD: HL = a buffer, BC = its size. Out: HL = the
 ; length of the path written, 0-terminated: /mnt when the process's
@@ -1379,6 +1499,10 @@ ks_chdir:
 ; the entry whose cluster is the directory's gives its name. E_NAMETOOLONG
 ; when the path or the buffer is too short, E_IO.
 ks_getcwd:
+        ld      a,b
+        and     80h
+        ld      (SG+VV_SHORT),a         ; bit 15 of the size: the short form
+        res     7,b
         call    um_check
         ret     c
         ld      (SG+VV_RBUF),hl
@@ -1426,13 +1550,19 @@ ks_getcwd:
         ld      (SG+VV_CLUS),de
         call    dir_find_clus           ; VR_ENT = this directory's entry
         ret     c
+        ld      a,(SG+VV_SHORT)
+        or      a
+        jr      nz,.alias
         ld      hl,SG+ST_LNAME          ; its long name, when it has one
         ld      a,(SG+VR_LN)
         or      a
         jr      nz,.len
-        ld      hl,SG+VR_ENT+FE_NAME
         ld      a,(SG+VR_ENT+FE_NT)
+        jr      .name83
+.alias: xor     a                       ; the short form: no case bits
+.name83:
         ld      c,a
+        ld      hl,SG+VR_ENT+FE_NAME
         ld      de,SG+ST_LNAME
         call    fe_name_out             ; "name.ext", 0-terminated
         ld      hl,SG+ST_LNAME
@@ -1671,7 +1801,14 @@ ks_readdir:
         ld      de,SG+VR_MTIME
         ld      bc,4
         ldir
+        ld      a,(iy+OF_VOL)           ; the locator's volume and index;
+        ld      (SG+VR_VOL),a           ; rd_entry left the sector
+        ld      a,(iy+OF_POS)
+        and     0Fh
+        ld      (SG+VR_DIDX),a
         call    vr_record
+        bit     6,(iy+OF_FLAGS)         ; OFF_SHORT
+        call    nz,vr_short
         ld      (SG+VV_RLEFT),bc        ; the name's length: rd_advance
         call    rd_advance              ; keeps no register
         ret     c
@@ -1688,7 +1825,9 @@ ks_readdir:
         ld      hl,1
         or      a
         ret
-.lfn:   call    lfn_feed
+.lfn:   bit     6,(iy+OF_FLAGS)         ; OFF_SHORT: no chain is read
+        jp      nz,.skip
+        call    lfn_feed
 .skip:  call    rd_advance
         ret     c
         jp      .next
@@ -2166,5 +2305,220 @@ ks_read:
 .now:   scf
         ret
 .isdir: ld      a,E_ISDIR
+        scf
+        ret
+
+; ---------------------------------------------------------------------
+; The volume's parameters
+
+; ks_statfs — SYS_STATFS: A = a volume, HL = a 32-byte buffer, B = 0, or
+; 1 to count the volume's free clusters too. Out: the block SF_* in the
+; buffer, from the mount and volume rows. E_NODEV for a row not filled,
+; E_FAULT, E_IO. The free count walks the whole table through the cache —
+; sector by sector for FAT16, cluster by cluster for FAT12 — and costs
+; what that costs: ~1.4 s for a 256-sector FAT16 through an SD card.
+ks_statfs:
+        ld      (SG+VV_SFVOL),a
+        ld      a,b
+        ld      (SG+VV_SFFLG),a
+        ld      bc,SF_SIZE
+        call    um_check
+        ret     c
+        ld      (SG+VV_RBUF),hl
+        call    vfs_begin
+        ld      a,(SG+VV_SFVOL)
+        ld      hl,K_BLK_NVOL
+        cp      (hl)
+        jp      nc,.nodev
+        ; The block, zeroed, in ST_LNAME.
+        ld      hl,SG+ST_LNAME
+        ld      de,SG+ST_LNAME+1
+        ld      bc,SF_SIZE-1
+        ld      (hl),0
+        ldir
+        ld      a,(SG+VV_SFVOL)
+        call    fat_mnt                 ; ix -> the mount row
+        ld      l,a
+        ld      h,0
+        ld      e,l
+        ld      d,h
+        add     hl,hl
+        add     hl,de                   ; * 3
+        add     hl,hl
+        add     hl,hl                   ; * 12
+        ld      de,K_VOL
+        add     hl,de
+        push    hl
+        pop     iy                      ; iy -> the volume row
+        ld      hl,SG+ST_LNAME
+        inc     a
+        ld      (hl),a                  ; SF_DRIVE
+        inc     hl
+        ld      (hl),low 512            ; SF_SECSIZE
+        inc     hl
+        ld      (hl),high 512
+        inc     hl
+        ld      a,(ix+M_SPC)
+        ld      (hl),a                  ; SF_SPC
+        inc     hl
+        ld      e,(iy+V_FIRST)
+        ld      d,(iy+V_FIRST+1)        ; de = the volume's first sector,
+        ld      a,(ix+M_FAT)            ;   its low word
+        sub     e
+        ld      (hl),a                  ; SF_RESERVED = M_FAT - V_FIRST
+        inc     hl
+        ld      a,(ix+M_FAT+1)
+        sbc     a,d
+        ld      (hl),a
+        inc     hl
+        ld      a,(ix+M_NFATS)
+        ld      (hl),a                  ; SF_NFATS
+        inc     hl
+        ld      a,(ix+M_ROOTN)          ; SF_ROOTENT = sectors * 16
+        ld      c,a
+        ld      a,(ix+M_ROOTN+1)
+        ld      b,a
+        sla     c
+        rl      b
+        sla     c
+        rl      b
+        sla     c
+        rl      b
+        sla     c
+        rl      b
+        ld      (hl),c
+        inc     hl
+        ld      (hl),b
+        inc     hl
+        ld      a,(iy+V_COUNT)
+        ld      (hl),a                  ; SF_TOTAL, low 16 bits
+        inc     hl
+        ld      a,(iy+V_COUNT+1)
+        ld      (hl),a
+        inc     hl
+        ld      (hl),0F8h               ; SF_MEDIA
+        inc     hl
+        ld      a,(ix+M_FATSZ)
+        ld      (hl),a                  ; SF_FATSZ, low 8 bits
+        inc     hl
+        ld      a,(ix+M_ROOT)
+        sub     e
+        ld      (hl),a                  ; SF_ROOTSEC = M_ROOT - V_FIRST
+        inc     hl
+        ld      a,(ix+M_ROOT+1)
+        sbc     a,d
+        ld      (hl),a
+        inc     hl
+        ld      a,(ix+M_DATA)
+        sub     e
+        ld      (hl),a                  ; SF_DATASEC = M_DATA - V_FIRST
+        inc     hl
+        ld      a,(ix+M_DATA+1)
+        sbc     a,d
+        ld      (hl),a
+        inc     hl
+        ld      c,(ix+M_NCLUS)
+        ld      b,(ix+M_NCLUS+1)
+        inc     bc
+        ld      (hl),c                  ; SF_MAXCLUS = M_NCLUS + 1
+        inc     hl
+        ld      (hl),b
+        inc     hl
+        inc     hl                      ; SF_DIRTY: 0
+        ld      a,0FFh
+        ld      (hl),a                  ; SF_VOLID: -1
+        inc     hl
+        ld      (hl),a
+        inc     hl
+        ld      (hl),a
+        inc     hl
+        ld      (hl),a
+        ld      a,(SG+VV_SFFLG)
+        or      a
+        jp      z,.out
+        ; The free clusters: entries 2 to M_NCLUS+1 of the table.
+        ld      a,(SG+VV_SFVOL)
+        ld      (SG+VV_T+2),a           ; fat_fsec's, fat_get's volume
+        ld      hl,2
+        ld      (SG+VV_T),hl            ; the cluster being counted
+        bit     0,(ix+M_FLAGS)          ; MF_FAT16
+        jr      z,.f12
+        xor     a
+        ld      (SG+VV_T+6),a           ; the table's sector index
+.f16s:  ld      a,(SG+VV_T+6)
+        call    fat_fsec                ; hl -> the sector
+        ret     c
+        ld      a,(SG+VV_T+6)
+        or      a
+        jr      nz,.f16e
+        inc     hl                      ; the first sector: past entries
+        inc     hl                      ;   0 and 1
+        inc     hl
+        inc     hl
+.f16e:  ld      a,(SG+VV_T+2)
+        call    fat_mnt                 ; ix again: the bget corrupts it
+        ld      c,(ix+M_NCLUS)
+        ld      b,(ix+M_NCLUS+1)
+        inc     bc                      ; bc = the last cluster
+.f16n:  ld      de,(SG+VV_T)
+        ex      de,hl
+        or      a
+        sbc     hl,bc
+        ex      de,hl
+        jr      z,.f16l                 ; the last: count it, then done
+        jr      nc,.out                 ; past it
+.f16l:  push    af
+        ld      a,(hl)
+        inc     hl
+        or      (hl)
+        inc     hl
+        jr      nz,.f16u
+        ld      de,(SG+ST_LNAME+SF_FREE)
+        inc     de
+        ld      (SG+ST_LNAME+SF_FREE),de
+.f16u:  pop     af
+        jr      z,.out                  ; that was the last cluster
+        ld      de,(SG+VV_T)
+        inc     de
+        ld      (SG+VV_T),de
+        ld      a,l                     ; the sector's end: 512 bytes from
+        or      a                       ;   a 256-aligned buffer
+        jr      nz,.f16n
+        ld      a,h
+        and     1
+        jr      nz,.f16n
+        ld      hl,SG+VV_T+6
+        inc     (hl)
+        jr      .f16s
+.f12:   ld      hl,(SG+VV_T)
+        ld      a,(SG+VV_T+2)
+        call    fat_get                 ; hl = the entry; corrupts VV_T
+        ret     c
+        ld      a,h
+        or      l
+        jr      nz,.f12n
+        ld      de,(SG+ST_LNAME+SF_FREE)
+        inc     de
+        ld      (SG+ST_LNAME+SF_FREE),de
+.f12n:  ld      a,(SG+VV_T+2)
+        call    fat_mnt
+        ld      c,(ix+M_NCLUS)
+        ld      b,(ix+M_NCLUS+1)
+        inc     bc
+        ld      hl,(SG+VV_T)
+        or      a
+        sbc     hl,bc
+        jr      z,.out                  ; the last cluster was counted
+        ld      hl,(SG+VV_T)
+        inc     hl
+        ld      (SG+VV_T),hl
+        jr      .f12
+.out:   ld      hl,ST_LNAME
+        ld      de,(SG+VV_RBUF)
+        ld      bc,SF_SIZE
+        call    um_out
+        xor     a
+        ret
+.nodev: ld      a,E_NODEV
         scf
         ret

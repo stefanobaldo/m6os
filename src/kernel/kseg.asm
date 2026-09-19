@@ -63,6 +63,9 @@
         jp      ks_dosenter             ; KS_DOSENTER
         jp      ks_ttymode              ; KS_TTYMODE
         jp      ks_ttyline              ; KS_TTYLINE
+        jp      ks_statfs               ; KS_STATFS (ks_vfs.asm)
+        jp      ks_utime                ; KS_UTIME (ks_vfsw.asm)
+        jp      ks_statl                ; KS_STATL (ks_vfs.asm)
 
 ; ks_enosys — an entry whose body does not exist yet.
 ks_enosys:

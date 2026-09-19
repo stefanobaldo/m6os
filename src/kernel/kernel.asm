@@ -111,6 +111,9 @@ k_sys:
         jp      k_sw_segalloc           ; SYS_SEGALLOC, the same
         jp      k_sw_segfree            ; SYS_SEGFREE, the same
         jp      k_sw_segmap             ; SYS_SEGMAP, the same
+        jp      k_sw_statfs             ; SYS_STATFS, the same
+        jp      k_sw_utime              ; SYS_UTIME, the same
+        jp      k_sw_statl              ; SYS_STATL, the same
         DUP     K_SYS_N-SYS_N
         jp      sys_enosys
         EDUP

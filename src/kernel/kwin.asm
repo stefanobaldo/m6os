@@ -166,6 +166,12 @@ k_sw_ttymode:
         k_sw_stub KS_TTYMODE
 k_sw_ttyline:
         k_sw_stub KS_TTYLINE
+k_sw_statfs:
+        k_sw_stub KS_STATFS
+k_sw_utime:
+        k_sw_stub KS_UTIME
+k_sw_statl:
+        k_sw_stub KS_STATL
 
 k_usp:          dw 0            ; the process's stack pointer during a
                                 ; switched syscall

@@ -319,7 +319,17 @@ SYS_SEGMAP      equ 36          ; A = a page, 1 or 2; B = a segment of the
                                 ; caller's: mapped there, and kept there
                                 ; across syscalls and switches; EINVAL
                                 ; (the page, or not the caller's segment)
-SYS_N           equ 37          ; entries given a syscall so far
+SYS_STATFS      equ 37          ; A = a volume 0-7, HL = a 32-byte buffer,
+                                ; B = 0, or 1 to count the free clusters
+                                ; too (a walk of the table): the block
+                                ; SF_* describes; ENODEV, EFAULT, EIO
+SYS_UTIME       equ 38          ; HL = path, DE = a FAT date, BC = a FAT
+                                ; time: the entry's modification stamp;
+                                ; ENOENT, ENOTDIR, ENAMETOOLONG, EACCES (a
+                                ; root, /mnt), EROFS, EIO
+SYS_STATL       equ 39          ; HL = path, DE = a DIRENT_SIZE buffer: as
+                                ; stat, in the short form (DE_LOC)
+SYS_N           equ 40          ; entries given a syscall so far
 WNOHANG         equ 1           ; waitpid: do not block
 PROCINFO_SIZE   equ P_SIZE+PX_SIZE ; the row, then the extension row
 
@@ -366,6 +376,7 @@ O_RDWR          equ 2
 O_APPEND        equ 08h         ; every write at the end
 O_CREAT         equ 40h         ; create the file when it is not there
 O_TRUNC         equ 80h         ; with a writable mode: empty it first
+O_SHORT         equ 10h         ; a directory: readdir fills the short form
 SEEK_SET        equ 0           ; lseek's whence: from the start,
 SEEK_CUR        equ 1           ; the position,
 SEEK_END        equ 2           ; the end
@@ -381,6 +392,40 @@ DE_NAME         equ 0           ; NAME_MAX+1: the name, 0-terminated — the
 DE_ATTR         equ 256         ; the FAT attribute byte: DA_*
 DE_SIZE         equ 257         ; 4: bytes; 0 for a directory
 DE_MTIME        equ 261         ; 4: the FAT date word, then the time word
+; The short form — statl, and readdir on a descriptor opened with
+; O_SHORT: DE_NAME holds the 8.3 alias as stored, upper case, with its
+; dot, 0-terminated, at most 13 bytes ("." and ".." as they are; a root
+; its letter, /mnt "mnt", a directory known by its cluster "."), then the
+; entry's locator; the rest of the record as above. getcwd with bit 15 of
+; the size set writes the components the same way.
+DE_LOC          equ 13          ; 8: the locator, DL_*
+DL_VOL          equ 0           ; the volume (VOL_NONE: /mnt)
+DL_CLUS         equ 1           ; 2: the first cluster (a directory's own)
+DL_SEC          equ 3           ; 4: the entry's sector, 0 for a root
+DL_IDX          equ 7           ;    and its index
+DL_SIZE         equ 8
+; A directory locator, what chdir takes with HL = 0 and DE -> it: the
+; volume, then the cluster — P_CWD's own three bytes.
+LOC_VOL         equ 0
+LOC_CLUS        equ 1
+LOC_SIZE        equ 3
+; What statfs fills: the MSX-DOS 2 _DPARM block, 32 bytes.
+SF_DRIVE        equ 0           ; the volume + 1
+SF_SECSIZE      equ 1           ; 2: 512
+SF_SPC          equ 3           ; sectors per cluster
+SF_RESERVED     equ 4           ; 2: sectors before the first FAT
+SF_NFATS        equ 6
+SF_ROOTENT      equ 7           ; 2: root directory entries
+SF_TOTAL        equ 9           ; 2: the volume's sectors, low 16 bits
+SF_MEDIA        equ 11          ; F8h
+SF_FATSZ        equ 12          ; sectors per FAT, low 8 bits
+SF_ROOTSEC      equ 13          ; 2: the root directory's first sector
+SF_DATASEC      equ 15          ; 2: the first data sector
+SF_MAXCLUS      equ 17          ; 2: the highest cluster number
+SF_DIRTY        equ 19          ; 0
+SF_VOLID        equ 20          ; 4: -1, not read
+SF_FREE         equ 24          ; 2: free clusters, with B = 1; else 0
+SF_SIZE         equ 32          ; 26-31 zero
 DA_RDONLY       equ 01h
 DA_HIDDEN       equ 02h
 DA_SYSTEM       equ 04h
@@ -491,6 +536,9 @@ KS_SIGNAL       equ KS_TABLE2+78
 KS_DOSENTER     equ KS_TABLE2+81 ; never returns: API2_DOS_TAIL
 KS_TTYMODE      equ KS_TABLE2+84
 KS_TTYLINE      equ KS_TABLE2+87
+KS_STATFS       equ KS_TABLE2+90 ; (ks_vfs.asm)
+KS_UTIME        equ KS_TABLE2+93 ; (ks_vfsw.asm)
+KS_STATL        equ KS_TABLE2+96 ; (ks_vfs.asm)
 
 ; The window (kwin.asm) and the storage gate: what is in page 2 and page 1
 ; while the switched part of the kernel runs. kwin_enter puts the switched
@@ -790,6 +838,7 @@ OFF_ERR         equ 8           ; a read or a write stopped short; OF_ERRNO
                                 ; is owed to the next call
 OFF_WR          equ 16          ; open for writing: the one writer
 OFF_APPEND      equ 32          ; every write at the end (O_APPEND)
+OFF_SHORT       equ 64          ; a directory: readdir's short form
 OF_CLUS_NONE    equ 0
 OF_CLUS_END     equ 0FFFFh
 
@@ -923,6 +972,11 @@ VX_OWNER        equ ST_VFS+297  ; whose segments ex_alloc takes: K_PID for
                                 ; exec, the child's for spawnv
 VX_ROW          equ ST_VFS+298  ; 2: spawnv: the child's row
 VX_SIGDEF       equ ST_VFS+300  ; spawnv: SIGIGN_* bits the child drops
+VV_SHORT        equ ST_VFS+301  ; 1: stat and getcwd write the short form
+VV_SFVOL        equ ST_VFS+302  ; statfs: the volume,
+VV_SFFLG        equ ST_VFS+303  ;    its B
+VW_UTIME        equ ST_VFS+304  ; 2: utime: the time,
+VW_UDATE        equ ST_VFS+306  ; 2: the date
 VK_ENTRY        equ 0           ; VR_KIND: a directory entry (VR_ENT valid)
 VK_ROOT         equ 1           ; the root directory of VR_VOL
 VK_MNT          equ 2           ; the /mnt node
