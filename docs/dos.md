@@ -55,8 +55,9 @@ Program Interface Specification describes it:
   into a CP/M BIOS jump table, `RDSLT`, `WRSLT`, `CALSLT`, `ENASLT` and
   `CALLF` at `000Ch`–`0030h`, the interrupt vector at `0038h`, the two
   unopened FCBs at `005Ch` and `006Ch` built from the first two words of
-  the tail, and the tail itself at `0080h`, upper-cased, with its length
-  before it.
+  the tail, the tail itself at `0080h`, upper-cased, with its length
+  before it, and `FFh` at `0037h`, the mark a program reads to know that
+  `PARAMETERS` and `PROGRAM` are there to be asked for.
 - The BIOS, live: every ROM routine reachable through `CALSLT`, the
   interrupt handler scanning the keyboard and counting `JIFFY`, `H.TIMI`
   and the other hooks the program may set. The console functions go

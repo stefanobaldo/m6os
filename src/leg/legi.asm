@@ -68,6 +68,10 @@ leg_entry:
         ld      (0030h),a
         ld      hl,leg_callf
         ld      (0031h),hl
+        ld      a,0FFh
+        ld      (0037h),a               ; COMMAND2's mark, set before it
+                                        ; enters a program: PARAMETERS and
+                                        ; PROGRAM are there to be read
         ld      a,0C3h
         ld      (K_INTRPT),a            ; jp the trampoline: the second stub
         ld      hl,leg_isr              ; has set the operand already
