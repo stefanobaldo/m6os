@@ -155,17 +155,28 @@ to install.
   console now takes from the keyboard, so a program whose input is a pipe
   can still read what is typed.
 - MSX-DOS 2 programs. `dos name.com [args]` runs a `.COM` program with the
-  machine to itself — the MSX-DOS 2 layout around it, a 53K TPA, the BIOS
-  live, the mapper support routines — and hands the machine back when it
-  ends, its termination code the status; a command word ending in `.com`
-  runs through `dos` by itself. The console functions and the mapper
-  support are served; the file functions come next. Three system calls
-  come with it: `segalloc` and `segfree` give a process 16K segments beyond
-  its pages, `segmap` puts one into page 1 or 2 and keeps it there. See
+  machine to itself — the MSX-DOS 2 layout around it, a 48.8K TPA, the
+  BIOS live, the mapper support routines — and hands the machine back when
+  it ends, its termination code the status; a command word ending in
+  `.com` runs through `dos` by itself. The console functions, the mapper
+  support, and the file, directory, drive, search, process and environment
+  functions of MSX-DOS 2 are served over m6's files: the mounted volumes
+  are the drives, the program sees every file by its 8.3 name, and its
+  errors are MSX-DOS 2's. The FCB functions are not there yet. Six system
+  calls come with it: `segalloc` and `segfree` give a process 16K segments
+  beyond its pages, `segmap` puts one into page 1 or 2 and keeps it there;
+  `statfs` describes a volume, `utime` sets a modification time, and
+  `statl` — with a short form of `readdir`, `chdir` and `getcwd` — names
+  an entry by its 8.3 alias and its place on the volume. See
   [`docs/dos.md`](docs/dos.md).
 
 ### Fixed
 
+- A file written when the volume's next free cluster was one whose number
+  ends in `FFh` — 255, 511, and so on — came back with a cluster of the
+  formatter's fill in front of its bytes and one cluster more than its
+  size needs: `write` took that cluster number for the end-of-chain mark
+  and started the file one cluster further on.
 - Starting `M6.COM` on an MSX2 BIOS flashed a frame of garbage over the top
   of the screen: the console turned cursor blinking on before clearing the
   video memory it uses for it, where the BIOS leaves the 40-column font —
