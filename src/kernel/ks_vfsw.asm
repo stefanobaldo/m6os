@@ -1329,6 +1329,29 @@ ks_chmod:
         scf
         ret
 
+; ks_utime — SYS_UTIME: HL = path, DE = a FAT date, BC = a FAT time: the
+; entry's modification stamp set to them, as given. E_ACCES for what has
+; no entry — a root, /mnt.
+ks_utime:
+        ld      (SG+VW_UDATE),de
+        ld      (SG+VW_UTIME),bc
+        call    vfs_getpath
+        ret     c
+        call    vfs_lookup
+        ret     c
+        ld      a,(SG+VR_KIND)
+        or      a                       ; VK_ENTRY
+        jr      nz,.acces
+        ld      hl,(SG+VW_UTIME)
+        ld      (SG+VR_ENT+FE_MTIME),hl
+        ld      hl,(SG+VW_UDATE)
+        ld      (SG+VR_ENT+FE_MDATE),hl
+        call    dir_put_entry
+        jp      wr_finish
+.acces: ld      a,E_ACCES
+        scf
+        ret
+
 ; ks_unlink — SYS_UNLINK: HL = a file's path: its entry deleted, then its
 ; chain freed.
 ks_unlink:

@@ -832,6 +832,36 @@ t_entry:
         ld      b,E_ACCES
         ld      c,0B6h
         call    t_expect
+        ; utime: a stamp set as given, read back by stat; a root has no
+        ; entry to stamp.
+        ld      hl,p_e
+        ld      de,1234h
+        ld      bc,5678h
+        sys     SYS_UTIME
+        jp      c,t_fail
+        ld      hl,p_e
+        ld      de,t_rec
+        sys     SYS_STAT
+        jp      c,t_fail
+        ld      hl,(t_rec+DE_MTIME)     ; the date word
+        ld      de,1234h
+        or      a
+        sbc     hl,de
+        ld      a,0B8h
+        jp      nz,t_fail
+        ld      hl,(t_rec+DE_MTIME+2)   ; the time word
+        ld      de,5678h
+        or      a
+        sbc     hl,de
+        ld      a,0B9h
+        jp      nz,t_fail
+        ld      hl,p_root
+        ld      de,0
+        ld      bc,0
+        sys     SYS_UTIME
+        ld      b,E_ACCES
+        ld      c,0BAh
+        call    t_expect
         call    t_clean
         ld      hl,t_ok
         k_call  API_CON_PUTS
@@ -871,6 +901,17 @@ t_entry:
         ld      b,E_NOSPC
         ld      c,0F4h
         call    t_expect
+        ; statfs with the count: not one cluster free on the volume.
+        ld      a,1                     ; /mnt/b
+        ld      hl,t_buf
+        ld      b,1
+        sys     SYS_STATFS
+        jp      c,t_fail
+        ld      hl,(t_buf+SF_FREE)
+        ld      a,h
+        or      l
+        ld      a,0F5h
+        jp      nz,t_fail
         ; The spare's cluster given back: the byte finds a place.
         ld      hl,p_spare
         sys     SYS_UNLINK

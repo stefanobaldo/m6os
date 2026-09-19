@@ -164,6 +164,19 @@ proc post_verdict {} {
         return "BIG.BIN's chain ([lindex $chain 0]..[lindex $chain end], [llength $chain] clusters) crosses no straddling FAT12 entry"
     }
     puts stderr "harness: $::test: BIG.BIN at cluster [lindex $chain 0], [llength $chain] clusters, $straddles straddling entry read"
+    # The boot volume's free clusters, as statfs counted them, against
+    # the table read from the image.
+    set line ""
+    foreach r $rows { if {[regexp {^free (\d+)} $r -> free]} { set line $r } }
+    if {$line eq ""} { return "no free line on the screen" }
+    set fh [open $::env(M6_IMAGE) rb]
+    set n 0
+    for {set c 2} {$c <= [dict get $b clusters] + 1} {incr c} {
+        if {[fat12 $fh $b $c] == 0} { incr n }
+    }
+    close $fh
+    if {$free != $n} { return "statfs counts $free free clusters, the table has $n" }
+    puts stderr "harness: $::test: statfs counts $free free clusters, as the table says"
     # The reader's ticks: KB/s for the log.
     set line ""
     foreach r $rows { if {[regexp {^reader: 64K in (\d+) ticks} $r -> ticks]} { set line $r } }
