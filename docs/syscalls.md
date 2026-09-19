@@ -202,9 +202,9 @@ input is a file or a pipe reads what is typed there: `more` in
 | 10 | `open` | `HL` = path, `A` = flags (see *Files*) | `HL` = `A` = the descriptor | `ENOENT`, `ENOTDIR`, `ENAMETOOLONG`, `EMFILE`, `ENFILE`, `EINVAL`: a flag that is not one, a name that cannot be made; `EISDIR`; `EACCES`; `EBUSY`; `ENOSPC`; `EIO`; `EROFS` |
 | 11 | `close` | `A` = fd | — | `EBADF` |
 | 12 | `lseek` | `A` = fd, `DE:HL` = offset, `B` = whence (0 start, 1 current, 2 end) | `DE:HL` = the position | `EBADF`; `EINVAL`: whence not 0–2, or a negative position |
-| 13 | `stat` | `HL` = path, `DE` = a 24-byte buffer | — | `ENOENT`, `ENOTDIR`, `ENAMETOOLONG`, `EIO` |
-| 14 | `readdir` | `A` = fd (a directory), `HL` = a 24-byte buffer | `HL` = 1 (an entry), 0 (the end) | `EBADF`, `ENOTDIR`, `EIO` |
-| 15 | `chdir` | `HL` = path (a directory) | — | `ENOENT`, `ENOTDIR`, `ENAMETOOLONG`, `EIO` |
+| 13 | `stat` | `HL` = path, `DE` = a 265-byte buffer | — | `ENOENT`, `ENOTDIR`, `ENAMETOOLONG`, `EIO` |
+| 14 | `readdir` | `A` = fd (a directory), `HL` = a 265-byte buffer | `HL` = 1 (an entry), 0 (the end) | `EBADF`, `ENOTDIR`, `EIO` |
+| 15 | `chdir` | `HL` = path (a directory); or `HL` = 0 and `DE` = a locator (see *Files*) | — | `ENOENT`, `ENOTDIR`, `ENAMETOOLONG`, `EIO`; `EINVAL`: a locator naming no volume |
 | 16 | `exec` | `HL` = path, `DE` = argv (0: none) | does not return | `EPERM`: process 0; `ENOENT`, `ENOTDIR`, `EISDIR`, `ENOEXEC`, `E2BIG`, `ENOMEM`, `EIO` |
 | 17 | `unlink` | `HL` = path (a file) | — | `ENOENT`, `ENOTDIR`, `EISDIR`, `EACCES`: read-only; `EBUSY`: open; `EIO`, `EROFS` |
 | 18 | `mkdir` | `HL` = path | — | `ENOENT`: the parent; `ENOTDIR`, `EEXIST`, `EINVAL`: not a name; `ENOSPC`, `EIO`, `EROFS` |
@@ -215,7 +215,7 @@ input is a file or a pipe reads what is typed there: `more` in
 | 23 | `waitpid` | `A` = pid (0: any child), `B` = flags (1: `WNOHANG`) | `H` = pid, `L` = `A` = status; `HL` = 0 with `WNOHANG` and nothing exited | `ECHILD`: no child, or not the caller's |
 | 24 | `sleep` | `HL` = ticks | `HL` = 0 | — |
 | 25 | `procinfo` | `A` = pid, `HL` = a 24-byte buffer | — | `EINVAL`: pid not 0–15; `ESRCH`: no such process; `EFAULT` |
-| 26 | `getcwd` | `HL` = buffer, `BC` = its size | `HL` = the length | `ENAMETOOLONG`: the path or the buffer too short; `EFAULT`; `EIO` |
+| 26 | `getcwd` | `HL` = buffer, `BC` = its size, bit 15 set for the short form (see *Files*) | `HL` = the length | `ENAMETOOLONG`: the path or the buffer too short; `EFAULT`; `EIO` |
 | 27 | `time` | — | `HL` = FAT date, `DE` = FAT time | — |
 | 28 | `chmod` | `HL` = path, `A` = attributes | — | `EINVAL`: a bit that is not one; `ENOENT`, `ENOTDIR`, `ENAMETOOLONG`, `EACCES`: a volume's root or `/mnt`; `EROFS`, `EIO` |
 | 29 | `ttymode` | `A` = 0 canonical, 1 raw, 2 recall | `L` = the mode that was | `EINVAL`: not 0, 1 or 2 |
@@ -226,7 +226,10 @@ input is a file or a pipe reads what is typed there: `more` in
 | 34 | `segalloc` | — | `HL` = `A` = a segment, the caller's | `ENOMEM`; `EPERM`: process 0 |
 | 35 | `segfree` | `A` = a segment of the caller's, not one of its pages | `HL` = 0 | `EINVAL` |
 | 36 | `segmap` | `A` = a page, 1 or 2; `B` = a segment of the caller's | `HL` = 0 | `EINVAL`: the page, or not the caller's segment |
-| 37–47 | — | — | — | `ENOSYS` |
+| 37 | `statfs` | `A` = a volume, 0–7; `HL` = a 32-byte buffer; `B` = 0, or 1 to count the free clusters too (see *Files*) | — | `ENODEV`: no volume; `EFAULT`; `EIO` |
+| 38 | `utime` | `HL` = path, `DE` = a FAT date, `BC` = a FAT time | — | `ENOENT`, `ENOTDIR`, `ENAMETOOLONG`, `EACCES`: a volume's root or `/mnt`; `EROFS`, `EIO` |
+| 39 | `statl` | `HL` = path, `DE` = a 265-byte buffer | — | as `stat` |
+| 40–47 | — | — | — | `ENOSYS` |
 
 `write` to a descriptor that is the console goes to the screen and `read`
 from one that is the keyboard or the console takes from the keyboard, as
@@ -388,7 +391,9 @@ does it — and has its pages 1 and 2 mapped to the program's through
 `segmap`. The call swaps that segment into page 3 in place of the kernel's
 own, enters the layer, and never returns; the layer loads the program
 through `read` and runs it, and the process exits with the program's
-termination code as its status. One such program runs at a time.
+termination code as its status. One such program runs at a time. For
+that process page 3 is its own memory too: a buffer of a system call
+may lie there, below `F100h`.
 
 ## Files
 
@@ -397,7 +402,8 @@ descriptor. Bits 0–1 of the flags are the access mode: 0 `O_RDONLY`, 1
 `O_WRONLY`, 2 `O_RDWR`; `O_CREAT` (`40h`) makes the file when it is not
 there, with the archive bit and the time from the clock; `O_TRUNC`
 (`80h`), with a writable mode, empties an existing file first;
-`O_APPEND` (`08h`) puts every write at the end. A file has one writer at
+`O_APPEND` (`08h`) puts every write at the end; `O_SHORT` (`10h`), on a
+directory, makes `readdir` fill the short record described below. A file has one writer at
 a time: opening for writing fails with `EBUSY` while anyone has the file
 open, and opening for reading fails while a writer has it. A file whose
 read-only attribute is set cannot be opened for writing, renamed or
@@ -417,12 +423,26 @@ returns 0; a negative one is `EINVAL`.
 | 257 | 4 | the size in bytes; 0 for a directory |
 | 261 | 4 | the modification time: the FAT date word, then the time word |
 
+`statl` fills the same record in its *short form*: the first 13 bytes
+hold the entry's 8.3 name, upper case, with its dot and 0-terminated,
+zero-filled to 13 — `.` and `..`, a volume's letter and `mnt` as they are
+— and the next 8 bytes are the entry's *locator*: the volume (`FFh` for
+`/mnt`), the entry's first cluster as two bytes (0 for a volume's root),
+the sector holding its directory entry as four bytes and that entry's
+index in the sector, both 0 for what has no entry. The 9 bytes at 256
+are as in the long form. `readdir` on a descriptor opened with `O_SHORT`
+returns the same short record for each entry, and skips long-name
+entries without reading them, so it is the faster form.
+
 `stat` describes what a path names; a volume's root is named by its
 letter, `/mnt` by `mnt`. `readdir` on a descriptor opened on a directory
 returns its entries one per call, in the order they are stored, skipping
 deleted ones, volume labels and long-name entries, and 0 at the end;
 `lseek` to 0 rewinds it. `/mnt` lists a directory per mounted volume,
-`a` to `h`. `chdir` makes a directory the process's current one.
+`a` to `h`. `chdir` makes a directory the process's current one; with
+`HL` = 0 it takes the directory from a 3-byte locator at `DE` — the
+volume and the first cluster, as the short record gives them — with no
+lookup, and refuses a volume that is neither mounted nor `FFh`.
 
 `unlink` removes a file — its entry first, then its clusters; a file that
 is open cannot be removed. `mkdir` makes an empty directory where the
@@ -449,12 +469,42 @@ current directory as a path into the buffer, 0-terminated, and returns
 its length: `/` for the boot volume's root, `/mnt/b/dir` for a directory
 on another volume, `/mnt` for the directory of volumes — the shortest
 name that reaches it, whatever `chdir` was given; a buffer too small for
-the path and its terminator is `ENAMETOOLONG`. `exec`
+the path and its terminator is `ENAMETOOLONG`. With bit 15 of the size
+set, each component is the directory's 8.3 name in upper case, long name
+or not. `exec`
 replaces the calling process's image with the program in the file, as
 [`programs.md`](programs.md) describes, and returns only when it could
 not: the caller's image is intact then, whatever the error. A process
 whose parent is waiting in `vfork` gets fresh memory for the new image,
 and the parent wakes as the image starts.
+
+`utime` sets a file's or a directory's modification time to the two FAT
+words given, as they are; a volume's root and `/mnt` have no entry to
+stamp (`EACCES`). `statfs` describes a mounted volume in a 32-byte block:
+
+| Offset | Size | What |
+|---|---|---|
+| 0 | 1 | the volume, plus one |
+| 1 | 2 | the sector size, 512 |
+| 3 | 1 | sectors per cluster |
+| 4 | 2 | reserved sectors before the first FAT |
+| 6 | 1 | the number of FATs |
+| 7 | 2 | root directory entries |
+| 9 | 2 | total sectors, the low 16 bits |
+| 11 | 1 | media descriptor, `F8h` |
+| 12 | 1 | sectors per FAT, the low 8 bits |
+| 13 | 2 | the first root directory sector |
+| 15 | 2 | the first data sector |
+| 17 | 2 | the highest cluster number |
+| 19 | 1 | 0 |
+| 20 | 4 | the volume id, `FFFFFFFFh` |
+| 24 | 2 | free clusters, when `B` = 1; 0 otherwise |
+| 26 | 6 | 0 |
+
+The sectors are counted from the volume's first. The free count walks
+the whole FAT through the cache, one sector at a time, and costs what
+that costs: about a second and a half for a 256-sector FAT16 read from
+an SD card; a caller that does not need it passes `B` = 0.
 
 ## Errors
 
