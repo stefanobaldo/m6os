@@ -39,7 +39,7 @@ KSEG      := build/kseg.bin
 # The legacy layer, src/leg/leg.asm, at its own address: what a .COM
 # program finds above its TPA, carried inside build/bin/dos.
 LEG       := build/leg.bin
-LEG_MAX   := 8448
+LEG_MAX   := 11520
 # The base utilities: src/bin/<name>.asm builds to build/bin/<name>, a raw
 # image for P0_PROG with the executable header (src/lib/prog.inc). Every
 # one fits one page: a file above PAGE_MAX bytes — 16K less the 256-byte

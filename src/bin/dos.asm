@@ -35,7 +35,9 @@ main:   xor     a                       ; nothing taken yet
         ; The tail: " arg1 arg2 ...", 0-terminated, at most 127 bytes.
         ld      de,tail
         ld      c,0
-.args:  call    arg_next
+.args:  push    de                      ; the walker keeps no register
+        call    arg_next
+        pop     de
         jr      c,.tailend
         ld      a,' '
         call    .tailc
@@ -167,6 +169,7 @@ opened: ld      (fd),a
         ld      (LEG_SEG3-4000h),a
         call    drive
         ld      (LEG_DRIVE-4000h),a
+        call    prog
         xor     a
         ld      (LEG_STARTED-4000h),a
         ld      a,(fd)
@@ -241,33 +244,79 @@ toolong:
 usage:  ld      de,s_usage
         jp      err_usage
 
-; drive — A = the drive of the current directory: its letter's index for
-; /mnt/x, the boot volume's for anything else.
-drive:  ld      hl,pbuf
-        ld      bc,PATH_MAX
-        sys     SYS_GETCWD
+; drive — A = the drive of the current directory: its volume, the boot
+; volume's for /mnt.
+drive:  ld      hl,s_dot
+        ld      de,rec
+        sys     SYS_STATL
         jr      c,.root
-        ld      hl,pbuf
-        ld      de,s_mnt
-        ld      b,5
-.cmp:   ld      a,(de)
-        cp      (hl)
-        jr      nz,.root
-        inc     hl
-        inc     de
-        djnz    .cmp
-        ld      a,(hl)                  ; the letter
-        sub     'a'
-        cp      VOL_N
-        jr      c,.ok
+        ld      a,(rec+DE_NAME+DE_LOC+DL_VOL)
+        cp      VOL_NONE
+        jr      nz,.ok
 .root:  ld      a,(K_BLK_ROOT)
 .ok:    ret
+
+; prog — the program's own file into LEG_PROG, through page 2, for the
+; PROGRAM string the layer composes: its directory's volume and cluster
+; from a short stat of the path without its last item, its alias from
+; one of the whole path. A stat that fails leaves the zeros there.
+prog:   ld      hl,(path)
+        ld      bc,0                    ; the last slash, 0 for none
+.scan:  ld      a,(hl)
+        or      a
+        jr      z,.at
+        cp      '/'
+        jr      nz,.n
+        ld      b,h
+        ld      c,l
+.n:     inc     hl
+        jr      .scan
+.at:    ld      a,b
+        or      c
+        ld      hl,s_dot
+        jr      z,.dir                  ; no slash: the directory is .
+        ld      hl,(path)
+        or      a
+        sbc     hl,bc
+        ld      a,h
+        or      l
+        ld      hl,s_root
+        jr      z,.dir                  ; the slash first: it is /
+        ld      h,b
+        ld      l,c
+        ld      (hl),0                  ; the path cut at the slash
+        push    bc
+        ld      hl,(path)
+        call    .dirstat
+        pop     hl
+        ld      (hl),'/'
+        jr      .file
+.dir:   call    .dirstat
+.file:  ld      hl,(path)
+        ld      de,rec
+        sys     SYS_STATL
+        ret     c
+        ld      hl,rec+DE_NAME
+        ld      de,LEG_PROG+PR_ALIAS-4000h
+        ld      bc,13
+        ldir
+        ret
+.dirstat:
+        ld      de,rec
+        sys     SYS_STATL
+        ret     c
+        ld      a,(rec+DE_NAME+DE_LOC+DL_VOL)
+        ld      (LEG_PROG+PR_DRIVE-4000h),a
+        ld      hl,(rec+DE_NAME+DE_LOC+DL_CLUS)
+        ld      (LEG_PROG+PR_CLUS-4000h),hl
+        ret
 
 s_usage:        db "dos path [args...]",0
 s_toolong:      db "the arguments do not fit a command tail of 127 bytes",0
 s_toobig:       db "the program does not fit the TPA",0
 s_com:          db ".com",0
-s_mnt:          db "/mnt/",0
+s_dot:          db ".",0
+s_root:         db "/",0
 
 ; The layer, as the legacy page 3 holds it from LEG_BASE.
 leg_start:
@@ -288,3 +337,4 @@ leg_end:
         bss     taillen,1
         bss     tail,128
         bss     pbuf,PATH_MAX+4
+        bss     rec,DIRENT_SIZE

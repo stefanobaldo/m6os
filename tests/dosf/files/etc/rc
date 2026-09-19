@@ -1,0 +1,12 @@
+echo rc start
+dos /dosf/hfile.com
+dos /dosf/hfind.com
+dos /dosf/hdir.com
+dos /dosf/henv.com Ab cd
+dos /dosf/hproc.com
+dos /dosf/hparse.com
+dos /dosf/hmisc.com
+/t/tick
+dos /dosf/copy64.com
+/t/tick
+echo rc done

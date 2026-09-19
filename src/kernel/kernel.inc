@@ -1049,12 +1049,12 @@ K_HINGE_LEN     equ 64
 K_HINGE2        equ K_HINGE+17  ; the second stub: the legacy page 3 back
 K_HINGE_STUBS   equ 34          ; the two stubs' bytes
 K_HINGE_SP      equ K_HINGE+K_HINGE_LEN ; the crossing's stack, downward
-LEG_BASE        equ 0D000h      ; the layer: six CP/M version bytes,
-LEG_BDOS        equ 0D006h      ;   the BDOS entry — the TPA's top —
-LEG_VEC         equ 0D010h      ;   nine JPs: entry, a syscall's return,
+LEG_BASE        equ 0C400h      ; the layer: six CP/M version bytes,
+LEG_BDOS        equ 0C406h      ;   the BDOS entry — the TPA's top —
+LEG_VEC         equ 0C410h      ;   nine JPs: entry, a syscall's return,
                                 ;   the interrupt trampoline, EXTBIO,
                                 ;   RDSLT, WRSLT, CALSLT, ENASLT, CALLF
-LEG_VARS        equ 0D030h      ;   what dos fills before dosenter:
+LEG_VARS        equ 0C430h      ;   what dos fills before dosenter:
 LEG_SEGS        equ LEG_VARS+0  ;   3: the segments in pages 0-2 (the
                                 ;      layer's PUT_Pn shadow from then on)
 LEG_SEG3        equ LEG_VARS+3  ;   the legacy page-3 segment itself
@@ -1062,8 +1062,12 @@ LEG_DRIVE       equ LEG_VARS+4  ;   the current drive, 0 = A:
 LEG_STARTED     equ LEG_VARS+5  ;   0 until the program has been entered
 LEG_FD          equ LEG_VARS+6  ;   the .COM file, open for reading
 LEG_SIZE        equ LEG_VARS+7  ;   2: its size
-LEG_PARAMS      equ 0D040h      ;   128: the tail as typed, 0-terminated
-LEG_BIOS        equ 0D100h      ;   the CP/M BIOS jump table, 17 entries
+LEG_PARAMS      equ 0C440h      ;   128: the tail as typed, 0-terminated
+LEG_PROG        equ 0C4C0h      ;   16: the program's own file, for its
+PR_DRIVE        equ 0           ;      PROGRAM string: its directory's
+PR_CLUS         equ 1           ;      volume and cluster (2), then its
+PR_ALIAS        equ 3           ;      8.3 alias, 0-terminated (13)
+LEG_BIOS        equ 0C500h      ;   the CP/M BIOS jump table, 17 entries
 LEG_MAX         equ K_HINGE-LEG_BASE ; the layer's largest length
 LEG_TPA         equ LEG_BDOS-P0_PROG ; the largest .COM
 LEG_EXIT        equ 0FFh        ; in C' at a crossing: k_dos_exit, A = code
