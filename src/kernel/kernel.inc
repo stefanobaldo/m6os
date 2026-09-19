@@ -416,9 +416,9 @@ SF_SPC          equ 3           ; sectors per cluster
 SF_RESERVED     equ 4           ; 2: sectors before the first FAT
 SF_NFATS        equ 6
 SF_ROOTENT      equ 7           ; 2: root directory entries
-SF_TOTAL        equ 9           ; 2: the volume's sectors, low 16 bits
+SF_TOTAL        equ 9           ; 2: the volume's sectors, 0 above 65535
 SF_MEDIA        equ 11          ; F8h
-SF_FATSZ        equ 12          ; sectors per FAT, low 8 bits
+SF_FATSZ        equ 12          ; sectors per FAT, 0 above 255
 SF_ROOTSEC      equ 13          ; 2: the root directory's first sector
 SF_DATASEC      equ 15          ; 2: the first data sector
 SF_MAXCLUS      equ 17          ; 2: the highest cluster number

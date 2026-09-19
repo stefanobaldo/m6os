@@ -233,6 +233,30 @@ start:
         jp      nc,x21
         cp      E_NODEV
         jp      nz,x21
+        ; (7) the last volume is the slave's, 66 046 sectors with a
+        ; table of 256: both fields are too narrow for it and read 0,
+        ; not the low bits, and the cluster count still fits.
+        ld      a,(K_BLK_NVOL)
+        dec     a
+        ld      hl,sf
+        ld      b,0
+        sys     SYS_STATFS
+        jp      c,x22
+        ld      hl,(sf+SF_TOTAL)
+        ld      a,h
+        or      l
+        jp      nz,x22
+        ld      a,(sf+SF_FATSZ)
+        or      a
+        jp      nz,x22
+        ld      a,(sf+SF_SPC)
+        cp      1
+        jp      nz,x22
+        ld      hl,(sf+SF_MAXCLUS)
+        ld      de,65502
+        or      a
+        sbc     hl,de
+        jp      nz,x22
         xor     a
 exit:   sys     SYS_EXIT
 x1:    ld      a,1
@@ -276,6 +300,8 @@ x19:    ld      a,19
 x20:    ld      a,20
         jp      exit
 x21:    ld      a,21
+        jp      exit
+x22:    ld      a,22
         jp      exit
 
 ; streq — HL, DE -> 0-terminated strings: Z when equal. Corrupts AF, HL,

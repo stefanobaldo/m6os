@@ -490,9 +490,9 @@ stamp (`EACCES`). `statfs` describes a mounted volume in a 32-byte block:
 | 4 | 2 | reserved sectors before the first FAT |
 | 6 | 1 | the number of FATs |
 | 7 | 2 | root directory entries |
-| 9 | 2 | total sectors, the low 16 bits |
+| 9 | 2 | total sectors, or 0 when the volume has more than 65 535 |
 | 11 | 1 | media descriptor, `F8h` |
-| 12 | 1 | sectors per FAT, the low 8 bits |
+| 12 | 1 | sectors per FAT, or 0 when the table is 256 sectors or longer |
 | 13 | 2 | the first root directory sector |
 | 15 | 2 | the first data sector |
 | 17 | 2 | the highest cluster number |
@@ -501,7 +501,9 @@ stamp (`EACCES`). `statfs` describes a mounted volume in a 32-byte block:
 | 24 | 2 | free clusters, when `B` = 1; 0 otherwise |
 | 26 | 6 | 0 |
 
-The sectors are counted from the volume's first. The free count walks
+The sectors are counted from the volume's first. A field that cannot
+hold the volume's number reads 0 rather than the low bits of it, which is
+what MSX-DOS 2 answers for a volume too large to describe. The free count walks
 the whole FAT through the cache, one sector at a time, and costs what
 that costs: about a second and a half for a 256-sector FAT16 read from
 an SD card; a caller that does not need it passes `B` = 0.
