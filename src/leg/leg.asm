@@ -26,16 +26,77 @@
 ; LEG_PARAMS and LEG_BIOS (kernel.inc), and nothing else about this file.
         include "kernel/kernel.inc"
 
-; MSX-DOS 2 error codes the layer returns (DOS2-FCS §6).
-D_STOP          equ 9Eh         ; Ctrl-STOP pressed
-D_CTRLC         equ 9Fh         ; Ctrl-C pressed
+; MSX-DOS 2 error codes the layer returns (DOS2-PIS §6).
+D_STOP          equ 9Fh         ; Ctrl-STOP pressed
+D_CTRLC         equ 9Eh         ; Ctrl-C pressed
 D_ABORT         equ 9Dh         ; Disk operation aborted
-D_ISBFN         equ 0DCh        ; Invalid function number
+D_IBDOS         equ 0DCh        ; Invalid MSX-DOS call
+D_ISBFN         equ 0B8h        ; Invalid sub-function number
 D_IPARM         equ 8Bh         ; Invalid parameter
 D_INTER         equ 0DFh        ; Internal error
 D_NORAM         equ 0DEh        ; Not enough memory
+D_IDRV          equ 0DBh        ; Invalid drive
+D_IFNM          equ 0DAh        ; Invalid filename
+D_IPATH         equ 0D9h        ; Invalid pathname
+D_PLONG         equ 0D8h        ; Pathname too long
+D_NOFIL         equ 0D7h        ; File not found
+D_NODIR         equ 0D6h        ; Directory not found
+D_DRFUL         equ 0D5h        ; Root directory full
+D_DKFUL         equ 0D4h        ; Disk full
+D_DUPF          equ 0D3h        ; Duplicate filename
+D_DIRE          equ 0D2h        ; Invalid directory move
+D_FILRO         equ 0D1h        ; Read only file
+D_DIRNE         equ 0D0h        ; Directory not empty
+D_IATTR         equ 0CFh        ; Invalid attributes
+D_DOT           equ 0CEh        ; Invalid . or .. operation
+D_SYSX          equ 0CDh        ; System file exists
+D_DIRX          equ 0CCh        ; Directory exists
+D_FILEX         equ 0CBh        ; File exists
+D_FOPEN         equ 0CAh        ; File already in use
+D_EOF           equ 0C7h        ; End of file
+D_ACCV          equ 0C6h        ; File access violation
+D_IPROC         equ 0C5h        ; Invalid process id
+D_NHAND         equ 0C4h        ; No spare file handles
+D_IHAND         equ 0C3h        ; Invalid file handle
+D_IDEV          equ 0C1h        ; Invalid device operation
+D_IENV          equ 0C0h        ; Invalid environment string
+D_ELONG         equ 0BFh        ; Environment string too long
+D_HDEAD         equ 0BAh        ; File handle has been deleted
+D_DISK          equ 0FDh        ; Disk error
+D_WPROT         equ 0F8h        ; Write protected disk
 
-LEG_STACK       equ 128         ; the layer's own stack for a BDOS call
+LEG_STACK       equ 192         ; the layer's own stack for a BDOS call
+; The handle table (legf.asm): LEG_NHAND rows of three bytes.
+LEG_NHAND       equ 16
+HN_FD            equ 0           ; a descriptor 3-7, a device HD_*, or free
+HN_FLAGS         equ 1           ; HF_*
+HN_LEVEL         equ 2           ; the _FORK level it was opened at
+HF_NOWR         equ 1           ; no writes — the open mode's own bits
+HF_NORD         equ 2           ; no reads
+HF_INH          equ 4           ; inheritable
+HF_ASCII        equ 20h         ; a device in ASCII mode
+HF_EOF          equ 40h         ; the last read met the end
+HD_CON          equ 80h         ; the console
+HD_NUL          equ 81h         ; nothing
+HD_DEAD         equ 82h         ; deleted under a duplicate: .HDEAD
+HD_FREE         equ 0FFh
+; A descriptor's row (leg_fdrow): where its file is, for the handle
+; functions that need a name.
+FR_DRIVE        equ 0           ; the physical drive
+FR_CLUS         equ 1           ; 2: its directory's cluster
+FR_ALIAS        equ 3           ; 13: its 8.3 alias, 0-terminated
+FR_SIZE         equ 16
+; A file info block's internal part (DOS2-PIS §3.4: bytes 26-63).
+FI_DRIVE        equ 26          ; the physical drive searched
+FI_CLUS         equ 27          ; 2: the directory's cluster
+FI_POS          equ 29          ; 4: the entry index the search resumes at
+FI_PAT          equ 33          ; 11: the pattern, expanded
+FI_ATTR         equ 44          ; the attributes wanted
+FI_LOG          equ 45          ; the logical drive named, 0 = A:
+LEG_PATHMAX     equ 144         ; a translated path and its 0
+LEG_NAMEMAX     equ 32          ; a last item and its 0
+LEG_LINEMAX     equ 115         ; a line _READ takes from the console
+LEG_ENVMAX      equ 256         ; the environment store
 
 ; leg_sys n — a syscall through the hinge: the arguments in A, HL, DE,
 ; BC as the syscall wants them; the result in HL, and AF as the syscall
@@ -45,6 +106,16 @@ LEG_STACK       equ 128         ; the layer's own stack for a BDOS call
         ld      c,n
         exx
         call    leg_syscall
+    endm
+
+; leg_sysx n — the same through leg_xsys (legf.asm), which keeps the
+; arguments for the program's disk error routine to have the call
+; repeated.
+    macro leg_sysx n
+        exx
+        ld      c,n
+        exx
+        call    leg_xsys
     endm
 
         org     LEG_BASE
@@ -91,166 +162,13 @@ leg_params:     ds 128                  ; the tail as typed
 ; ---------------------------------------------------------------------
 ; Entering and leaving
 
-; leg_entry — the first crossing, from dosenter through the second stub:
-; interrupts disabled, this page in, the launcher's page 0 still in page
-; 0 with the tail at 0080h. The DOS page 0 (DOS2-PIS §2.3) written around
-; the kernel's subslot stub at 0040h; EXTBIO and HOKVLD in this copy of
-; the BIOS area; the mapper variable table filled through the kernel; the
-; program read from its file into the three pages through the kernel —
-; over the launcher, which is gone from here; the two FCBs from the tail;
-; the stack where MSX-DOS puts it with WBOOT under it so that a ret ends
-; the program; and into the program with interrupts enabled.
-leg_entry:
-        ld      a,1
-        ld      (leg_started),a
-        ld      sp,LEG_BDOS-8
-        ; The DOS page 0: 0000h-003Fh and 0051h-007Fh cleared, the stub at
-        ; 0040h and the tail at 0080h kept, then the entries.
-        ld      hl,0
-        ld      (hl),0
-        ld      de,1
-        ld      bc,K_INTRPT+3-1
-        ldir
-        ld      hl,K_SSLOT+K_SSLOT_LEN
-        ld      (hl),0
-        ld      de,K_SSLOT+K_SSLOT_LEN+1
-        ld      bc,0080h-(K_SSLOT+K_SSLOT_LEN)-1
-        ldir
-        ld      a,0C3h
-        ld      (0000h),a               ; jp WBOOT
-        ld      hl,LEG_BIOS+3
-        ld      (0001h),hl
-        ld      a,(leg_drive)
-        ld      (0004h),a
-        ld      a,0C3h
-        ld      (0005h),a               ; jp the BDOS
-        ld      hl,LEG_BDOS
-        ld      (0006h),hl
-        ld      a,0C3h
-        ld      (000Ch),a
-        ld      hl,leg_rdslt
-        ld      (000Dh),hl
-        ld      a,0C3h
-        ld      (0014h),a
-        ld      hl,leg_wrslt
-        ld      (0015h),hl
-        ld      a,0C3h
-        ld      (001Ch),a
-        ld      hl,leg_calslt
-        ld      (001Dh),hl
-        ld      a,0C3h
-        ld      (0024h),a
-        ld      hl,leg_enaslt
-        ld      (0025h),hl
-        ld      a,0C3h
-        ld      (0030h),a
-        ld      hl,leg_callf
-        ld      (0031h),hl
-        ld      a,0C3h
-        ld      (K_INTRPT),a            ; jp the trampoline: the second stub
-        ld      hl,leg_isr              ; has set the operand already
-        ld      (K_INTRPT+1),hl
-        ; The keyboard matrix as it is now into OLDKEY and NEWKEY of this
-        ; copy, so that the BIOS's scanner sees no key already held as a
-        ; new press — the RET that launched the program is still down.
-        ld      hl,B_OLDKEY
-        ld      de,B_NEWKEY
-        ld      b,11
-        ld      c,0
-.row:   in      a,(PPI_C)
-        and     0F0h
-        or      c
-        out     (PPI_C),a
-        in      a,(PPI_B)
-        ld      (hl),a
-        ld      (de),a
-        inc     hl
-        inc     de
-        inc     c
-        djnz    .row
-        ; EXTBIO and HOKVLD, in this copy of the BIOS area.
-        ld      a,0C3h
-        ld      (B_FCALL),a
-        ld      hl,leg_extbio
-        ld      (B_FCALL+1),hl
-        ld      hl,0
-        ld      (B_FCALL+3),hl
-        ld      hl,B_HOKVLD
-        set     0,(hl)
-        ; The program, into pages 0-2 through the kernel, page piece by
-        ; page piece — read takes a buffer in one page. The launcher's
-        ; page 0 is overwritten from P0_PROG, and never returned to.
-        ld      hl,(leg_size)
-        ld      (leg_left),hl
-        ld      hl,P0_PROG
-        ld      (leg_addr),hl
-.load:  ld      hl,(leg_left)
-        ld      a,h
-        or      l
-        jr      z,.loaded
-        ld      hl,(leg_addr)
-        ld      a,h
-        and     3Fh
-        ld      d,a
-        ld      e,l                     ; de = the offset in its page
-        ld      hl,4000h
-        or      a
-        sbc     hl,de                   ; hl = the room to the page's end
-        ld      de,(leg_left)
-        push    hl
-        or      a
-        sbc     hl,de
-        pop     hl
-        jr      c,.room                 ; less room than is left: the room
-        ex      de,hl                   ; else what is left
-.room:  ld      b,h
-        ld      c,l                     ; bc = the piece
-        ld      hl,(leg_addr)
-        ld      a,(leg_fd)
-        leg_sys SYS_READ                ; hl = bytes read
-        jr      c,.readfail
-        ld      a,h
-        or      l
-        jr      z,.readfail             ; the end before the size
-        ld      b,h
-        ld      c,l
-        ld      hl,(leg_addr)
-        add     hl,bc
-        ld      (leg_addr),hl
-        ld      hl,(leg_left)
-        or      a
-        sbc     hl,bc
-        ld      (leg_left),hl
-        jr      .load
-.readfail:
-        ld      a,D_INTER
-        jp      leg_term
-.loaded:
-        ld      a,(leg_fd)
-        leg_sys SYS_CLOSE
-        ld      a,(B_RAMAD0+3)
-        ld      (leg_mapvar+0),a        ; the primary mapper's slot
-        ld      hl,SC_SEGMENTS
-        leg_sys SYS_SYSCONF
-        ld      a,h
-        or      a
-        jr      z,.total
-        ld      l,255                   ; 256 segments: the byte says 255
-.total: ld      a,l
-        ld      (leg_mapvar+1),a
-        ld      hl,SC_SEGMENTS_FREE
-        leg_sys SYS_SYSCONF
-        ld      a,l
-        ld      (leg_mapvar+2),a
-        ld      a,(leg_mapvar+1)
-        sub     l
-        sub     4
-        jr      nc,.sys
-        xor     a
-.sys:   ld      (leg_mapvar+3),a        ; the system's: the rest
-        ld      a,4
-        ld      (leg_mapvar+4),a        ; the user's: the TPA's four
-        call    leg_fcbs
+; leg_go — the end of the entry, outside the overlay the entry's code
+; becomes: the stack where MSX-DOS puts it with WBOOT under it so that a
+; ret ends the program, the environment store emptied — it lies over the
+; entry's code, which has run — and into the program with interrupts
+; enabled.
+leg_go: xor     a
+        ld      (leg_env),a
         ld      hl,LEG_BIOS             ; a ret from the program is WBOOT
         push    hl
         ld      hl,0
@@ -289,7 +207,11 @@ leg_ret:                                ; from the second stub, di, AF in AF'
 ; error that caused it, then the crossing that ends the process with the
 ; code as its status. Never returns.
 leg_term:
+        ld      b,0
+leg_term2:                              ; B = the error that caused it
         ld      (leg_code),a
+        ld      a,b
+        ld      (leg_code2),a
         ld      hl,(leg_defab)
         ld      a,h
         or      l
@@ -298,6 +220,9 @@ leg_term:
         ld      b,0
         ld      de,.go
         push    de
+        ld      a,(leg_code2)
+        ld      b,a
+        ld      a,(leg_code)
         jp      (hl)
 .go:    di
         ld      a,(leg_code)
@@ -325,22 +250,29 @@ leg_abort:
 ; leg_bdos — CALL 0005h: C = the function. The program's SP kept, the
 ; layer's stack taken, IX and IY preserved as the specification promises.
 ; Functions below 40h return A = L and B = H; the rest an error code in
-; A. A function the layer does not serve answers .ISBFN.
+; A. A function the layer does not serve answers .IBDOS. A disk error
+; routine may call the BDOS from inside a call: the layer's stack is
+; kept then, not taken again (leg_nest).
 leg_bdos:
+        ld      (leg_hl),hl             ; the program's HL: an argument
+        ld      hl,leg_nest
+        inc     (hl)
+        dec     (hl)
+        jr      nz,.on
         ld      (leg_usp),sp
         ld      sp,leg_stack_top
+.on:    inc     (hl)
         push    ix
         push    iy
+        push    af                      ; the program's A: an argument too
         ld      a,c
-        cp      0Dh
+        cp      32h
         jr      c,.low
-        cp      2Ch
-        jr      z,.gtime
-        cp      62h
+        cp      40h
         jr      c,.isbfn
-        cp      70h
+        cp      71h
         jr      nc,.isbfn
-        sub     62h
+        sub     40h
         ld      hl,leg_tab_hi
         jr      .go
 .low:   ld      hl,leg_tab_lo
@@ -353,35 +285,60 @@ leg_bdos:
         inc     hl
         ld      h,(hl)
         ld      l,a
-        push    hl
+        ld      (leg_fn),hl             ; the handler
+        pop     af
         ld      hl,.done
-        ex      (sp),hl                 ; .done pushed, hl the handler
-        ld      a,c
-        jp      (hl)
-.gtime: call    f_gtime
+        push    hl                      ; where the handler returns
+        ld      hl,(leg_hl)
+        push    hl
+        ld      hl,(leg_fn)
+        ex      (sp),hl                 ; the handler under it, HL the program's
+        ret                             ; into the handler
 .done:  pop     iy
         pop     ix
+        push    hl                      ; the result
+        ld      hl,leg_nest
+        dec     (hl)
+        pop     hl
+        jr      nz,.ret
         ld      sp,(leg_usp)
-        ei
+.ret:   ei
         ret
-.isbfn: ld      a,D_ISBFN
+.isbfn: pop     af
+        ld      a,D_IBDOS
         ld      (leg_lasterr),a
         ld      l,a
         ld      h,0
         ld      b,h
         jr      .done
 
-leg_tab_lo:
-        dw      f_term0, f_conin, f_conout, f_isbfn, f_isbfn, f_isbfn
+leg_tab_lo:                             ; 00h-31h
+        dw      f_term0, f_conin, f_conout, f_ibdos, f_ibdos, f_ibdos
         dw      f_dirio, f_dirin, f_innoe, f_strout, f_bufin, f_const
-        dw      f_cpmver
-leg_tab_hi:
-        dw      f_term, f_defab, f_isbfn, f_error, f_explain, f_isbfn
-        dw      f_isbfn, f_isbfn, f_isbfn, f_isbfn, f_isbfn, f_isbfn
-        dw      f_isbfn, f_dosver
+        dw      f_cpmver, f_dskrst, f_seldsk
+        dw      f_ibdos, f_ibdos, f_ibdos, f_ibdos, f_ibdos, f_ibdos
+        dw      f_ibdos, f_ibdos, f_ibdos   ; 0Fh-17h: FCBs
+        dw      f_login, f_curdrv, f_setdta, f_alloc
+        dw      f_ibdos, f_ibdos, f_ibdos, f_ibdos, f_ibdos ; 1Ch-20h
+        dw      f_ibdos, f_ibdos, f_ibdos, f_ibdos, f_ibdos, f_ibdos
+        dw      f_ibdos, f_ibdos, f_ibdos   ; 21h-29h: FCBs
+        dw      f_gdate, f_sdate, f_gtime, f_stime, f_verify
+        dw      f_ibdos, f_ibdos            ; 2Fh, 30h: absolute sectors
+        dw      f_dparm
+leg_tab_hi:                             ; 40h-70h
+        dw      f_ffirst, f_fnext, f_fnew, f_open, f_create, f_close
+        dw      f_ensure, f_dup, f_read, f_write, f_seek, f_ioctl
+        dw      f_htest, f_delete, f_rename, f_move, f_attr, f_ftime
+        dw      f_hdelete, f_hrename, f_hmove, f_hattr, f_hftime
+        dw      f_getdta, f_getvfy, f_getcd, f_chdir, f_parse, f_pfile
+        dw      f_chkchr, f_wpath, f_flush, f_fork, f_join, f_term
+        dw      f_defab, f_defer, f_error, f_explain
+        dw      f_ibdos, f_ibdos, f_ibdos   ; 67h-69h: format, RAM disk,
+        dw      f_assign, f_genv, f_senv, f_fenv, f_dskchk, f_dosver
+        dw      f_redir
 
-f_isbfn:
-        ld      a,D_ISBFN
+f_ibdos:
+        ld      a,D_IBDOS
         ld      (leg_lasterr),a
         ld      l,a
         ld      h,0
@@ -1293,97 +1250,7 @@ leg_extbio:
         ld      hl,leg_maptab
         ret
 
-; ---------------------------------------------------------------------
-; The tail's FCBs
-
-; leg_fcbs — the two unopened FCBs at 005Ch and 006Ch from the first two
-; words of the tail at 0080h: a drive letter and a colon, then up to
-; eight characters, a dot, up to three; * fills the rest of its part
-; with ?. Corrupts everything.
-leg_fcbs:
-        ld      hl,0081h
-        ld      de,005Ch
-        call    .one
-        ld      de,006Ch
-.one:   ld      a,(hl)
-        or      a
-        ret     z
-        cp      ' '
-        jr      nz,.word
-        inc     hl
-        jr      .one
-.word:  xor     a
-        ld      (de),a                  ; the drive: default
-        inc     hl
-        ld      a,(hl)
-        dec     hl
-        cp      ':'
-        jr      nz,.name
-        ld      a,(hl)
-        and     0DFh
-        sub     'A'-1
-        ld      (de),a
-        inc     hl
-        inc     hl
-.name:  inc     de
-        ld      b,8
-        call    .part
-        ld      a,(hl)
-        cp      '.'
-        jr      nz,.ext
-        inc     hl
-.ext:   ld      b,3
-        call    .part
-.skip:  ld      a,(hl)                  ; past the rest of the word
-        or      a
-        ret     z
-        cp      ' '
-        ret     z
-        cp      '.'
-        jr      z,.dot
-        inc     hl
-        jr      .skip
-.dot:   inc     hl
-        jr      .skip
-.part:  ld      a,(hl)
-        or      a
-        jr      z,.pad
-        cp      ' '
-        jr      z,.pad
-        cp      '.'
-        jr      z,.pad
-        cp      '*'
-        jr      z,.star
-        inc     hl
-        cp      'a'
-        jr      c,.store
-        cp      'z'+1
-        jr      nc,.store
-        sub     20h
-.store: ld      (de),a
-        inc     de
-        djnz    .part
-        ; the part is full: skip what is left of it
-.more:  ld      a,(hl)
-        or      a
-        ret     z
-        cp      ' '
-        ret     z
-        cp      '.'
-        ret     z
-        inc     hl
-        jr      .more
-.star:  inc     hl
-.starq: ld      a,'?'
-        ld      (de),a
-        inc     de
-        djnz    .starq
-        jr      .more
-.pad:   ld      a,' '
-        ld      (de),a
-        inc     de
-        djnz    .pad
-        ret
+        include "leg/legf.asm"
 
 ; ---------------------------------------------------------------------
 ; Messages, variables
@@ -1392,10 +1259,40 @@ leg_msgs:
         db      D_STOP,"Ctrl-STOP pressed",0
         db      D_CTRLC,"Ctrl-C pressed",0
         db      D_ABORT,"Disk operation aborted",0
-        db      D_ISBFN,"Invalid function number",0
+        db      D_IBDOS,"Invalid MSX-DOS call",0
+        db      D_ISBFN,"Invalid sub-function number",0
         db      D_IPARM,"Invalid parameter",0
         db      D_INTER,"Internal error",0
         db      D_NORAM,"Not enough memory",0
+        db      D_IDRV,"Invalid drive",0
+        db      D_IFNM,"Invalid filename",0
+        db      D_IPATH,"Invalid pathname",0
+        db      D_PLONG,"Pathname too long",0
+        db      D_NOFIL,"File not found",0
+        db      D_NODIR,"Directory not found",0
+        db      D_DRFUL,"Root directory full",0
+        db      D_DKFUL,"Disk full",0
+        db      D_DUPF,"Duplicate filename",0
+        db      D_DIRE,"Invalid directory move",0
+        db      D_FILRO,"Read only file",0
+        db      D_DIRNE,"Directory not empty",0
+        db      D_IATTR,"Invalid attributes",0
+        db      D_DOT,"Invalid . or .. operation",0
+        db      D_SYSX,"System file exists",0
+        db      D_DIRX,"Directory exists",0
+        db      D_FILEX,"File exists",0
+        db      D_FOPEN,"File already in use",0
+        db      D_EOF,"End of file",0
+        db      D_ACCV,"File access violation",0
+        db      D_IPROC,"Invalid process id",0
+        db      D_NHAND,"No spare file handles",0
+        db      D_IHAND,"Invalid file handle",0
+        db      D_IDEV,"Invalid device operation",0
+        db      D_IENV,"Invalid environment string",0
+        db      D_ELONG,"Environment string too long",0
+        db      D_HDEAD,"File handle has been deleted",0
+        db      D_DISK,"Disk error",0
+        db      D_WPROT,"Write protected disk",0
         db      0
 s_error:        db "Error ",0
 
@@ -1414,7 +1311,85 @@ rs_dir:         db 0            ;   0 read, 1 write
 ms_page:        db 0            ; CAL_SEG: the page, the segment that was
 ms_was:         db 0            ;   there, A across the call
 ms_af:          db 0
-leg_stack:      ds LEG_STACK
-leg_stack_top:
-leg_end:
-        ASSERT  leg_end <= K_HINGE
+leg_code2:      db 0            ; the secondary code on the way out
+leg_nest:       db 0            ; BDOS calls in progress
+leg_hl:         dw 0            ; the dispatch: the program's HL,
+leg_fn:         dw 0            ;   the handler
+; The entry (legi.asm), an overlay: the record, the environment store and
+; the console line lie over its code once it has run.
+leg_once:
+        include "leg/legi.asm"
+leg_once_end:
+leg_rec         equ leg_once            ; DIRENT_SIZE: a short record
+leg_env         equ leg_rec+DIRENT_SIZE ; LEG_ENVMAX: the environment,
+                                        ;   "NAME=value",0 pairs, then 0
+leg_line        equ leg_env+LEG_ENVMAX  ; LEG_LINEMAX+4: _READ's console
+                                        ;   line, DOS 2's buffer shape, CR
+                                        ;   LF after it
+        ASSERT  leg_line+LEG_LINEMAX+4 <= leg_once_end
+        ASSERT  leg_rec+DIRENT_SIZE <= legf_init   ; over leg_entry alone
+leg_end:                                ; the image ends: what follows is
+                                        ; not copied, and legf_init sets
+                                        ; what must start known
+; The files' variables (legf.asm), outside the image: not emitted, not
+; copied — the segment's bytes below the hinge, set by legf_init where
+; they must start known.
+    macro leg_bss Q1,Q2
+Q1      equ     lbss_at
+lbss_at  =       lbss_at+Q2
+    endm
+lbss_at  =       leg_end
+        leg_bss leg_dcwd,16   ; each physical drive's directory cluster
+        leg_bss leg_assign,8   ; logical -> physical drive, 1 = A:
+        leg_bss leg_login,1   ; the login vector
+        leg_bss leg_curp,1   ; the current drive, physical
+        leg_bss leg_level,1   ; the _FORK level
+        leg_bss leg_defer,2   ; the disk error routine, 0 = none
+        leg_bss leg_dta,2   ; the transfer address (5.3's FCBs)
+        leg_bss leg_vfy,1   ; the verify flag
+        leg_bss leg_chk,1   ; the disk check flag
+        leg_bss leg_xdrv,1   ; leg_xlate: the drive named, physical,
+        leg_bss leg_xlog,1   ;   and logical
+        leg_bss leg_xback,1   ;   1: the kernel's directory was moved
+        leg_bss leg_xslash,1   ;   1: the path ended in a \
+        leg_bss leg_xwr,1   ; 1 while a call writes (for _DEFER)
+        leg_bss leg_xbuf,2   ; leg_xlate: where the path goes
+        leg_bss leg_xcur,2   ; the directory entered: its cluster
+        leg_bss leg_loc,3   ; a locator for chdir
+        leg_bss leg_wpos,2   ; the whole path's last item
+        leg_bss leg_lpos,1   ; the console line: delivered so far,
+        leg_bss leg_llen,1   ;   its length, 0 = none held
+        leg_bss sa_a,1   ; leg_xsys: the arguments kept
+        leg_bss sa_hl,2
+        leg_bss sa_de,2
+        leg_bss sa_bc,2
+        leg_bss sa_n,1
+        leg_bss o_mode,1   ; _OPEN, _CREATE: the mode, the
+        leg_bss o_attr,1   ;   attributes, the handle's flags, the
+        leg_bss o_hflags,1   ;   descriptor
+        leg_bss o_fd,1
+        leg_bss hx_fd,1   ; a handle function: the descriptor,
+        leg_bss hx_row,2   ;   the handle's row,
+        leg_bss hx_new,1   ;   the one that replaces it,
+        leg_bss hx_pos,4   ;   its position across the two
+        leg_bss x_mvclus,2   ; _MOVE: the destination's cluster
+        leg_bss s_fib,2   ; the search's FIB
+        leg_bss s_fd,1   ;   its descriptor
+        leg_bss s_attr,1   ;   the attributes wanted
+        leg_bss s_name11,11   ; an eleven-byte name
+        leg_bss s_new11,11   ; _RENAME's new one
+        leg_bss s_tmpl11,11   ; _FNEW's template
+        leg_bss ex_n,1   ; leg_exp11: a byte stored
+        leg_bss p_drv,1   ; _PARSE: the drive
+        leg_bss leg_name,LEG_NAMEMAX   ; a path's last item
+        leg_bss leg_hand,LEG_NHAND*3   ; the handles
+        leg_bss leg_fdrow,5*FR_SIZE   ; descriptors 3-7: where their files are
+        leg_bss leg_path,LEG_PATHMAX   ; a translated path
+        leg_bss leg_path2,LEG_PATHMAX   ; a second one
+        leg_bss leg_wpath,64   ; the whole path of the last find
+        leg_bss leg_sf,SF_SIZE   ; a statfs block
+        leg_bss leg_stack,LEG_STACK
+leg_stack_top   equ lbss_at
+leg_bss_end     equ lbss_at
+
+        ASSERT  leg_bss_end <= K_HINGE

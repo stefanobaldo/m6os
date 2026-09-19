@@ -120,15 +120,15 @@ proc type_at_shell {} {
     # kernel's own bytes there once the prompt is back.
     set t [typeline [expr {$t + 1.2}] {d o s space / d o s / s w a p . c o m}]
     at [expr {$t + 1.5}] {
-        expect_screen "swap: M6 at C800h, press a key" "swap did not print its line"
-        if {[peek 0xC800] != 0x4D || [peek 0xC801] != 0x36} {
-            problem [format "C800h reads %02X %02X while the program runs, not M6: the legacy page 3 is not in" [peek 0xC800] [peek 0xC801]]
+        expect_screen "swap: M6 at C000h, press a key" "swap did not print its line"
+        if {[peek 0xC000] != 0x4D || [peek 0xC001] != 0x36} {
+            problem [format "C000h reads %02X %02X while the program runs, not M6: the legacy page 3 is not in" [peek 0xC000] [peek 0xC001]]
         }
     }
     tap [expr {$t + 1.7}] space
     at [expr {$t + 2.7}] {
-        if {[peek 0xC800] == 0x4D && [peek 0xC801] == 0x36} {
-            problem "C800h still reads M6 after the program ended: the kernel's page 3 is not back"
+        if {[peek 0xC000] == 0x4D && [peek 0xC001] == 0x36} {
+            problem "C000h still reads M6 after the program ended: the kernel's page 3 is not back"
         }
         if {[lindex [rows] end] ne {} && ![has_row {/ $}]} { problem "no prompt after swap" }
         finish_up
