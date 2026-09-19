@@ -260,6 +260,28 @@
         ld      b,a
         d_fn    _CLOSE
         d_ok
+        d_step  13                      ; a tick with the stack in page 0
+        ld      (t_sp),sp
+        ld      sp,lowstk_top
+        ld      hl,(JIFFY)
+        ld      (t_j),hl
+        ld      bc,0
+.tick:  ld      hl,(JIFFY)
+        ld      de,(t_j)
+        or      a
+        sbc     hl,de
+        ld      a,l
+        cp      3                       ; three ticks taken on this stack
+        jr      nc,.ticked
+        dec     bc
+        ld      a,b
+        or      c
+        jr      nz,.tick
+.ticked:
+        ld      sp,(t_sp)
+        ld      a,l
+        cp      3
+        jp      c,t_fail
         d_step  11                      ; refused
         ld      c,67h
         call    BDOS
@@ -285,5 +307,9 @@ m_12:   db      'Error 12H',0
 s_ctlz: db      'ab',1Ah,'cd'
 s_crlf2: db     13,10
 h1:     db      0
+t_sp:   dw      0
+t_j:    dw      0
+lowstk: ds      64
+lowstk_top:
 free:   dw      0
 buf:    ds      64

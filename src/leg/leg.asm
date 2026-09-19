@@ -66,6 +66,9 @@ D_DISK          equ 0FDh        ; Disk error
 D_WPROT         equ 0F8h        ; Write protected disk
 
 LEG_STACK       equ 192         ; the layer's own stack for a BDOS call
+LEG_ISTACK      equ 128         ; and the trampoline's, for a tick taken
+                                ; while the program's stack is not in
+                                ; page 3 (leg_isr)
 ; The handle table (legf.asm): LEG_NHAND rows of three bytes.
 LEG_NHAND       equ 16
 HN_FD            equ 0           ; a descriptor 3-7, a device HD_*, or free
@@ -945,9 +948,39 @@ rs_go:  ld      (rs_dir),a
 ; leg_isr — 0038h while this page is in: the BIOS's own interrupt entry
 ; through CALSLT, which scans the keyboard, counts JIFFY and runs the
 ; hooks in this copy of its work area.
+;
+; The BIOS is called with its own slot in page 0, so a program whose
+; stack is in pages 0-2 — XCOPY puts its at 2800h, and nothing forbids
+; it — would lose the stack under the tick. The trampoline moves to a
+; stack of its own in this page first, as MSX-DOS's page-0 handler does,
+; and keeps the interrupted SP on it. A stack already in page 3 stays
+; where it is: that is a tick during a BDOS call, or a tick inside a
+; hook that enabled interrupts again, and the frame in progress must not
+; be written over.
 leg_isr:
         di
+        ld      (leg_isp),sp
         push    af
+        ld      a,(leg_isp+1)
+        cp      0C0h                    ; page 3: the stack stays there
+        jr      c,.move
+        pop     af
+        call    .tick
+        ei
+        reti
+.move:  pop     af
+        ld      sp,leg_istack_top
+        push    hl
+        ld      hl,(leg_isp)
+        ex      (sp),hl                 ; the interrupted SP under it
+        call    .tick
+        ld      (leg_isp),hl
+        pop     hl
+        ld      sp,hl
+        ld      hl,(leg_isp)
+        ei
+        reti
+.tick:  push    af
         push    bc
         push    de
         push    hl
@@ -963,8 +996,7 @@ leg_isr:
         pop     de
         pop     bc
         pop     af
-        ei
-        reti
+        ret
 
 ; ---------------------------------------------------------------------
 ; The mapper support routines (DOS2-PIS §5)
@@ -1390,6 +1422,9 @@ lbss_at  =       leg_end
         leg_bss leg_sf,SF_SIZE   ; a statfs block
         leg_bss leg_stack,LEG_STACK
 leg_stack_top   equ lbss_at
+        leg_bss leg_isp,2   ; leg_isr: the interrupted SP
+        leg_bss leg_istack,LEG_ISTACK   ; and its own stack
+leg_istack_top  equ lbss_at
 leg_bss_end     equ lbss_at
 
         ASSERT  leg_bss_end <= K_HINGE
