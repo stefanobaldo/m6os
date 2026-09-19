@@ -1330,19 +1330,34 @@ con_read:
         xor     a
         ret
 
-; con_write — a console handle: DE = the buffer, HL = bytes, through the
-; BIOS byte by byte, the break check as _CONOUT makes it.
+; con_write — a console handle (IX -> its row): DE = the buffer, HL =
+; bytes, through the BIOS byte by byte, the break check as _CONOUT makes
+; it. In ASCII mode a ^Z ends the write, as it ends a text file: the
+; byte is not written and the count returned includes it, which is what
+; MSX-DOS 2 answers. The flags ride in C because a BIOS call corrupts IX.
 con_write:
+        ld      c,(ix+HN_FLAGS)
         push    hl
 .byte:  ld      a,h
         or      l
         jr      z,.done
         call    leg_break
         ld      a,(de)
-        call    leg_chput
+        cp      1Ah
+        jr      z,.ctlz
+.put:   call    leg_chput
         inc     de
         dec     hl
         jr      .byte
+.ctlz:  bit     5,c                     ; HF_ASCII
+        jr      z,.put
+        dec     hl                      ; the ^Z itself is counted
+        pop     de                      ; de = the bytes asked for
+        ex      de,hl
+        or      a
+        sbc     hl,de                   ; hl = asked - left = written
+        xor     a
+        ret
 .done:  pop     hl
         xor     a
         ret
