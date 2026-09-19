@@ -121,7 +121,7 @@ in it, and the Nextor ones, return `.IBDOS` (invalid function call,
 | `2Ah` `_GDATE`, `2Ch` `_GTIME` | the clock's date, with the day of the week, and its time |
 | `2Bh` `_SDATE`, `2Dh` `_STIME` | refused with `A` = `FFh`: a program does not set the clock |
 | `2Eh` `_VERIFY`, `58h` `_GETVFY` | the flag, kept and given back; m6 verifies nothing |
-| `31h` `_DPARM` | the volume's parameters as m6 has them: 512-byte sectors, the cluster size, the reserved sectors, the FATs, the root entries, the first root and data sectors and the highest cluster; the total sectors and the sectors per FAT cut to the width of their fields; media descriptor `F8h`; volume id `−1`; dirty flag 0 |
+| `31h` `_DPARM` | the volume's parameters as m6 has them: 512-byte sectors, the cluster size, the reserved sectors, the FATs, the root entries, the first root and data sectors and the highest cluster; the total sectors and the sectors per FAT 0 when the field cannot hold them, as MSX-DOS 2 answers for a volume too large to describe; media descriptor `F8h`; volume id `−1`; dirty flag 0 |
 | `40h` `_FFIRST`, `41h` `_FNEXT` | a search by name pattern and attributes, the found entry in the FIB with its 8.3 alias; hidden and system entries, and directories, only when asked, `.` and `..` with the directories; `.NOFIL` at the end, and at once for the volume-label bit |
 | `42h` `_FNEW` | a file made from the template, the `?`s filled from the FIB's name; still ambiguous is `.IFNM` |
 | `43h` `_OPEN` | a file, or a directory as a FIB, or a device: `CON` for the console, `NUL`, `AUX` and `PRN` for a sink that reads nothing |

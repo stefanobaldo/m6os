@@ -2390,16 +2390,24 @@ ks_statfs:
         inc     hl
         ld      (hl),b
         inc     hl
-        ld      a,(iy+V_COUNT)
-        ld      (hl),a                  ; SF_TOTAL, low 16 bits
+        ld      a,(iy+V_COUNT+2)        ; SF_TOTAL: the sectors when they
+        or      (iy+V_COUNT+3)          ;   fit the field, else zero, which
+        ld      c,(iy+V_COUNT)          ;   is what MSX-DOS 2 answers for a
+        ld      b,(iy+V_COUNT+1)        ;   volume too large to express
+        jr      z,.total
+        ld      bc,0
+.total: ld      (hl),c
         inc     hl
-        ld      a,(iy+V_COUNT+1)
-        ld      (hl),a
+        ld      (hl),b
         inc     hl
         ld      (hl),0F8h               ; SF_MEDIA
         inc     hl
+        ld      a,(ix+M_FATSZ+1)        ; SF_FATSZ: the same, in a byte
+        or      a
         ld      a,(ix+M_FATSZ)
-        ld      (hl),a                  ; SF_FATSZ, low 8 bits
+        jr      z,.fatsz
+        xor     a
+.fatsz: ld      (hl),a
         inc     hl
         ld      a,(ix+M_ROOT)
         sub     e
