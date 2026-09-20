@@ -143,7 +143,9 @@ leg_fd:         db 0                    ; LEG_FD: the program's file
 leg_size:       dw 0                    ; LEG_SIZE: its length
 leg_rampri:     db 0                    ; LEG_RAMPRI, LEG_RAMSEC: the RAM's
 leg_ramsec:     db 0FFh                 ;   slot in pages 1 and 2
-        ASSERT  leg_rampri == LEG_RAMPRI
+leg_stseg:      db 0                    ; LEG_STSEG: where a body outside
+                                        ;   this page is (dosenter)
+        ASSERT  leg_rampri == LEG_RAMPRI && leg_stseg == LEG_STSEG
         block   LEG_PARAMS-$
 leg_params:     ds 128                  ; the tail as typed
         block   LEG_BIOS-$

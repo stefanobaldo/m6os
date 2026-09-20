@@ -240,9 +240,11 @@ ks_signal:
 ; whatever the program mapped; the PSG silenced; the console up again,
 ; keeping the screen and the cursor when the program left SCREEN 0 at 80
 ; columns and clearing it otherwise — read from the BIOS variables in the
-; legacy copy, through page 1, since page 2 is this code; the keyboard's
-; baseline taken from the matrix as it is, so a key still held does not
-; register; K_DOSPID cleared. Preserves A (the status).
+; legacy copy, through page 1, since page 2 is this code; the buffers the
+; cache lent to the layer's body (ks_dosenter) returned, free, through
+; page 1 too; the keyboard's baseline taken from the matrix as it is, so
+; a key still held does not register; K_DOSPID cleared. Preserves A (the
+; status).
 ks_dos_check:
         push    af
         ld      hl,K_DOSPID
@@ -262,6 +264,18 @@ ks_dos_check:
         ld      a,10
         call    .psg0
         di
+        ld      a,(K_REC+KR_SEG64K+2)   ; the storage segment, into page 1:
+        out     (0FDh),a                ;   the buffers dosenter lent to the
+        ld      ix,SG+ST_HDR            ;   layer's body are the cache's
+        ld      b,BUF_N                 ;   again, free
+        ld      de,H_SIZE
+.back:  ld      a,(ix+H_VOL)
+        cp      VOL_LENT
+        jr      nz,.keep
+        ld      (ix+H_VOL),VOL_NONE
+        ld      (ix+H_FLAGS),0
+.keep:  add     ix,de
+        djnz    .back
         ld      a,(K_HINGE2+1)          ; the legacy segment, into page 1
         out     (0FDh),a
         ld      a,(B_SCRMOD-8000h)
@@ -324,28 +338,130 @@ ks_dos_check:
         out     (0A1h),a
         ret
 
+; dosenter's ways out with an error, before it: within a jr of every check.
+kde_perm:
+        ld      a,E_PERM
+        jr      kde_err3
+kde_busy:
+        ld      a,E_BUSY
+        jr      kde_err3
+kde_inval3:
+        ld      a,E_INVAL
+kde_err3:
+        pop     de                      ; where, the length, the body
+        pop     bc
+        pop     hl
+        scf
+        ret
+kde_fault:
+        ld      a,E_FAULT
+        scf
+        ret
+kde_inval:
+        ld      a,E_INVAL
+        scf
+        ret
+
 ; ks_dosenter — SYS_DOSENTER: A = the legacy page-3 segment, the
 ; caller's, filled by the caller as the layer expects; the caller's pages
-; 1 and 2 hold the program's through segmap. The hinge into this page
+; 1 and 2 hold the program's through segmap; HL = the layer's body in the
+; caller's page 0, BC = its length and DE = where in the storage segment
+; it goes, or BC = 0 for none. The body takes the place of the block
+; cache's buffers from DE to the segment's end, lent until ks_dos_check
+; returns them: their headers marked VOL_LENT and HF_LENT, which nothing
+; finds, evicts or flushes; none is dirty, since nothing is between
+; syscalls. DE is a buffer's start with BUF_MIN buffers left below it, and
+; the body ends within the segment; the layer maps the segment for a file
+; function and finds its body there. Every check comes before the first
+; write. Then the hinge into this page
 ; and into the legacy copy — through page 1, since page 2 is this code —
-; the BIOS's cursor in that copy put where the console's is, the row
-; marked, and the second stub taken by dos_tail, the resident step that
-; closes the window this code runs in. Never returns on success. E_PERM
-; (process 0), E_BUSY (a legacy process exists), E_INVAL (a segment not
-; the caller's).
+; the BIOS's cursor and the storage segment's number in that copy, the
+; row marked, and the second stub taken by dos_tail, the resident step
+; that closes the window this code runs in. Never returns on success.
+; E_PERM (process 0), E_BUSY (a legacy process exists), E_INVAL (a segment
+; not the caller's; a place for the body that is not a buffer's start,
+; leaves the cache under BUF_MIN, or does not hold it), E_FAULT (a body
+; not wholly in page 0).
 ks_dosenter:
+        push    hl                      ; the body
+        push    bc                      ; its length
+        push    de                      ; where it goes
         ld      c,a                     ; c = the legacy segment
         ld      a,(K_PID)
         or      a
-        jr      z,.perm
+        jr      z,kde_perm
         ld      b,a                     ; b = the pid
         ld      a,(K_DOSPID)
         or      a
-        jr      nz,.busy
+        jr      nz,kde_busy
         ld      a,c
         k_call2 API2_MEM_OWNER          ; a = the segment's owner
         cp      b
-        jr      nz,.inval
+        jr      nz,kde_inval3
+        ld      (SG+SV_DOSARG),bc
+        pop     de                      ; de = where
+        pop     bc                      ; bc = the length
+        pop     hl                      ; hl = the body
+        ld      a,b
+        or      c
+        jr      z,.nobody
+        push    hl
+        add     hl,bc                   ; the body's end: 4000h at most
+        dec     hl
+        ld      a,h
+        pop     hl
+        jr      c,kde_fault
+        cp      40h
+        jr      nc,kde_fault
+        ld      a,e                     ; where: a buffer's start,
+        or      a
+        jr      nz,kde_inval
+        ld      a,d
+        sub     high ST_BUF
+        jr      c,kde_inval
+        rra                             ; a = the buffer, CF = not its start
+        jr      c,kde_inval
+        cp      BUF_MIN                 ; BUF_MIN left to the cache,
+        jr      c,kde_inval
+        cp      BUF_N
+        jr      nc,kde_inval
+        push    hl
+        ld      h,d
+        ld      l,e
+        add     hl,bc                   ; and the body within the segment
+        dec     hl
+        bit     6,h
+        pop     hl
+        jr      nz,kde_inval
+        push    bc
+        push    hl
+        push    de
+        ld      l,a                     ; the first lent buffer's header
+        ld      h,0
+        add     hl,hl
+        add     hl,hl
+        add     hl,hl
+        ld      de,SG+ST_HDR
+        add     hl,de
+        neg
+        add     a,BUF_N
+        ld      b,a                     ; buffers lent
+        ld      de,H_FLAGS
+.lend:  ld      (hl),VOL_LENT
+        add     hl,de
+        ld      (hl),HF_LENT
+        inc     hl
+        inc     hl                      ; H_SIZE = H_FLAGS + 2
+        djnz    .lend
+        pop     hl                      ; where, as this code sees it
+        ld      de,SG
+        add     hl,de
+        ex      de,hl
+        pop     hl
+        pop     bc
+        ldir
+.nobody:
+        ld      bc,(SG+SV_DOSARG)       ; c = the segment, b = the pid
         push    bc
         ; The hinge into this page: the template, its two segments patched.
         ld      hl,(K_DOSTMPL)
@@ -375,6 +491,8 @@ ks_dosenter:
         ld      a,h
         inc     a
         ld      (B_CSRX-8000h),a
+        ld      a,(K_REC+KR_SEG64K+2)   ; where the body is, for the layer
+        ld      (LEG_STSEG-8000h),a
         ; The row: three pages, its page 0 remembered, SIGINT ignored.
         ld      hl,(K_CUR)
         ld      de,P_NPAGES
@@ -390,15 +508,6 @@ ks_dosenter:
         add     hl,de
         set     0,(hl)                  ; SIGIGN_INT
         k_call2 API2_DOS_TAIL           ; the pages back, and across
-.perm:  ld      a,E_PERM
-        scf
-        ret
-.busy:  ld      a,E_BUSY
-        scf
-        ret
-.inval: ld      a,E_INVAL
-        scf
-        ret
 
 ; ks_ttymode — SYS_TTYMODE: A = TTY_CANON, TTY_RAW or TTY_RECALL. Out:
 ; L = the mode that was. EINVAL for anything else. The mode is the

@@ -305,11 +305,20 @@ SYS_TTYLINE     equ 32          ; HL = a line, BC = its length, 0 to
 SYS_DOSENTER    equ 33          ; A = the legacy page-3 segment, the
                                 ; caller's, filled as src/leg/leg.asm
                                 ; expects, pages 1 and 2 mapped by segmap
-                                ; to the program's: the caller becomes the
-                                ; program and the call does not return;
-                                ; EPERM (process 0), EBUSY (a .COM runs
-                                ; already), EINVAL (not the caller's
-                                ; segment)
+                                ; to the program's; HL = the layer's body
+                                ; in the caller's page 0, BC = its length
+                                ; and DE = where in the storage segment it
+                                ; goes, or BC = 0 for none: the block
+                                ; cache lends its buffers from DE to the
+                                ; segment's end for the program's run and
+                                ; the body is copied there. The caller
+                                ; becomes the program and the call does
+                                ; not return; EPERM (process 0), EBUSY (a
+                                ; .COM runs already), EINVAL (not the
+                                ; caller's segment; DE not a buffer's
+                                ; start, leaving the cache under BUF_MIN
+                                ; buffers, or not holding the body),
+                                ; EFAULT (a body not wholly in page 0)
 SYS_SEGALLOC    equ 34          ; -> HL = A = a segment owned by the
                                 ; caller, freed at its exit; ENOMEM; EPERM
                                 ; (process 0)
@@ -755,6 +764,14 @@ H_SIZE          equ 8
 HF_DIRTY        equ 1           ; newer than the disk: written by bflush
                                 ; before the syscall returns, never evicted
 HF_FAT          equ 2           ; a FAT sector: bflush writes every copy
+HF_LENT         equ 80h         ; with VOL_LENT as the volume: the buffer is
+                                ; not the cache's while an MSX-DOS program
+                                ; runs (dosenter) — never found, never the
+                                ; victim, never flushed
+VOL_LENT        equ 0FEh        ; no volume has the number
+BUF_MIN         equ 6           ; buffers the cache keeps when it lends:
+                                ; three may be dirty at a time and the two
+                                ; most recent stay valid (bc_victim)
 SV_CLOCK        equ ST_VARS+0   ; the cache's clock
 SV_TOTAL        equ ST_VARS+1   ; 4: the LUN's sectors, 0 = unknown
 SV_LFLAGS       equ ST_VARS+5   ; the LUN's flags, VF_*
@@ -787,6 +804,8 @@ SV_FSTEP        equ ST_VARS+100 ; 2: sectors between two FAT copies
 SV_FSEC         equ ST_VARS+102 ; 4: the sector being written
 SV_FKEY         equ ST_VARS+106 ; 2: bc_find: the sector's high word
 SV_LAST         equ ST_VARS+108 ; 2: the header of bc_find's last hit
+SV_DOSARG       equ ST_VARS+110 ; 2: dosenter: the segment and the pid,
+                                ;    kept across the body's copy
 PK_PRIMARY      equ 0
 PK_LOGICAL      equ 1
 PK_SUPER        equ 2
@@ -1066,6 +1085,8 @@ LEG_RAMPRI      equ LEG_VARS+9  ;   the RAM's slot, as pages 1 and 2 select
 LEG_RAMSEC      equ LEG_VARS+10 ;   it: the primary in bits 5-4 and 3-2,
                                 ;   the secondary the same, FFh when the
                                 ;   slot is not expanded
+LEG_STSEG       equ LEG_VARS+11 ;   the storage segment, where the layer's
+                                ;   body is (dosenter writes it)
 LEG_PARAMS      equ 0C440h      ;   128: the tail as typed, 0-terminated
 LEG_PROG        equ 0C4C0h      ;   16: the program's own file, for its
 PR_DRIVE        equ 0           ;      PROGRAM string: its directory's

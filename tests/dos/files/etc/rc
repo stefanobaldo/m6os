@@ -7,6 +7,9 @@ echo rc start
 # fails here, not on a user's machine. A text line, not a number: the
 # harness reads every number on the screen as a timestamp.
 cat /etc/rc | grep buffers
+# dosenter's refusals, before the first program: each comes back with
+# its errno and lends nothing.
+/t/dosarg
 dos /dos/hello.com
 dos /dos/exit7.com
 dos /dos/jp0.com

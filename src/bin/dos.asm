@@ -233,6 +233,7 @@ opened: ld      (fd),a
         inc     de
         djnz    .upper
         ; Into the legacy page 3. Only a refusal comes back.
+        ld      bc,0                    ; no body outside the segment
         ld      a,(leg)
         sys     SYS_DOSENTER
 failsegs:
