@@ -35,6 +35,21 @@ proc count_rows {want} {
 proc expect_screen {want msg} { if {![has_row $want]} { problem $msg } }
 proc expect_absent {want msg} { if {[has_row $want]} { problem $msg } }
 
+# The block cache's headers, read from the mapper's RAM: how many buffers
+# are lent to an MSX-DOS program's layer (their volume byte is VOL_LENT,
+# FEh). The storage segment's number is in the kernel's record at C106h
+# (K_REC + KR_SEG64K + 2), read while the kernel's page 3 is in; the
+# headers are 22 rows of 8 bytes from 0800h of that segment (ST_HDR).
+set stseg -1
+set LENT 0          ;# buffers the layer's body takes while a program runs
+proc lent {} {
+    set n 0
+    for {set i 0} {$i < 22} {incr i} {
+        if {[debug read "Main RAM" [expr {$::stseg * 0x4000 + 0x0800 + $i * 8}]] == 0xFE} { incr n }
+    }
+    return $n
+}
+
 # The matrix: row and mask of every key typed here (kbd_map in
 # src/kernel/kbd.asm, the international layout).
 array set key {
@@ -69,6 +84,7 @@ proc wait_rc {} {
     if {[has_row "rc done"] && [has_row {/ $}]} {
         puts stderr "dos.tcl: rc done at [format %.2f [machine_info time]] s"
         foreach r [rows] { if {[string is integer -strict $r]} { lappend ::stamps $r } }
+        set ::stseg [peek 0xC106]
         check_rc
         type_at_shell
         return
@@ -79,6 +95,8 @@ after time 0.5 wait_rc
 
 proc check_rc {} {
     expect_screen "rc start" "rc start not on the screen"
+    expect_screen "dosarg ok" "dosenter did not refuse what it must (dosarg)"
+    if {[lent] != 0} { problem "[lent] cache buffers still lent after the script's programs ended" }
     expect_screen {[7]} "exit7's _TERM with 7 was not reported as \[7\]"
     expect_screen "jp0" "jp0 did not print before its jp 0"
     expect_screen "ret" "ret did not print before its ret"
@@ -124,6 +142,7 @@ proc type_at_shell {} {
         if {[peek 0xC000] != 0x4D || [peek 0xC001] != 0x36} {
             problem [format "C000h reads %02X %02X while the program runs, not M6: the legacy page 3 is not in" [peek 0xC000] [peek 0xC001]]
         }
+        if {[lent] != $::LENT} { problem "[lent] cache buffers lent while the program runs, not $::LENT" }
     }
     tap [expr {$t + 1.7}] space
     at [expr {$t + 2.7}] {
@@ -131,6 +150,7 @@ proc type_at_shell {} {
             problem "C000h still reads M6 after the program ended: the kernel's page 3 is not back"
         }
         if {[lindex [rows] end] ne {} && ![has_row {/ $}]} { problem "no prompt after swap" }
+        if {[lent] != 0} { problem "[lent] cache buffers still lent after the program ended" }
         finish_up
     }
 }

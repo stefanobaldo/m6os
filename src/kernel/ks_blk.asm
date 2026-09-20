@@ -1270,9 +1270,11 @@ bc_find:
         jr      .next
 
 ; bc_victim — IX -> the first free header, else the one of least age among
-; those not dirty: a dirty buffer holds a FAT update the syscall has not
-; flushed yet, and at most three are dirty at a time, so a victim is
-; always found. Corrupts AF, BC, DE, HL, IY.
+; those neither dirty nor lent: a dirty buffer holds a FAT update the
+; syscall has not flushed yet, and at most three are dirty at a time; a
+; lent one (HF_LENT, its volume VOL_LENT, which bc_find never matches) is
+; the MSX-DOS layer's while a program runs, and dosenter leaves BUF_MIN
+; that are not — so a victim is always found. Corrupts AF, BC, DE, HL, IY.
 bc_victim:
         ld      ix,SG_HDR
         push    ix
@@ -1283,7 +1285,8 @@ bc_victim:
 .scan:  ld      a,(ix+H_VOL)
         cp      VOL_NONE
         jr      z,.free
-        bit     0,(ix+H_FLAGS)          ; HF_DIRTY: never the victim
+        ld      a,(ix+H_FLAGS)          ; dirty, or lent to an MSX-DOS
+        and     HF_DIRTY|HF_LENT        ; program: never the victim
         jr      nz,.next
         ld      a,(ix+H_AGE)
         cp      c
