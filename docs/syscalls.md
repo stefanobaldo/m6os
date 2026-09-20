@@ -222,7 +222,7 @@ input is a file or a pipe reads what is typed there: `more` in
 | 30 | `kill` | `A` = pid, `B` = signal | — | `EPERM`: pid 0; `EINVAL`: pid past 15, or a signal that is none of the four; `ESRCH`: no such process |
 | 31 | `signal` | `A` = signal, `B` = 0 (the default) or 1 (ignore) | `L` = the action that was | `EINVAL`: `SIGKILL`, or not a signal |
 | 32 | `ttyline` | `HL` = bytes, `BC` = how many, 0 to 127 | — | `EINVAL`: more than 127; `EFAULT`: a buffer reaching page 3 |
-| 33 | `dosenter` | `A` = a segment of the caller's, filled as the legacy layer expects; pages 1 and 2 mapped with `segmap` (see *MSX-DOS programs*) | does not return | `EPERM`: process 0; `EBUSY`: an MSX-DOS program runs already; `EINVAL`: not the caller's segment |
+| 33 | `dosenter` | `A` = a segment of the caller's, filled as the legacy layer expects; pages 1 and 2 mapped with `segmap`; `HL` = the layer's body in the caller's page 0, `BC` = its length, `DE` = its place in the kernel's storage segment, or `BC` = 0 for none (see *MSX-DOS programs*) | does not return | `EPERM`: process 0; `EBUSY`: an MSX-DOS program runs already; `EINVAL`: not the caller's segment, or a place that is not a cache buffer's start, leaves the cache fewer than six buffers or does not hold the body; `EFAULT`: a body not wholly in page 0 |
 | 34 | `segalloc` | — | `HL` = `A` = a segment, the caller's | `ENOMEM`; `EPERM`: process 0 |
 | 35 | `segfree` | `A` = a segment of the caller's, not one of its pages | `HL` = 0 | `EINVAL` |
 | 36 | `segmap` | `A` = a page, 1 or 2; `B` = a segment of the caller's | `HL` = 0 | `EINVAL`: the page, or not the caller's segment |
@@ -394,6 +394,15 @@ through `read` and runs it, and the process exits with the program's
 termination code as its status. One such program runs at a time. For
 that process page 3 is its own memory too: a buffer of a system call
 may lie there, below `F100h`.
+
+The layer has a second part, its body, which does not live in that
+segment: `dosenter` copies it from the caller's page 0 to the place `DE`
+names in the kernel's storage segment, where the block cache's sector
+buffers are. The buffers from there to the segment's end are lent for
+the program's run — the cache neither finds, evicts nor flushes them —
+and come back, empty, at every exit of the program; the cache keeps at
+least six. The segment's number is left where the layer reads it, and
+the layer maps it into page 2 for the length of a file call.
 
 ## Files
 
