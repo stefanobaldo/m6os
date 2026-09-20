@@ -36,10 +36,11 @@ PROG_SRCS := $(wildcard tests/*/progs/*.asm)
 PROG_BINS := $(foreach p,$(PROG_SRCS),build/$(word 2,$(subst /, ,$(p))).progs/$(basename $(notdir $(p))))
 KERNEL    := build/kernel.bin
 KSEG      := build/kseg.bin
-# The legacy layer, src/leg/leg.asm, at its own address: what a .COM
-# program finds above its TPA, carried inside build/bin/dos.
+# The legacy layer, src/leg/leg.asm: what a .COM program finds above its
+# TPA, and the layer's body, which lives outside it — two images from one
+# source, both carried inside build/bin/dos.
 LEG       := build/leg.bin
-LEG_MAX   := 11520
+LEGB      := build/legb.bin
 # The base utilities: src/bin/<name>.asm builds to build/bin/<name>, a raw
 # image for P0_PROG with the executable header (src/lib/prog.inc). Every
 # one fits one page: a file above PAGE_MAX bytes — 16K less the 256-byte
@@ -77,13 +78,16 @@ $(KERNEL): src/kernel/kernel.asm tests/m6test.inc $(SRC_FILES) | build
 $(KSEG): src/kernel/kseg.asm $(SRC_FILES) | build
 	$(SJASMPLUS) --nologo --msg=war $(INCLUDES) --raw=$@ --lst=build/kseg.lst $<
 
-# The layer: a raw image at LEG_BASE, refused above its room below the
-# hinge; dos embeds it.
+# The layer: two raw images, written by the source's own OUTPUT lines —
+# build/leg.bin at LEG_BASE and build/legb.bin, the body, at LEG_BODY. The
+# source refuses a page-3 part that reaches the hinge with its variables,
+# and a body that outgrows the buffers the block cache lends it; dos
+# embeds both.
 $(LEG): src/leg/leg.asm $(SRC_FILES) | build
-	$(SJASMPLUS) --nologo --msg=war $(INCLUDES) --raw=$@ --lst=build/leg.lst $<
-	@s=$$(wc -c < $@ | tr -d ' '); [ "$$s" -le $(LEG_MAX) ] || { \
-	    echo "$@ is $$s bytes: the layer fits $(LEG_MAX) at most" >&2; rm -f $@; exit 1; }
-build/bin/dos: $(LEG)
+	$(SJASMPLUS) --nologo --msg=war $(INCLUDES) --lst=build/leg.lst --exp=build/leg.exp $<
+$(LEGB): $(LEG)
+	@test -f $@ || { rm -f $(LEG); $(MAKE) --no-print-directory $(LEG); }
+build/bin/dos: $(LEG) $(LEGB)
 
 # A pattern rule cannot say tests/%/%.asm (only the first % is the stem), so
 # one explicit rule is generated per test.
@@ -121,12 +125,16 @@ $(foreach b,$(patsubst src/bin/%.asm,%,$(BIN_SRCS)),$(eval $(call bin_rule,$(b))
 # the resident leaves below the address it must end under, read from the
 # labels the image exports.
 sizes: $(KERNEL) $(KSEG) $(LEG) $(M6COM) $(BIN_BINS) $(TEST_BINS) $(PROG_BINS)
-	@for f in $(KERNEL) $(KSEG) $(LEG) $(M6COM) $(BIN_BINS) $(TEST_BINS) $(PROG_BINS); do \
+	@for f in $(KERNEL) $(KSEG) $(LEG) $(LEGB) $(M6COM) $(BIN_BINS) $(TEST_BINS) $(PROG_BINS); do \
 	    printf 'SIZE %s %s\n' "$$(basename $$f)" "$$(wc -c < $$f | tr -d ' ')"; \
 	done
 	@roof=$$(sed -n 's/^K_IMAGE_ROOF: EQU 0x0*\([0-9A-Fa-f]*\)$$/\1/p' build/kernel.exp); \
 	end=$$(sed -n 's/^K_IMAGE_END: EQU 0x0*\([0-9A-Fa-f]*\)$$/\1/p' build/kernel.exp); \
 	printf 'ROOM kernel %d\n' $$(( 0x$$roof - 0x$$end ))
+	@for l in LEG_ROOM LEGB_ROOM; do \
+	    v=$$(sed -n "s/^$$l: EQU 0x0*\([0-9A-Fa-f]*\)$$/\1/p" build/leg.exp); \
+	    printf 'ROOM %s %d\n' "$$(echo $$l | sed 's/_ROOM//' | tr A-Z a-z)" $$(( 0x$${v:-0} )); \
+	done
 
 check-sjasmplus:
 	@v=$$($(SJASMPLUS) --nologo --version 2>&1 || true); \
@@ -152,6 +160,7 @@ check: fetch
 	@$(MAKE) --no-print-directory all check-tools
 	@tools/check-version.sh
 	@tools/check-headers.sh
+	@tools/check-leg.sh
 	@set -e; n=0; for t in $(TESTS); do \
 	    echo "TEST $$t"; tools/run-test.sh $$t; n=$$((n + 1)); \
 	done; echo "OK: $$n test(s) passed"

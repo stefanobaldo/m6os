@@ -1056,7 +1056,7 @@ VW_ZBS          equ ST_VFSW+242 ; 4: sector its header names
 VW_T            equ ST_VFSW+246 ; 8: scratch
 
 ; The legacy subsystem (dos.asm; src/leg/leg.asm is the layer). While a
-; .COM program runs, page 3 shows a segment of its own — TPA to CFFFh, the
+; .COM program runs, page 3 shows a segment of its own — TPA to DBFFh, the
 ; layer from LEG_BASE, a copy of the kernel's page 3 from K_HINGE up — and
 ; the resident's page 3 comes back only to serve a syscall. The hinge is
 ; K_HINGE_LEN bytes at the same address in both images: two stubs that
@@ -1068,12 +1068,13 @@ K_HINGE_LEN     equ 64
 K_HINGE2        equ K_HINGE+17  ; the second stub: the legacy page 3 back
 K_HINGE_STUBS   equ 34          ; the two stubs' bytes
 K_HINGE_SP      equ K_HINGE+K_HINGE_LEN ; the crossing's stack, downward
-LEG_BASE        equ 0C400h      ; the layer: six CP/M version bytes,
-LEG_BDOS        equ 0C406h      ;   the BDOS entry — the TPA's top —
-LEG_VEC         equ 0C410h      ;   nine JPs: entry, a syscall's return,
+LEG_BASE        equ 0DC00h      ; the layer: six CP/M version bytes,
+LEG_BDOS        equ LEG_BASE+6  ;   the BDOS entry — the TPA's top,
+                                ;   DC06h, where MSX-DOS 2 puts it —
+LEG_VEC         equ LEG_BASE+10h ;  nine JPs: entry, a syscall's return,
                                 ;   the interrupt trampoline, EXTBIO,
                                 ;   RDSLT, WRSLT, CALSLT, ENASLT, CALLF
-LEG_VARS        equ 0C430h      ;   what dos fills before dosenter:
+LEG_VARS        equ LEG_BASE+30h ;  what dos fills before dosenter:
 LEG_SEGS        equ LEG_VARS+0  ;   3: the segments in pages 0-2 (the
                                 ;      layer's PUT_Pn shadow from then on)
 LEG_SEG3        equ LEG_VARS+3  ;   the legacy page-3 segment itself
@@ -1087,13 +1088,19 @@ LEG_RAMSEC      equ LEG_VARS+10 ;   it: the primary in bits 5-4 and 3-2,
                                 ;   slot is not expanded
 LEG_STSEG       equ LEG_VARS+11 ;   the storage segment, where the layer's
                                 ;   body is (dosenter writes it)
-LEG_PARAMS      equ 0C440h      ;   128: the tail as typed, 0-terminated
-LEG_PROG        equ 0C4C0h      ;   16: the program's own file, for its
+LEG_PARAMS      equ LEG_BASE+40h ;  128: the tail as typed, 0-terminated
+LEG_PROG        equ LEG_BASE+0C0h ; 16: the program's own file, for its
 PR_DRIVE        equ 0           ;      PROGRAM string: its directory's
 PR_CLUS         equ 1           ;      volume and cluster (2), then its
 PR_ALIAS        equ 3           ;      8.3 alias, 0-terminated (13)
-LEG_BIOS        equ 0C500h      ;   the CP/M BIOS jump table, 17 entries
-LEG_MAX         equ K_HINGE-LEG_BASE ; the layer's largest length
+LEG_BIOS        equ LEG_BASE+100h ; the CP/M BIOS jump table, 17 entries
+LEG_MAX         equ K_HINGE-LEG_BASE ; the most page 3 holds of the layer,
+                                ;   its variables included
+LEG_LEND        equ 15          ; the layer's body: the block cache's last
+LEG_BMAX        equ LEG_LEND*512 ;  buffers, lent by dosenter, hold it and
+LEG_BODY        equ 8000h+ST_BUF+(BUF_N-LEG_LEND)*512 ; its variables; page
+                                ;   2 shows it there during a file call
+    ASSERT BUF_N-LEG_LEND >= BUF_MIN
 LEG_TPA         equ LEG_BDOS-P0_PROG ; the largest .COM
 LEG_EXIT        equ 0FFh        ; in C' at a crossing: k_dos_exit, A = code
 

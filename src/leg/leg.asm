@@ -2,12 +2,28 @@
 ; Copyright (c) 2026 Stefano Baldo
 ; SPDX-License-Identifier: BSD-3-Clause
 ;
-; The legacy layer: what a .COM program finds above its TPA. Assembled at
-; LEG_BASE into build/leg.bin and carried inside /bin/dos, which hands it
-; to dosexec; the kernel copies it into the legacy page 3 — a segment of
+; The legacy layer: what a .COM program finds above its TPA. Two images,
+; both carried inside /bin/dos. build/leg.bin, assembled at LEG_BASE, is
+; what page 3 holds: dos copies it into the legacy page 3 — a segment of
 ; the program's own that page 3 shows while it runs — beside a copy of the
 ; kernel's page 3 from K_HINGE up (the drivers' work areas, Nextor's fixed
-; area, the BIOS work area), and enters it once.
+; area, the BIOS work area). build/legb.bin, assembled at LEG_BODY, is the
+; body — the file functions but _READ, _WRITE and _IOCTL, the messages,
+; the entry — which dosenter copies into buffers the block cache lends
+; for the program's run, at the end of the kernel's storage segment, and
+; which page 2 shows for the length of a call that needs it and at no
+; other time: the TPA reaches LEG_BDOS because the body is not above it.
+;
+; What is in page 3 is what calls the BIOS or the program's own code —
+; the console, the device handles, the disk error and abort routines,
+; whose hooks and code lie in a TPA that must be whole then — what every
+; call runs, and the doors: leg_body, which maps the body, and leg_stin
+; and leg_stout, which copy an argument that lies in the program's page 2
+; through a staging buffer here, since the body cannot see that page
+; (legb.asm decides, by a descriptor a function). The body calls into
+; page 3 freely; nothing in page 3 names a label of the body's but
+; through leg_body. The body runs with interrupts disabled outside its
+; syscalls.
 ;
 ; It is the MSX-DOS 2 the program sees, written from the MSX-DOS 2 Program
 ; Interface and Function specifications: the BDOS entry at LEG_BDOS with
@@ -100,6 +116,8 @@ LEG_PATHMAX     equ 144         ; a translated path and its 0
 LEG_NAMEMAX     equ 32          ; a last item and its 0
 LEG_LINEMAX     equ 115         ; a line _READ takes from the console
 LEG_ENVMAX      equ 256         ; the environment store
+LB_SDE          equ 255         ; the staging buffers (legb.asm): the most
+LB_SHL          equ 128         ;   of DE's argument and of HL's
 
 ; leg_sys n — a syscall through the hinge: the arguments in A, HL, DE,
 ; BC as the syscall wants them; the result in HL, and AF as the syscall
@@ -121,11 +139,12 @@ LEG_ENVMAX      equ 256         ; the environment store
         call    leg_xsys
     endm
 
+        OUTPUT  "build/leg.bin"
         org     LEG_BASE
         db      0,16h,0,0,0,0           ; CP/M 2.2's version and serial
         jp      leg_bdos                ; LEG_BDOS: the TPA's top
         block   LEG_VEC-$
-        jp      leg_entry               ; +0: from dosexec, once
+        jp      leg_ret                 ; +0: not used
         jp      leg_ret                 ; +3: a syscall's return
         jp      leg_isr                 ; +6: 0038h while this page is in
         jp      leg_extbio              ; +9: FFCAh
@@ -143,8 +162,7 @@ leg_fd:         db 0                    ; LEG_FD: the program's file
 leg_size:       dw 0                    ; LEG_SIZE: its length
 leg_rampri:     db 0                    ; LEG_RAMPRI, LEG_RAMSEC: the RAM's
 leg_ramsec:     db 0FFh                 ;   slot in pages 1 and 2
-leg_stseg:      db 0                    ; LEG_STSEG: where a body outside
-                                        ;   this page is (dosenter)
+leg_stseg:      db 0                    ; LEG_STSEG: where the body is
         ASSERT  leg_rampri == LEG_RAMPRI && leg_stseg == LEG_STSEG
         block   LEG_PARAMS-$
 leg_params:     ds 128                  ; the tail as typed
@@ -170,13 +188,11 @@ leg_params:     ds 128                  ; the tail as typed
 ; ---------------------------------------------------------------------
 ; Entering and leaving
 
-; leg_go — the end of the entry, outside the overlay the entry's code
-; becomes: the stack where MSX-DOS puts it with WBOOT under it so that a
-; ret ends the program, the environment store emptied — it lies over the
-; entry's code, which has run — and into the program with interrupts
+; leg_go — the end of the entry (legi.asm), outside the body: the
+; program's page 2 back, the stack where MSX-DOS puts it with WBOOT under
+; it so that a ret ends the program, and into the program with interrupts
 ; enabled.
-leg_go: xor     a
-        ld      (leg_env),a
+leg_go: call    leg_bout
         ld      hl,LEG_BIOS             ; a ret from the program is WBOOT
         push    hl
         ld      hl,0
@@ -191,33 +207,77 @@ leg_go: xor     a
 ; leg_syscall — the number in C', the arguments in A, HL, DE, BC: the
 ; kernel's page 3 in through the first stub, the syscall, and back
 ; through the second to leg_ret. The program's stack is left where it
-; is; the crossing runs on the hinge's, with pages 1 and 2 in the RAM's
-; slot for its length (leg_ramin). Returns with interrupts enabled, the
-; result in HL and AF (CF and the errno as the syscall left them).
+; is; the crossing runs on the hinge's. The kernel is told what pages 0-2
+; hold, and reaches the call's buffers through that: the program's
+; segments — or, from the body (leg_inb bit 1), the storage segment as
+; page 2, which is where the body's own buffers are; an argument of the
+; program's is never in page 2 there, since the door has staged it.
+; Returns the result in HL and AF (CF and the errno as the syscall left
+; them), with interrupts enabled — or, in a call of the body's (bit 0),
+; disabled and the body mapped again, since the kernel has put back the
+; page 2 it was told of, or the program's after a switch.
 leg_syscall:
         di
         ld      (leg_usp2),sp
         ld      sp,K_HINGE_SP
         ex      af,af'                  ; the stub uses A
-        call    leg_ramin
+        ld      a,(leg_inb)
+        rra
+        call    nc,leg_ramin            ; (the body's call has done it)
         ld      ix,(leg_segs)           ; IXL = page 0, IXH = page 1
-        ld      iy,(leg_segs+1)         ; IYH = page 2
+        ld      a,(leg_inb)
+        and     2
+        ld      a,(leg_segs+2)
+        jr      z,.p2
+        ld      a,(leg_stseg)
+.p2:    ld      iyh,a                   ; IYH = page 2
         jp      K_HINGE
 leg_ret:                                ; from the second stub, di, AF in AF'
         ld      a,(leg_started)
         or      a
-        jp      z,leg_entry
+        jr      z,.first
         ld      sp,(leg_usp2)
+        ld      a,(leg_inb)
+        rra
+        jr      c,.body
         call    leg_ramout
         ex      af,af'
         ei
         ret
+.body:  ld      a,(leg_stseg)
+        out     (0FEh),a
+        ex      af,af'
+        ret
+.first: inc     a                       ; from dosenter: the entry, which is
+        ld      (leg_started),a         ; the body's; the program's page 2
+        ld      sp,LEG_BDOS-8           ; is what its load reads into
+        call    leg_bin
+        jp      leg_entry
+
+; leg_bin — A = leg_inb's value: a call of the body's begins — interrupts
+; off, pages 1 and 2 in the RAM's slot, the storage segment in page 2.
+; leg_bout — it ends, or stands aside for the program's code: the
+; program's page 2 back, and its slots. Both preserve all but AF; neither
+; touches the interrupt flag but leg_bin's di.
+leg_bin:
+        di
+        ld      (leg_inb),a
+        call    leg_ramin
+        ld      a,(leg_stseg)
+        out     (0FEh),a
+        ret
+leg_bout:
+        xor     a
+        ld      (leg_inb),a
+        ld      a,(leg_segs+2)
+        out     (0FEh),a
+        ; fall through
 
 ; leg_ramout — the slots leg_ramin found, back. leg_ramin — pages 1 and 2
 ; in the RAM's slot, what was there kept: a program may call the system
 ; with either page showing another slot — an editor that keeps the
-; SUB-ROM's neighbour in page 2 does — and the kernel's window and its
-; storage gate are RAM in those two pages. The
+; SUB-ROM's neighbour in page 2 does — and the kernel's window, its
+; storage gate and the layer's body are all RAM in those two pages. The
 ; secondary register is the RAM's primary slot's, which page 3 shows, so
 ; it is written directly. Interrupts are off. Both preserve all but AF.
 leg_ramout:
@@ -250,6 +310,67 @@ leg_ramin:
 .done:  pop     hl
         ret
 
+; leg_body — the door: a BDOS function whose handler is the body's, from
+; leg_bdos with the registers the program's and .done as the return. The
+; body in, lb_call (legb.asm) stages what must be staged and runs the
+; handler, the body out.
+leg_body:
+        push    af
+        ld      a,3
+        call    leg_bin
+        pop     af
+        call    lb_call
+        push    af
+        call    leg_bout
+        pop     af
+        ret
+
+; leg_stin — from the body, which cannot see the program's page 2: HL =
+; an address of the program's, DE = a staging buffer, BC = the most to
+; copy; A = SI_BLOCK for all of it, SI_STR for a string — to its 0, one
+; forced into the last byte when none comes — SI_PATH for a string or, a
+; first byte of FFh, a file info block's 64 bytes. leg_stout — HL = the
+; staging buffer, DE = the program's address, BC = the bytes. Corrupt AF,
+; BC, DE, HL.
+SI_BLOCK        equ 0
+SI_STR          equ 1
+SI_PATH         equ 2
+leg_stin:
+        push    af
+        ld      a,(leg_segs+2)
+        out     (0FEh),a
+        pop     af
+        or      a
+        jr      z,.block
+        dec     a
+        jr      z,.str
+        ld      a,(hl)
+        inc     a
+        jr      nz,.str
+        ld      bc,64
+.block: ldir
+        jr      leg_stback
+.str:   ld      a,(hl)
+        ld      (de),a
+        or      a
+        jr      z,leg_stback
+        inc     hl
+        inc     de
+        dec     bc
+        ld      a,b
+        or      c
+        jr      nz,.str
+        dec     de
+        ld      (de),a                  ; a = 0: the string cut short
+        jr      leg_stback
+leg_stout:
+        ld      a,(leg_segs+2)
+        out     (0FEh),a
+        ldir
+leg_stback:
+        ld      a,(leg_stseg)
+        out     (0FEh),a
+        ret
 
 ; leg_term — A = the termination code: the abort routine, if the program
 ; defined one (DE = its address, _DEFAB), with A = the code and B = the
@@ -261,6 +382,10 @@ leg_term2:                              ; B = the error that caused it
         ld      (leg_code),a
         ld      a,b
         ld      (leg_code2),a
+        ld      a,(leg_inb)             ; from the body: the program's page
+        or      a                       ; 2 and its slots, for its routine
+        call    nz,leg_bout
+        ei
         ld      hl,(leg_defab)
         ld      a,h
         or      l
@@ -337,13 +462,18 @@ leg_bdos:
         ld      h,(hl)
         ld      l,a
         ld      (leg_fn),hl             ; the handler
+        ld      a,c
+        ld      (leg_fnum),a            ; and its function, for the door
         pop     af
         ld      hl,.done
         push    hl                      ; where the handler returns
         ld      hl,(leg_hl)
         push    hl
         ld      hl,(leg_fn)
-        ex      (sp),hl                 ; the handler under it, HL the program's
+        bit     6,h                     ; page 3 is C000h up; the body's
+        jr      nz,.here                ; handlers are in page 2: the door
+        ld      hl,leg_body
+.here:  ex      (sp),hl                 ; the handler under it, HL the program's
         ret                             ; into the handler
 .done:  pop     iy
         pop     ix
@@ -414,61 +544,6 @@ f_error:
         ld      a,(leg_lasterr)
         ld      b,a
         xor     a
-        ret
-
-; _EXPLAIN (66h): B = an error code, DE -> a 64-byte buffer: its message,
-; 0-terminated — "Error nnH" for a code the layer does not know.
-f_explain:
-        ld      hl,leg_msgs
-.find:  ld      a,(hl)
-        or      a
-        jr      z,.hex
-        cp      b
-        inc     hl
-        jr      z,.copy
-.skip:  ld      a,(hl)
-        inc     hl
-        or      a
-        jr      nz,.skip
-        jr      .find
-.copy:  ld      a,(hl)
-        ld      (de),a
-        inc     hl
-        inc     de
-        or      a
-        jr      nz,.copy
-        xor     a
-        ret
-.hex:   ld      hl,s_error
-.hexc:  ld      a,(hl)
-        or      a
-        jr      z,.digits
-        ld      (de),a
-        inc     hl
-        inc     de
-        jr      .hexc
-.digits:
-        ld      a,b
-        rrca
-        rrca
-        rrca
-        rrca
-        call    .nib
-        ld      a,b
-        call    .nib
-        ld      a,'H'
-        ld      (de),a
-        inc     de
-        xor     a
-        ld      (de),a
-        ret
-.nib:   and     0Fh
-        add     a,'0'
-        cp      '9'+1
-        jr      c,.put
-        add     a,'A'-'9'-1
-.put:   ld      (de),a
-        inc     de
         ret
 
 ; _DOSVER (6Fh): the kernel and MSXDOS2.SYS versions, 2.31 both; not
@@ -1356,51 +1431,10 @@ leg_extbio:
         ld      hl,leg_maptab
         ret
 
-        include "leg/legf.asm"
+        include "leg/legh.asm"
 
 ; ---------------------------------------------------------------------
-; Messages, variables
-
-leg_msgs:
-        db      D_STOP,"Ctrl-STOP pressed",0
-        db      D_CTRLC,"Ctrl-C pressed",0
-        db      D_ABORT,"Disk operation aborted",0
-        db      D_IBDOS,"Invalid MSX-DOS call",0
-        db      D_ISBFN,"Invalid sub-function number",0
-        db      D_IPARM,"Invalid parameter",0
-        db      D_INTER,"Internal error",0
-        db      D_NORAM,"Not enough memory",0
-        db      D_IDRV,"Invalid drive",0
-        db      D_IFNM,"Invalid filename",0
-        db      D_IPATH,"Invalid pathname",0
-        db      D_PLONG,"Pathname too long",0
-        db      D_NOFIL,"File not found",0
-        db      D_NODIR,"Directory not found",0
-        db      D_DRFUL,"Root directory full",0
-        db      D_DKFUL,"Disk full",0
-        db      D_DUPF,"Duplicate filename",0
-        db      D_DIRE,"Invalid directory move",0
-        db      D_FILRO,"Read only file",0
-        db      D_DIRNE,"Directory not empty",0
-        db      D_IATTR,"Invalid attributes",0
-        db      D_DOT,"Invalid . or .. operation",0
-        db      D_SYSX,"System file exists",0
-        db      D_DIRX,"Directory exists",0
-        db      D_FILEX,"File exists",0
-        db      D_FOPEN,"File already in use",0
-        db      D_EOF,"End of file",0
-        db      D_ACCV,"File access violation",0
-        db      D_IPROC,"Invalid process id",0
-        db      D_NHAND,"No spare file handles",0
-        db      D_IHAND,"Invalid file handle",0
-        db      D_IDEV,"Invalid device operation",0
-        db      D_IENV,"Invalid environment string",0
-        db      D_ELONG,"Environment string too long",0
-        db      D_HDEAD,"File handle has been deleted",0
-        db      D_DISK,"Disk error",0
-        db      D_WPROT,"Write protected disk",0
-        db      0
-s_error:        db "Error ",0
+; Variables
 
 leg_usp:        dw 0            ; the program's SP during a BDOS call
 leg_usp2:       dw 0            ; the layer's SP during a crossing
@@ -1418,53 +1452,29 @@ ms_page:        db 0            ; CAL_SEG: the page, the segment that was
 ms_was:         db 0            ;   there, A across the call
 ms_af:          db 0
 leg_code2:      db 0            ; the secondary code on the way out
-leg_sva8:       db 0            ; leg_ramin: the slots it found, primary
-leg_svff:       db 0            ;   and secondary
 leg_nest:       db 0            ; BDOS calls in progress
 leg_hl:         dw 0            ; the dispatch: the program's HL,
 leg_fn:         dw 0            ;   the handler
-; The entry (legi.asm), an overlay: the record, the environment store and
-; the console line lie over its code once it has run.
-leg_once:
-        include "leg/legi.asm"
-leg_once_end:
-leg_rec         equ leg_once            ; DIRENT_SIZE: a short record
-leg_env         equ leg_rec+DIRENT_SIZE ; LEG_ENVMAX: the environment,
-                                        ;   "NAME=value",0 pairs, then 0
-leg_line        equ leg_env+LEG_ENVMAX  ; LEG_LINEMAX+4: _READ's console
-                                        ;   line, DOS 2's buffer shape, CR
-                                        ;   LF after it
-        ASSERT  leg_line+LEG_LINEMAX+4 <= leg_once_end
-        ASSERT  leg_rec+DIRENT_SIZE <= legf_init   ; over leg_entry alone
+leg_sva8:       db 0            ; leg_ramin: the slots it found, primary
+leg_svff:       db 0            ;   and secondary
+leg_inb:        db 0            ; a call of the body's: bit 0 while one is
+                                ;   in progress, bit 1 when the buffers a
+                                ;   crossing names are the body's
+leg_fnum:       db 0            ;   the function's number
 leg_end:                                ; the image ends: what follows is
                                         ; not copied, and legf_init sets
                                         ; what must start known
-; The files' variables (legf.asm), outside the image: not emitted, not
-; copied — the segment's bytes below the hinge, set by legf_init where
-; they must start known.
+; Page 3's variables outside the image: not emitted, not copied — the
+; segment's bytes below the hinge, set by legf_init where they must start
+; known. The same macro lays the body's out after its image, below.
     macro leg_bss Q1,Q2
 Q1      equ     lbss_at
 lbss_at  =       lbss_at+Q2
     endm
 lbss_at  =       leg_end
-        leg_bss leg_dcwd,16   ; each physical drive's directory cluster
-        leg_bss leg_assign,8   ; logical -> physical drive, 1 = A:
-        leg_bss leg_login,1   ; the login vector
-        leg_bss leg_curp,1   ; the current drive, physical
-        leg_bss leg_level,1   ; the _FORK level
         leg_bss leg_defer,2   ; the disk error routine, 0 = none
-        leg_bss leg_dta,2   ; the transfer address (5.3's FCBs)
-        leg_bss leg_vfy,1   ; the verify flag
-        leg_bss leg_chk,1   ; the disk check flag
-        leg_bss leg_xdrv,1   ; leg_xlate: the drive named, physical,
-        leg_bss leg_xlog,1   ;   and logical
-        leg_bss leg_xback,1   ;   1: the kernel's directory was moved
-        leg_bss leg_xslash,1   ;   1: the path ended in a \
+        leg_bss leg_xdrv,1   ; leg_xlate: the drive named, physical
         leg_bss leg_xwr,1   ; 1 while a call writes (for _DEFER)
-        leg_bss leg_xbuf,2   ; leg_xlate: where the path goes
-        leg_bss leg_xcur,2   ; the directory entered: its cluster
-        leg_bss leg_loc,3   ; a locator for chdir
-        leg_bss leg_wpos,2   ; the whole path's last item
         leg_bss leg_lpos,1   ; the console line: delivered so far,
         leg_bss leg_llen,1   ;   its length, 0 = none held
         leg_bss sa_a,1   ; leg_xsys: the arguments kept
@@ -1472,6 +1482,56 @@ lbss_at  =       leg_end
         leg_bss sa_de,2
         leg_bss sa_bc,2
         leg_bss sa_n,1
+        leg_bss leg_hand,LEG_NHAND*3   ; the handles
+        leg_bss leg_fdrow,5*FR_SIZE   ; descriptors 3-7: where their files are
+        leg_bss leg_line,LEG_LINEMAX+4   ; _READ's console line, DOS 2's
+                                        ;   buffer shape, CR LF after it
+        leg_bss lb_six,64   ; the staging buffers (legb.asm): IX's file
+        leg_bss lb_shl,LB_SHL   ;   info block, HL's argument, DE's — the
+        leg_bss lb_sde,LB_SDE+1   ;   largest last, behind the others
+        leg_bss leg_stack,LEG_STACK
+leg_stack_top   equ lbss_at
+        leg_bss leg_isp,2   ; leg_isr: the interrupted SP
+        leg_bss leg_istack,LEG_ISTACK   ; and its own stack
+leg_istack_top  equ lbss_at
+leg_bss_end     equ lbss_at
+
+        ASSERT  leg_bss_end <= K_HINGE
+
+; ---------------------------------------------------------------------
+; The body: build/legb.bin, at LEG_BODY
+
+        OUTPUT  "build/legb.bin"
+        org     LEG_BODY
+        include "leg/legb.asm"
+        include "leg/legf.asm"
+; The entry (legi.asm), an overlay: the record and the environment store
+; lie over its code once it has run.
+leg_once:
+        include "leg/legi.asm"
+leg_once_end:
+leg_rec         equ leg_once            ; DIRENT_SIZE: a short record
+leg_env         equ leg_rec+DIRENT_SIZE ; LEG_ENVMAX: the environment,
+                                        ;   "NAME=value",0 pairs, then 0
+        ASSERT  leg_env+LEG_ENVMAX <= leg_once_end
+        ASSERT  leg_rec+DIRENT_SIZE <= legf_init   ; over leg_entry alone
+legb_end:                               ; the body's image ends
+lbss_at  =       legb_end
+        leg_bss leg_dcwd,16   ; each physical drive's directory cluster
+        leg_bss leg_assign,8   ; logical -> physical drive, 1 = A:
+        leg_bss leg_login,1   ; the login vector
+        leg_bss leg_curp,1   ; the current drive, physical
+        leg_bss leg_level,1   ; the _FORK level
+        leg_bss leg_dta,2   ; the transfer address (the FCB functions')
+        leg_bss leg_vfy,1   ; the verify flag
+        leg_bss leg_chk,1   ; the disk check flag
+        leg_bss leg_xlog,1   ; leg_xlate: the drive named, logical
+        leg_bss leg_xback,1   ;   1: the kernel's directory was moved
+        leg_bss leg_xslash,1   ;   1: the path ended in a \
+        leg_bss leg_xbuf,2   ; leg_xlate: where the path goes
+        leg_bss leg_xcur,2   ; the directory entered: its cluster
+        leg_bss leg_loc,3   ; a locator for chdir
+        leg_bss leg_wpos,2   ; the whole path's last item
         leg_bss o_mode,1   ; _OPEN, _CREATE: the mode, the
         leg_bss o_attr,1   ;   attributes, the handle's flags, the
         leg_bss o_hflags,1   ;   descriptor
@@ -1490,17 +1550,30 @@ lbss_at  =       leg_end
         leg_bss ex_n,1   ; leg_exp11: a byte stored
         leg_bss p_drv,1   ; _PARSE: the drive
         leg_bss leg_name,LEG_NAMEMAX   ; a path's last item
-        leg_bss leg_hand,LEG_NHAND*3   ; the handles
-        leg_bss leg_fdrow,5*FR_SIZE   ; descriptors 3-7: where their files are
         leg_bss leg_path,LEG_PATHMAX   ; a translated path
         leg_bss leg_path2,LEG_PATHMAX   ; a second one
         leg_bss leg_wpath,64   ; the whole path of the last find
         leg_bss leg_sf,SF_SIZE   ; a statfs block
-        leg_bss leg_stack,LEG_STACK
-leg_stack_top   equ lbss_at
-        leg_bss leg_isp,2   ; leg_isr: the interrupted SP
-        leg_bss leg_istack,LEG_ISTACK   ; and its own stack
-leg_istack_top  equ lbss_at
-leg_bss_end     equ lbss_at
+        leg_bss lb_d,1   ; the door (legb.asm): the call's descriptor,
+        leg_bss lb_b,1   ;   the program's B,
+        leg_bss lb_hl,2   ;   its HL and DE, its IX,
+        leg_bss lb_de,2
+        leg_bss lb_ix,2
+        leg_bss lb_st,1   ;   what was staged: bit 0 DE, 1 HL, 2 IX
+        leg_bss lb_rhl,2   ;   the handler's HL and BC on the way out
+        leg_bss lb_rbc,2
+legb_bss_end    equ lbss_at
 
-        ASSERT  leg_bss_end <= K_HINGE
+        ASSERT  legb_bss_end <= LEG_BODY+LEG_BMAX
+
+; What is left: below the hinge in page 3, and of the buffers lent to the
+; body (make sizes prints both).
+LEG_ROOM        equ K_HINGE-leg_bss_end
+LEGB_ROOM       equ LEG_BODY+LEG_BMAX-legb_bss_end
+        EXPORT  LEG_ROOM
+        EXPORT  LEGB_ROOM
+; Where a crossing comes back to in leg_xsys: the legacy test's harness
+; plants a disk error there to reach the program's error routine, which
+; no emulated disk will produce.
+LEG_T_XSYS      equ leg_xsys.tback
+        EXPORT  LEG_T_XSYS

@@ -40,8 +40,30 @@ proc expect_absent {want msg} { if {[has_row $want]} { problem $msg } }
 # FEh). The storage segment's number is in the kernel's record at C106h
 # (K_REC + KR_SEG64K + 2), read while the kernel's page 3 is in; the
 # headers are 22 rows of 8 bytes from 0800h of that segment (ST_HDR).
+# The layer's address where a crossing comes back (LEG_T_XSYS, exported
+# by the build): a breakpoint there, once, with the legacy page 3 in —
+# the kernel's own begins "M6" and the program has cleared those bytes —
+# sets the carry and EIO, which is a disk error the emulated disk never
+# gives, and the program's error routine is called.
+proc leg_sym {name} {
+    set fh [open build/leg.exp]
+    set v -1
+    foreach l [split [read $fh] \n] {
+        if {[regexp "^$name: EQU 0x(\[0-9A-Fa-f\]+)" $l -> h]} { set v [expr "0x$h"] }
+    }
+    close $fh
+    if {$v < 0} { problem "build/leg.exp does not define $name" }
+    return $v
+}
+proc disk_error_once {} {
+    set ::ibp [debug set_bp [leg_sym LEG_T_XSYS] {[peek 0xC000] != 0x4D} {
+        reg F [expr {[reg F] | 1}]
+        reg A 5
+        debug remove_bp $::ibp
+    }]
+}
 set stseg -1
-set LENT 0          ;# buffers the layer's body takes while a program runs
+set LENT 15         ;# buffers the layer's body takes while a program runs
 proc lent {} {
     set n 0
     for {set i 0} {$i < 22} {incr i} {
@@ -53,8 +75,9 @@ proc lent {} {
 # The matrix: row and mask of every key typed here (kbd_map in
 # src/kernel/kbd.asm, the international layout).
 array set key {
-    a {2 0x40} c {3 0x01} d {3 0x02} e {3 0x04} h {3 0x20} i {3 0x40}
-    l {4 0x02} m {4 0x04} n {4 0x08} o {4 0x10} p {4 0x20} s {5 0x01}
+    a {2 0x40} c {3 0x01} d {3 0x02} e {3 0x04} f {3 0x08} h {3 0x20}
+    i {3 0x40} l {4 0x02} m {4 0x04} n {4 0x08} o {4 0x10} p {4 0x20}
+    r {4 0x80} s {5 0x01}
     t {5 0x02} w {5 0x10} x {5 0x20} y {5 0x40} 7 {0 0x80} / {2 0x10}
     . {2 0x08} space {8 0x01} ret {7 0x80}
 }
@@ -151,6 +174,22 @@ proc type_at_shell {} {
         }
         if {[lindex [rows] end] ne {} && ![has_row {/ $}]} { problem "no prompt after swap" }
         if {[lent] != 0} { problem "[lent] cache buffers still lent after the program ended" }
+    }
+    # The disk error routine, in the program's page 2: handed back, then
+    # made again.
+    set t [typeline [expr {$t + 3.2}] {d o s space / d o s / d e f e r . c o m}]
+    at [expr {$t + 1.5}] {
+        expect_screen "defer: one, press a key" "defer did not print its first line"
+        disk_error_once
+    }
+    tap [expr {$t + 1.7}] space
+    at [expr {$t + 2.7}] {
+        expect_screen "defer: two, press a key" "the error was not handed back to defer's _OPEN, or its routine did not run"
+        disk_error_once
+    }
+    tap [expr {$t + 2.9}] space
+    at [expr {$t + 4.2}] {
+        expect_screen "defer ok" "defer's _OPEN was not made again after its routine asked for it"
         finish_up
     }
 }
