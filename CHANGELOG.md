@@ -155,8 +155,9 @@ to install.
   console now takes from the keyboard, so a program whose input is a pipe
   can still read what is typed.
 - MSX-DOS 2 programs. `dos name.com [args]` runs a `.COM` program with the
-  machine to itself — the MSX-DOS 2 layout around it, a 48.8K TPA, the
-  BIOS live, the mapper support routines — and hands the machine back when
+  machine to itself — the MSX-DOS 2 layout around it, a 55.8K TPA whose
+  top is where Nextor puts it at its prompt, the BIOS live, the mapper
+  support routines — and hands the machine back when
   it ends, its termination code the status; a command word ending in
   `.com` runs through `dos` by itself. The console functions, the mapper
   support, and the file, directory, drive, search, process and environment
@@ -167,11 +168,23 @@ to install.
   beyond its pages, `segmap` puts one into page 1 or 2 and keeps it there;
   `statfs` describes a volume, `utime` sets a modification time, and
   `statl` — with a short form of `readdir`, `chdir` and `getcwd` — names
-  an entry by its 8.3 alias and its place on the volume. See
-  [`docs/dos.md`](docs/dos.md).
+  an entry by its 8.3 alias and its place on the volume. What serves the
+  file calls lives outside the TPA, in sector buffers the disk cache lends
+  for the program's run, so an editor, a file manager and a music player
+  that refused a smaller TPA now run, on a 128K machine with the shell
+  alive. See [`docs/dos.md`](docs/dos.md).
 
 ### Fixed
 
+- MSX-DOS 2 programs: a function call returned with `Z` set whatever the
+  error in `A`, and a program that branches on the flags after `CALL 5`
+  read a directory for ever; `ALL_SEG` answered slot 0 for the mapper and,
+  with `FRE_SEG`, lost the program's `IX` and `IY`; `CALSLT` and `CALLF`
+  left the wrong slot in the page when the routine they called used `IY`,
+  as the SUB-ROM's do, and the machine reset; a `_READ` asked for more
+  bytes than fit between its buffer and the TPA's top read nothing and
+  answered `.IPARM`, where MSX-DOS 2 reads what the file has; and a
+  function called with another slot switched into page 1 or 2 crashed.
 - A file written when the volume's next free cluster was one whose number
   ends in `FFh` — 255, 511, and so on — came back with a cluster of the
   formatter's fill in front of its bytes and one cluster more than its

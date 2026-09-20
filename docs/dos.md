@@ -36,6 +36,15 @@ waits. On a 128K machine the program needs every free segment — the
 three pages of its TPA and one more for what is above it — so `dos` is
 refused with `ENOMEM` while another process besides the shell is alive.
 
+What serves the program's file calls is not above its TPA. It takes the
+place of fifteen of the disk cache's twenty-two sector buffers for the
+program's run, and is brought into page 2 for the length of a file call
+and out again before the program goes on; the cache works with the seven
+that are left, and the first command after the program finds the others
+empty. During a file call interrupts are held off between the kernel's
+own calls, for a few milliseconds at most: the BIOS's tick may come that
+late, and none is lost.
+
 The program's console is the screen and the keyboard, through the BIOS,
 whatever the command line says: `dos prog.com > out` redirects nothing
 the program prints, and `cat in | dos prog.com` feeds it nothing. The
@@ -46,11 +55,18 @@ standard handles of a `.COM` are the console, as at a prompt.
 The program is loaded at `0100h` and finds MSX-DOS 2 around it, as the
 Program Interface Specification describes it:
 
-- A TPA of 48.8K, from `0100h` to `C406h`, the `JP` at `0005h` that is the
-  BDOS entry and the top of the TPA. This is about 4K less than the
-  "typically 53K" of the specification and than Nextor gives at its
-  prompt (`DC06h`): the page above the TPA holds what serves the
-  program's file calls. A program that needs the whole 53K does not fit.
+- A TPA of 55.8K, from `0100h` to `DC06h`, the `JP` at `0005h` that is the
+  BDOS entry and the top of the TPA — where Nextor puts it at its prompt.
+  The six bytes under it are CP/M's version and serial, which a program
+  that sets its stack at the address in `0006h` writes over, as under
+  MSX-DOS.
+- The registers of a function call as MSX-DOS 2 returns them: the error
+  in `A` with the flags set from it, so that a branch on `Z` straight
+  after `CALL 5` works; `IX` and `IY` as they went in.
+- Its slots its own. A program may call the system with another slot in
+  page 1 or page 2 — its strings in page 0 or 3 — and finds the same slots
+  there when the call returns. An argument that lies in page 2 of the
+  program's memory is reached wherever it is.
 - Page 0 as the specification lays it out: the warm-boot jump at `0000h`
   into a CP/M BIOS jump table, `RDSLT`, `WRSLT`, `CALSLT`, `ENASLT` and
   `CALLF` at `000Ch`–`0030h`, the interrupt vector at `0038h`, the two
@@ -66,8 +82,10 @@ Program Interface Specification describes it:
 - The mapper support routines, found through `EXTBIO` (`D` = 4, `E` = 1
   for the variable table, `E` = 2 for the jump table) as under MSX-DOS 2:
   `ALL_SEG`, `FRE_SEG`, `RD_SEG`, `WR_SEG`, `CAL_SEG`, `CALLS`, `PUT_Pn`
-  and `GET_Pn` for pages 0–2. A segment the program allocates is freed
-  when it ends. On a 128K machine with a shell up there is none to give.
+  and `GET_Pn` for pages 0–2. `ALL_SEG` answers the mapper's slot in `B`
+  when it is asked by slot, and the routines keep `IX` and `IY`. A
+  segment the program allocates is freed when it ends. On a 128K machine
+  with a shell up there is none to give.
 - `_DOSVER` answers kernel 2.31 and MSXDOS2.SYS 2.31. m6 is not Nextor
   and does not answer Nextor's handshake, so a program takes its MSX-DOS 2
   paths; the Nextor functions (`71h`–`7Eh`) are refused.
@@ -127,7 +145,7 @@ in it, and the Nextor ones, return `.IBDOS` (invalid function call,
 | `43h` `_OPEN` | a file, or a directory as a FIB, or a device: `CON` for the console, `NUL`, `AUX` and `PRN` for a sink that reads nothing |
 | `44h` `_CREATE` | a file, emptied when it exists unless bit 7 of `B` says so (`.FILEX`); with the directory bit a directory; the read-only, hidden and system bits set after |
 | `45h` `_CLOSE`, `46h` `_ENSURE`, `47h` `_DUP`, `5Fh` `_FLUSH` | as specified; `_ENSURE` and `_FLUSH` have nothing to do, every write reaches the disk as it is made |
-| `48h` `_READ`, `49h` `_WRITE` | the bytes moved in one piece; `.EOF` when a read finds none; `.IPARM` for a buffer that reaches into the kernel; a write to a device in ASCII mode ends at the first `1Ah`, which is counted and not sent |
+| `48h` `_READ`, `49h` `_WRITE` | the bytes moved in one piece; `.EOF` when a read finds none; a read asked for more than the memory from its buffer to the TPA's top is cut there, so a program that asks for "everything" of a short file gets it; `.IPARM` for a buffer that starts above the TPA; a write to a device in ASCII mode ends at the first `1Ah`, which is counted and not sent |
 | `4Ah` `_SEEK` | by the three methods; a position that would go negative is `.IPARM` |
 | `4Bh` `_IOCTL` | 0 the device or file status, with bit 6 for a file at its end; 1 ASCII or binary mode on a device; 2 and 3 whether input or output is ready; 4 the screen's size on the console |
 | `4Ch` `_HTEST` | whether the handle is the named file |
