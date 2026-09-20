@@ -963,7 +963,11 @@ f_dup:  call    h_row
         jp      leg_fail
 
 ; _READ (48h): B = a handle, DE = the buffer, HL = bytes. Out: HL =
-; bytes read; .EOF when a read of some bytes reads none.
+; bytes read; .EOF when a read of some bytes reads none. A program may
+; ask for more than its memory holds from the buffer on, sure that the
+; file is short — MSX-DOS reads what there is — where the kernel refuses
+; a range that leaves the process's memory before it reads a byte: the
+; count is cut at the TPA's top.
 f_read: push    hl
         push    de
         call    h_row
@@ -980,6 +984,20 @@ f_read: push    hl
         ld      a,b
         or      c
         jr      z,.none
+        push    hl
+        ex      de,hl
+        ld      hl,LEG_BASE
+        or      a
+        sbc     hl,de                   ; hl = the room from the buffer to
+        jr      c,.asis                 ; the TPA's top (a buffer above it
+        push    hl                      ; is the kernel's to refuse)
+        or      a
+        sbc     hl,bc
+        pop     hl
+        jr      nc,.asis
+        ld      b,h
+        ld      c,l                     ; no more than the room
+.asis:  pop     hl
         push    ix
         ld      a,(ix+HN_FD)
         leg_sysx SYS_READ

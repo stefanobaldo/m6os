@@ -359,6 +359,20 @@
         jp      nz,t_fail               ; 0, and NZ
         ld      a,b
         ld      (h1),a
+        d_step  16                      ; a read of more than memory holds
+        ld      a,(h1)                  ; from the buffer on reads what the
+        ld      b,a                     ; file has: 64 000 bytes asked for,
+        ld      de,buf                  ; this program's own length read
+        ld      hl,64000
+        d_fn    _READ
+        d_ok
+        ld      a,h
+        or      l
+        jp      z,t_fail
+        ld      de,8192
+        or      a
+        sbc     hl,de
+        jp      nc,t_fail               ; a program of a few K, all of it
         ld      a,(h1)
         ld      b,a
         d_fn    _CLOSE
