@@ -176,6 +176,33 @@ opened: ld      (fd),a
         ld      (LEG_FD-4000h),a
         ld      hl,(size)
         ld      (LEG_SIZE-4000h),hl
+        ; The RAM's slot, as the bits that put pages 1 and 2 there: the
+        ; primary in bits 5-4 and 3-2, the secondary the same, FFh for a
+        ; slot that is not expanded.
+        ld      a,(B_RAMAD0+2)          ; page 2's
+        ld      c,a
+        and     3
+        call    .both
+        ld      (LEG_RAMPRI-4000h),a
+        ld      a,c
+        rlca
+        ld      a,0FFh
+        jr      nc,.flat
+        ld      a,c
+        rrca
+        rrca
+        and     3
+        call    .both
+.flat:  ld      (LEG_RAMSEC-4000h),a
+        jr      .slots
+.both:  ld      b,a                     ; a = n: n in bits 5-4 and 3-2
+        add     a,a
+        add     a,a
+        or      b
+        add     a,a
+        add     a,a
+        ret
+.slots:
         ld      hl,tail
         ld      de,LEG_PARAMS-4000h
         ld      a,(taillen)

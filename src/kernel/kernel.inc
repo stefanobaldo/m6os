@@ -1062,6 +1062,10 @@ LEG_DRIVE       equ LEG_VARS+4  ;   the current drive, 0 = A:
 LEG_STARTED     equ LEG_VARS+5  ;   0 until the program has been entered
 LEG_FD          equ LEG_VARS+6  ;   the .COM file, open for reading
 LEG_SIZE        equ LEG_VARS+7  ;   2: its size
+LEG_RAMPRI      equ LEG_VARS+9  ;   the RAM's slot, as pages 1 and 2 select
+LEG_RAMSEC      equ LEG_VARS+10 ;   it: the primary in bits 5-4 and 3-2,
+                                ;   the secondary the same, FFh when the
+                                ;   slot is not expanded
 LEG_PARAMS      equ 0C440h      ;   128: the tail as typed, 0-terminated
 LEG_PROG        equ 0C4C0h      ;   16: the program's own file, for its
 PR_DRIVE        equ 0           ;      PROGRAM string: its directory's

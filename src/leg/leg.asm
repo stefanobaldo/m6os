@@ -141,6 +141,9 @@ leg_drive:      db 0                    ; LEG_DRIVE
 leg_started:    db 0                    ; LEG_STARTED
 leg_fd:         db 0                    ; LEG_FD: the program's file
 leg_size:       dw 0                    ; LEG_SIZE: its length
+leg_rampri:     db 0                    ; LEG_RAMPRI, LEG_RAMSEC: the RAM's
+leg_ramsec:     db 0FFh                 ;   slot in pages 1 and 2
+        ASSERT  leg_rampri == LEG_RAMPRI
         block   LEG_PARAMS-$
 leg_params:     ds 128                  ; the tail as typed
         block   LEG_BIOS-$
@@ -186,24 +189,65 @@ leg_go: xor     a
 ; leg_syscall — the number in C', the arguments in A, HL, DE, BC: the
 ; kernel's page 3 in through the first stub, the syscall, and back
 ; through the second to leg_ret. The program's stack is left where it
-; is; the crossing runs on the hinge's. Returns with interrupts enabled,
-; the result in HL and AF (CF and the errno as the syscall left them).
+; is; the crossing runs on the hinge's, with pages 1 and 2 in the RAM's
+; slot for its length (leg_ramin). Returns with interrupts enabled, the
+; result in HL and AF (CF and the errno as the syscall left them).
 leg_syscall:
         di
         ld      (leg_usp2),sp
         ld      sp,K_HINGE_SP
+        ex      af,af'                  ; the stub uses A
+        call    leg_ramin
         ld      ix,(leg_segs)           ; IXL = page 0, IXH = page 1
         ld      iy,(leg_segs+1)         ; IYH = page 2
-        ex      af,af'                  ; the stub uses A
         jp      K_HINGE
 leg_ret:                                ; from the second stub, di, AF in AF'
         ld      a,(leg_started)
         or      a
         jp      z,leg_entry
         ld      sp,(leg_usp2)
+        call    leg_ramout
         ex      af,af'
         ei
         ret
+
+; leg_ramout — the slots leg_ramin found, back. leg_ramin — pages 1 and 2
+; in the RAM's slot, what was there kept: a program may call the system
+; with either page showing another slot — an editor that keeps the
+; SUB-ROM's neighbour in page 2 does — and the kernel's window and its
+; storage gate are RAM in those two pages. The
+; secondary register is the RAM's primary slot's, which page 3 shows, so
+; it is written directly. Interrupts are off. Both preserve all but AF.
+leg_ramout:
+        ld      a,(leg_ramsec)
+        inc     a
+        jr      z,.pri
+        ld      a,(leg_svff)
+        ld      (0FFFFh),a
+.pri:   ld      a,(leg_sva8)
+        out     (0A8h),a
+        ret
+leg_ramin:
+        push    hl
+        ld      hl,leg_rampri
+        in      a,(0A8h)
+        ld      (leg_sva8),a
+        and     0C3h
+        or      (hl)
+        out     (0A8h),a
+        inc     hl                      ; leg_ramsec
+        ld      a,(hl)
+        inc     a
+        jr      z,.done                 ; not expanded: no register there
+        ld      a,(0FFFFh)
+        cpl
+        ld      (leg_svff),a
+        and     0C3h
+        or      (hl)
+        ld      (0FFFFh),a
+.done:  pop     hl
+        ret
+
 
 ; leg_term — A = the termination code: the abort routine, if the program
 ; defined one (DE = its address, _DEFAB), with A = the code and B = the
@@ -228,8 +272,9 @@ leg_term2:                              ; B = the error that caused it
         ld      a,(leg_code)
         jp      (hl)
 .go:    di
-        ld      a,(leg_code)
         ld      sp,K_HINGE_SP
+        call    leg_ramin               ; whatever slots the program ends
+        ld      a,(leg_code)            ; with, the kernel's window is RAM
         exx
         ld      c,LEG_EXIT
         exx
@@ -1371,6 +1416,8 @@ ms_page:        db 0            ; CAL_SEG: the page, the segment that was
 ms_was:         db 0            ;   there, A across the call
 ms_af:          db 0
 leg_code2:      db 0            ; the secondary code on the way out
+leg_sva8:       db 0            ; leg_ramin: the slots it found, primary
+leg_svff:       db 0            ;   and secondary
 leg_nest:       db 0            ; BDOS calls in progress
 leg_hl:         dw 0            ; the dispatch: the program's HL,
 leg_fn:         dw 0            ;   the handler
