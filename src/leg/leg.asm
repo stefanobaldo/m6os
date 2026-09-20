@@ -252,6 +252,7 @@ leg_abort:
 
 ; leg_bdos — CALL 0005h: C = the function. The program's SP kept, the
 ; layer's stack taken, IX and IY preserved as the specification promises.
+; The flags come back set from A, as MSX-DOS 2 returns them.
 ; Functions below 40h return A = L and B = H; the rest an error code in
 ; A. A function the layer does not serve answers .IBDOS. A disk error
 ; routine may call the BDOS from inside a call: the layer's stack is
@@ -305,7 +306,8 @@ leg_bdos:
         pop     hl
         jr      nz,.ret
         ld      sp,(leg_usp)
-.ret:   ei
+.ret:   or      a                       ; the flags as A has them: a program
+        ei                              ; may branch on Z with no test of A
         ret
 .isbfn: pop     af
         ld      a,D_IBDOS

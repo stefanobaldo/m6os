@@ -348,6 +348,21 @@
         ld      de,s_t
         d_fn    _DELETE
         d_ok
+        d_step  15                      ; the flags say what A says: a
+        ld      de,s_f1                 ; program may branch on Z with no
+        ld      a,1                     ; test of A
+        d_fn    _OPEN
+        jp      z,t_fail                ; an error, and Z
+        ld      de,s_self
+        ld      a,1
+        d_fn    _OPEN
+        jp      nz,t_fail               ; 0, and NZ
+        ld      a,b
+        ld      (h1),a
+        ld      a,(h1)
+        ld      b,a
+        d_fn    _CLOSE
+        d_ok
         jp      t_ok
 
         d_lib   "hfile"
