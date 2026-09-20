@@ -817,9 +817,11 @@ leg_curslot:
 ; after, the routine's registers and flags returned; IX and IY are
 ; corrupted. An address in page 3 is called in place. Interrupts are
 ; disabled around the switches and left as the routine left them. Nothing
-; is kept in memory across the call — the page and the slot ride in IY —
-; because the interrupt trampoline comes through here too, and a tick
-; inside a CALSLT must not rewrite the one in progress.
+; is kept in a variable across the call, because the interrupt trampoline
+; comes through here too and a tick inside a CALSLT must not rewrite the
+; one in progress: the page and the slot that was there ride in IY up to
+; the call and on the caller's stack, under the routine's return, across
+; it — the routine may use IY, and the SUB-ROM's do.
 leg_calslt:
         push    hl
         push    de
@@ -848,11 +850,13 @@ leg_calslt:
         pop     bc
         pop     de
         pop     hl
+        push    iy                      ; the page, and the slot to put back
         push    hl
         ld      hl,.back
         ex      (sp),hl                 ; .back pushed, hl as it was
         jp      (ix)
-.back:  push    af
+.back:  pop     iy
+        push    af
         push    hl
         push    de
         push    bc

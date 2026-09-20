@@ -6,6 +6,7 @@ dos /dosf/henv.com Ab cd
 dos /dosf/hproc.com
 dos /dosf/hparse.com
 dos /dosf/hmisc.com
+dos /dosf/hslot.com
 /t/tick
 dos /dosf/copy64.com
 /t/tick
