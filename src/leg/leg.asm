@@ -1025,22 +1025,36 @@ leg_mapvar:
         db      0,0,0,0,0,0,0,0
         db      0,0,0,0,0,0,0,0
 
-; ALL_SEG — A = 0 (user) or 1 (system), B = 0 (the primary mapper) or
-; F0h + slot: A = the segment, B = its mapper's slot; CF when none is
-; free. Every segment is the program's and goes at its exit. Corrupts
-; AF, BC.
+; ALL_SEG — A = 0 (user) or 1 (system), B = 0 (the primary mapper) or a
+; slot and how to try it: A = the segment, B = its mapper's slot — 0 when
+; B came as 0, as MSX-DOS 2 answers; a program keeps that byte and hands
+; it to ENASLT — CF when none is free. There is one mapper: whatever slot
+; is asked for, the segment is the primary's. Every segment is the
+; program's and goes at its exit. Corrupts AF, BC and nothing else: a
+; crossing leaves IX and IY undefined, and a program keeps its own in
+; them across a mapper routine, which is not a BDOS call.
 m_all_seg:
         push    hl
         push    de
+        push    ix
+        push    iy
+        push    bc
         leg_sys SYS_SEGALLOC
+        pop     bc
+        pop     iy
+        pop     ix
         jr      c,.none
+        ld      a,b
+        or      a
+        jr      z,.slot
+        ld      a,(leg_mapvar+0)
+.slot:  ld      b,a
         ld      a,l
         ld      hl,leg_mapvar+2
         dec     (hl)
         inc     hl
         inc     hl
         inc     (hl)
-        ld      b,0
         or      a
 .out:   pop     de
         pop     hl
@@ -1049,10 +1063,17 @@ m_all_seg:
         jr      .out
 
 ; FRE_SEG — A = a segment: freed; CF when it is not the program's.
+; Corrupts AF alone, IX and IY kept as in ALL_SEG.
 m_fre_seg:
         push    hl
         push    de
+        push    bc
+        push    ix
+        push    iy
         leg_sys SYS_SEGFREE
+        pop     iy
+        pop     ix
+        pop     bc
         jr      c,.out
         ld      hl,leg_mapvar+2
         inc     (hl)
