@@ -44,7 +44,7 @@ after time 1 wait_rc
 
 proc check_rc {} {
     expect_screen "rc start" "rc start not on the screen"
-    foreach p {hfile hfind hdir henv hproc hparse hmisc copy64} {
+    foreach p {hfile hfind hdir henv hproc hparse hmisc hslot copy64} {
         if {![has_row "$p ok"]} {
             set line ""
             foreach r [rows] { if {[string match "$p fail*" $r]} { set line $r } }
