@@ -6,7 +6,10 @@
 ; page 2 — slot 0, where an MSX2 has no RAM — a routine of the program's
 ; own in the RAM of page 2 is called through CALSLT, and changes IY as a
 ; BIOS routine may: the slot that was in page 2 must be there again
-; afterwards. Then the RAM goes back, by ENASLT.
+; afterwards. With that slot still in page 2, a file is opened and read
+; and closed: the system finds its own memory whatever the program has
+; in pages 1 and 2, and leaves the program's slots as they were. Then the
+; RAM goes back, by ENASLT.
         include "dosf/progs/dosf.inc"
 CALSLT          equ 001Ch
 ENASLT          equ 0024h
@@ -35,6 +38,33 @@ ROUTINE         equ 8100h
         cp      6                       ; it ran, and answered
         jp      nz,restore_fail
         call    page2                   ; and slot 0 is back in page 2
+        or      a
+        jp      nz,restore_fail
+        d_step  3                       ; a file, with slot 0 in page 2
+        ld      de,s_self
+        ld      a,1
+        d_fn    _OPEN
+        or      a
+        jp      nz,restore_fail
+        ld      a,b
+        ld      (h1),a
+        ld      de,buf
+        ld      hl,4
+        d_fn    _READ
+        or      a
+        jp      nz,restore_fail
+        ld      a,(h1)
+        ld      b,a
+        d_fn    _CLOSE
+        or      a
+        jp      nz,restore_fail
+        ld      hl,buf                  ; this program's first bytes
+        ld      de,100h
+        ld      bc,4
+        call    d_memeq
+        jp      nz,restore_fail
+        d_step  4                       ; and slot 0 is in page 2 still
+        call    page2
         or      a
         jp      nz,restore_fail
         call    restore
@@ -71,3 +101,6 @@ routine:
 routine_end:
 
         d_lib   "hslot"
+s_self: db      '\DOSF\HSLOT.COM',0
+h1:     db      0
+buf:    ds      4
