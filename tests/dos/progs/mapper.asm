@@ -8,7 +8,11 @@
 ; PUT_P2 of page 1's segment shows page 1's bytes at 8000h and GET_P2
 ; answers it; the TPA's segment put back. Then ALL_SEG: a segment, freed
 ; again with FRE_SEG, or the carry the 128K machine gives with nothing
-; free. "mapper ok seg" or "mapper ok noseg", or the step that failed.
+; free — asked for by slot, as a program that keeps a table of its
+; segments asks, so the slot must come back in B for ENASLT to take; and
+; IX and IY, which a program keeps its own things in, as they went, with
+; a segment or without. "mapper ok seg" or "mapper ok noseg", or the step
+; that failed.
         include "dos/progs/dos.inc"
         org     100h
         ld      a,1
@@ -19,6 +23,8 @@
         or      a
         jp      z,fail                  ; no mapper support
         ld      (tab),hl
+        ld      a,b
+        ld      (slot),a                ; the mapper's slot
         ld      de,3
         ld      (m_all+1),hl
         add     hl,de
@@ -97,13 +103,47 @@
         ld      a,(hl)
         or      a                       ; the pattern's 0 is back
         jp      nz,fail
-        ; 5: a segment, if the machine has one to give
+        ; 5: a segment, if the machine has one to give: by the mapper's
+        ; slot "or any other" (20h), which answers the slot in B; IX and
+        ; IY come back as they went, whatever the answer
         ld      a,5
         ld      (step),a
+        ld      ix,1234h
+        ld      iy,5678h
+        ld      a,(slot)
+        and     8Fh
+        or      20h
+        ld      b,a
         xor     a
-        ld      b,0
         call    m_all
+        push    af
+        call    regs
+        pop     af
         jr      c,.noseg
+        ld      (seg),a
+        ld      a,6
+        ld      (step),a
+        ld      a,(slot)
+        cp      b
+        jp      nz,fail                 ; B is not the mapper's slot
+        ld      a,7
+        ld      (step),a
+        ld      a,(seg)
+        call    m_fre
+        jp      c,fail
+        call    regs
+        ; 8: asked of the primary mapper with B = 0, B comes back 0
+        ld      a,8
+        ld      (step),a
+        xor     a
+        ld      b,a
+        call    m_all
+        jp      c,fail
+        ld      (seg),a
+        ld      a,b
+        or      a
+        jp      nz,fail
+        ld      a,(seg)
         call    m_fre
         jp      c,fail
         d_puts  s_ok
@@ -112,6 +152,23 @@
 .noseg: d_puts  s_ok
         d_puts  s_noseg
         jp      done
+; regs — IX and IY must still be what step 5 put there.
+regs:   push    ix
+        pop     hl
+        ld      de,1234h
+        or      a
+        sbc     hl,de
+        jr      nz,.bad
+        push    iy
+        pop     hl
+        ld      de,5678h
+        or      a
+        sbc     hl,de
+        ret     z
+.bad:   pop     hl                      ; not back to the step
+        ld      a,9
+        ld      (step),a
+        jp      fail
 fail:   d_puts  s_fail
         ld      a,(step)
         ld      l,a
@@ -136,4 +193,6 @@ s_crlf: db      13,10,"$"
 step:   db      0
 s1:     db      0
 s2:     db      0
+slot:   db      0
+seg:    db      0
 tab:    dw      0
