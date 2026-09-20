@@ -8,7 +8,7 @@
 ; what needs the kernel, by the ordinary syscalls.
 ;
 ; While the program runs, page 3 shows a segment of its own — the legacy
-; page 3: TPA to CFFFh, the layer from LEG_BASE, a copy of this page from
+; page 3: TPA to LEG_BASE, the layer from there, a copy of this page from
 ; K_HINGE up — and the resident's page 3 is out. The two meet at the
 ; hinge, K_HINGE_LEN bytes at the same address in both images, holding two
 ; stubs and a small stack: the first swaps the resident's page 3 in and

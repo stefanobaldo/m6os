@@ -232,8 +232,12 @@ opened: ld      (fd),a
         inc     hl
         inc     de
         djnz    .upper
-        ; Into the legacy page 3. Only a refusal comes back.
-        ld      bc,0                    ; no body outside the segment
+        ; Into the legacy page 3, the layer's body handed to the kernel,
+        ; which puts it where the layer will map it. Only a refusal comes
+        ; back.
+        ld      hl,legb_start
+        ld      bc,legb_end-legb_start
+        ld      de,LEG_BODY-8000h
         ld      a,(leg)
         sys     SYS_DOSENTER
 failsegs:
@@ -346,11 +350,17 @@ s_com:          db ".com",0
 s_dot:          db ".",0
 s_root:         db "/",0
 
-; The layer, as the legacy page 3 holds it from LEG_BASE.
+; The layer: what the legacy page 3 holds from LEG_BASE, and its body,
+; which the kernel copies out of this page into the buffers its cache
+; lends (dosenter).
 leg_start:
         incbin  "build/leg.bin"
 leg_end:
+legb_start:
+        incbin  "build/legb.bin"
+legb_end:
         ASSERT  leg_end-leg_start <= LEG_MAX
+        ASSERT  legb_end-legb_start <= LEG_BMAX
 
         include "lib/args.inc"
         include "lib/err.inc"

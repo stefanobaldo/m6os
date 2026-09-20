@@ -6,16 +6,18 @@
 ; the layer, before the program is entered — the DOS page 0, the copy of
 ; the BIOS area patched, the program read into its pages, the mapper
 ; variables, the drives and the current directory (legf_init), the two
-; FCBs from the tail. Included by leg.asm at the end of its image, where
-; its bytes are an overlay: once it has run, the record, the environment
-; store and the console line (leg_rec, leg_env, leg_line) lie over it.
-; Nothing here may be written into before the entry is over — the record
-; alone, which legf_init fills last of all, lies over leg_entry, which
-; has run by then.
+; FCBs from the tail. Included by leg.asm at the end of the body's image,
+; where its bytes are an overlay: once it has run, the record and the
+; environment store (leg_rec, leg_env) lie over it. Nothing here may be
+; written into before the entry is over — the record alone, which
+; legf_init fills last of all, lies over leg_entry, which has run by
+; then.
 
-; leg_entry — the first crossing, from dosenter through the second stub:
-; interrupts disabled, this page in, the launcher's page 0 still in page
-; 0 with the tail at 0080h. The DOS page 0 (DOS2-PIS §2.3) written around
+; leg_entry — the first crossing, from dosenter through the second stub
+; and leg_ret (leg.asm), which has marked the layer started, taken the
+; stack under the BDOS entry and mapped the body: interrupts disabled,
+; the legacy page 3 in, the launcher's page 0 still in page 0 with the
+; tail at 0080h. The DOS page 0 (DOS2-PIS §2.3) written around
 ; the kernel's subslot stub at 0040h; EXTBIO and HOKVLD in this copy of
 ; the BIOS area; the mapper variable table filled through the kernel; the
 ; program read from its file into the three pages through the kernel —
@@ -23,9 +25,6 @@
 ; the stack where MSX-DOS puts it with WBOOT under it so that a ret ends
 ; the program; and into the program with interrupts enabled.
 leg_entry:
-        ld      a,1
-        ld      (leg_started),a
-        ld      sp,LEG_BDOS-8
         ; The DOS page 0: 0000h-003Fh and 0051h-007Fh cleared, the stub at
         ; 0040h and the tail at 0080h kept, then the entries.
         ld      hl,0
@@ -103,9 +102,11 @@ leg_entry:
         ld      (B_FCALL+3),hl
         ld      hl,B_HOKVLD
         set     0,(hl)
-        ; The program, into pages 0-2 through the kernel, page piece by
+        ; The program, into its pages through the kernel, page piece by
         ; page piece — read takes a buffer in one page. The launcher's
         ; page 0 is overwritten from P0_PROG, and never returned to.
+        ; leg_inb is 1 here: the kernel is told the program's page 2, not
+        ; the body's, because that is where the third piece goes.
         ld      hl,(leg_size)
         ld      (leg_left),hl
         ld      hl,P0_PROG
@@ -152,6 +153,8 @@ leg_entry:
         ld      a,D_INTER
         jp      leg_term
 .loaded:
+        ld      a,3                     ; from here a crossing's buffers
+        ld      (leg_inb),a             ; are the body's own
         ld      a,(leg_fd)
         leg_sys SYS_CLOSE
         ld      a,(B_RAMAD0+3)
@@ -178,7 +181,9 @@ leg_entry:
         ld      (leg_mapvar+4),a        ; the user's: the TPA's four
         call    legf_init
         call    leg_fcbs
-        jp      leg_go                  ; the tail, outside this overlay
+        xor     a                       ; the environment store, empty: it
+        ld      (leg_env),a             ; lies over code that has run
+        jp      leg_go                  ; the tail, in page 3
 
 ; legf_init — the drives and the current directory, from the kernel:
 ; every volume mounted is a drive; the shell's directory is the current
