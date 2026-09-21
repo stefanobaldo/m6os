@@ -192,9 +192,8 @@ PID PPID ST PG
 
 The kernel keeps no command name, so `ps` shows none: a process is told
 apart by its pid, which the shell prints for every background job. A
-background job started by a script stays `Z` until the script ends,
-since a shell reading a script reaps nothing; at the prompt the shell
-reaps before every prompt.
+background job that has ended stays `Z` only until its shell reads its
+next line, or at the prompt shows its next prompt.
 
 ## pwd
 

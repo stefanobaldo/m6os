@@ -1,6 +1,6 @@
 sleep 100 &
 ps
-kill 4
+kill 3
 true
 ps
 kill 9

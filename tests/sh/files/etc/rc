@@ -91,6 +91,7 @@ echo /lfn/Long* > /t/r56
 echo xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx > /t/r57
 /t/tick > /t/s1; sleep 1; /t/tick > /t/s2
 sh < /t/procs > /t/r54 2> /t/r54e
+sh < /t/jobs > /t/j 2> /t/r62e
 sh < /etc/bench1
 sh < /etc/bench2
 # The response delay: the largest gap between two tick reads beside a cp

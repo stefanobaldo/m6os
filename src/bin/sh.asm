@@ -5,18 +5,20 @@
 ; sh [-i] — the shell: commands read from descriptor 0 to its end, one
 ; line at a time; with -i, a prompt before each — the current directory
 ; and "$ " — the terminal put in canonical mode first, and the jobs that
-; ended reported. A line is words separated by blanks, with '...' and
-; "..." taken as they are, and # ending it; | joins commands into a
-; pipeline of at most four; <, >, >> and 2> take the next word as a
-; file; ; separates lists; a trailing & runs the list in the background
-; and prints its pid. A word with * or ? is matched against the names in
-; its directory, in the order they are stored; one matching nothing is
-; kept as written. A name without / is /bin/name. cd [dir] and exit [n]
-; are the shell's own. A foreground list's status, when not 0, is
-; printed as [N] — 128 + the signal for a command a signal ended. In -i
-; mode the shell ignores SIGINT and the commands it starts take it by
-; default, so ^C ends the command and the prompt comes back; without -i
-; the shell takes SIGINT and a ^C ends the script.
+; ended reported; without -i they are reaped before each line all the
+; same, and reported by no one. A line is words separated by blanks,
+; with '...' and "..." taken as they are, and # ending it; | joins
+; commands into a pipeline of at most four; <, >, >> and 2> take the
+; next word as a file; ; separates lists; a trailing & runs the list
+; in the background and prints its pid. A word with * or ? is matched
+; against the names in its directory, in the order they are stored; one
+; matching nothing is kept as written. A name without / is /bin/name.
+; cd [dir] and exit [n] are the shell's own. A foreground list's
+; status, when not 0, is printed as [N] — 128 + the signal for a command
+; a signal ended. In -i mode the shell ignores SIGINT and the commands
+; it starts take it by default, so ^C ends the command and the prompt
+; comes back; without -i the shell takes SIGINT and a ^C ends the
+; script.
 ;
 ; In -i mode the shell keeps the last HIST lines it ran, in memory, and
 ; UP and DOWN at the prompt bring them back: the terminal is put in
@@ -53,6 +55,7 @@ T_QUOTE equ     80h                     ; a word that had quotes: no glob
         m6_prog 1
 main:   xor     a
         ld      (interactive),a
+        ld      (jobs),a                ; no background job started yet
         ld      a,b
         or      c
         jr      z,.noargs
@@ -79,10 +82,10 @@ main:   xor     a
 .noargs:
         xor     a
         call    in_open
-.line:  ld      a,(interactive)
+.line:  call    reap
+        ld      a,(interactive)
         or      a
         jr      z,.read
-        call    reap
         ld      a,TTY_RECALL
         sys     SYS_TTYMODE
         xor     a
@@ -1074,6 +1077,7 @@ wait_list:
         ld      a,(bg)
         or      a
         jr      z,.fg
+        ld      (jobs),a                ; one to reap from now on
         ld      a,(lastpid)
         or      a
         ret     z
@@ -1125,14 +1129,22 @@ wait_list:
         call    out_putc
         jp      out_flush
 
-; reap — every background job that ended, reported as [pid] status.
-reap:   xor     a
+; reap — every background job that ended, reported as [pid] status in
+; -i mode. No waitpid at all until a background job has been started,
+; and none again once the kernel says no child is left.
+reap:   ld      a,(jobs)
+        or      a
+        ret     z
+        xor     a
         ld      b,WNOHANG
         sys     SYS_WAITPID
-        ret     c                       ; no child at all
+        jr      c,.none                 ; no child at all
         ld      a,h
         or      l
         ret     z                       ; none ended
+        ld      a,(interactive)
+        or      a
+        jr      z,reap                  ; a script's: reaped, not reported
         push    hl
         ld      l,h
         ld      h,0
@@ -1146,6 +1158,9 @@ reap:   xor     a
         ld      a,10
         call    out_putc
         jr      reap
+.none:  xor     a
+        ld      (jobs),a
+        ret
 
 ; put_bracketed — HL in decimal between brackets.
 put_bracketed:
@@ -1213,6 +1228,7 @@ s_syntax: db    "syntax error",0
         bss     argc_s,1
         bss     nstage,1
         bss     bg,1
+        bss     jobs,1
         bss     is_last,1
         bss     dosretry,1
         bss     rkind,1
