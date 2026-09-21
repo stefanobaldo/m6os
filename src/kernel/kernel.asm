@@ -114,6 +114,7 @@ k_sys:
         jp      k_sw_statfs             ; SYS_STATFS, the same
         jp      k_sw_utime              ; SYS_UTIME, the same
         jp      k_sw_statl              ; SYS_STATL, the same
+        jp      k_sw_ftrunc             ; SYS_FTRUNC, the same
         DUP     K_SYS_N-SYS_N
         jp      sys_enosys
         EDUP

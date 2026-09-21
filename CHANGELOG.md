@@ -173,6 +173,8 @@ to install.
   for the program's run, so an editor, a file manager and a music player
   that refused a smaller TPA now run, on a 128K machine with the shell
   alive. See [`docs/dos.md`](docs/dos.md).
+- `ftruncate`: a file open for writing cut to a size, or grown to one
+  with zeros.
 
 ### Fixed
 

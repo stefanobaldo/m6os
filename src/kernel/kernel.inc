@@ -338,7 +338,11 @@ SYS_UTIME       equ 38          ; HL = path, DE = a FAT date, BC = a FAT
                                 ; root, /mnt), EROFS, EIO
 SYS_STATL       equ 39          ; HL = path, DE = a DIRENT_SIZE buffer: as
                                 ; stat, in the short form (DE_LOC)
-SYS_N           equ 40          ; entries given a syscall so far
+SYS_FTRUNC      equ 40          ; A = fd, DE:HL = a size: the file cut or
+                                ; grown to it, the growth zeros; EBADF
+                                ; (not open for writing), EISDIR, ENOSPC,
+                                ; EIO
+SYS_N           equ 41          ; entries given a syscall so far
 WNOHANG         equ 1           ; waitpid: do not block
 PROCINFO_SIZE   equ P_SIZE+PX_SIZE ; the row, then the extension row
 
@@ -548,6 +552,7 @@ KS_TTYLINE      equ KS_TABLE2+87
 KS_STATFS       equ KS_TABLE2+90 ; (ks_vfs.asm)
 KS_UTIME        equ KS_TABLE2+93 ; (ks_vfsw.asm)
 KS_STATL        equ KS_TABLE2+96 ; (ks_vfs.asm)
+KS_FTRUNC       equ KS_TABLE2+99 ; (ks_vfsw.asm)
 
 ; The window (kwin.asm) and the storage gate: what is in page 2 and page 1
 ; while the switched part of the kernel runs. kwin_enter puts the switched
