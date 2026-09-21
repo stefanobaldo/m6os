@@ -73,7 +73,10 @@ before it ending on a broken pipe.
 `;` separates commands, or pipelines, that run one after the other. A
 list that ends in `&` runs in the background: the shell prints its pid
 as `[pid]` and takes the next line at once. When the job ends, the shell
-reports it as `[pid] status` before its next prompt.
+reports it as `[pid] status` before its next prompt. A shell reading a
+script collects the jobs that ended before each line it reads, and
+reports none of them: a report would land wherever the job happened to
+end among the script's own output.
 
 A background job does not take ^C from the keyboard. Only a `kill` ends
 it, or its own end.

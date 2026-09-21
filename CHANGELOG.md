@@ -182,6 +182,11 @@ to install.
 
 ### Fixed
 
+- A shell reading a script — `/etc/rc` among them — left every background
+  job it started a zombie until the script ended, and after fourteen of
+  them no process could be created: every later command failed with
+  `EAGAIN`. The shell now collects the jobs that ended before each line it
+  reads, without reporting them.
 - MSX-DOS 2 programs: a function call returned with `Z` set whatever the
   error in `A`, and a program that branches on the flags after `CALL 5`
   read a directory for ever; `ALL_SEG` answered slot 0 for the mapper and,
