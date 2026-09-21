@@ -357,12 +357,8 @@ fat_alloc:
         jr      z,.fetch                ; wrapped to 2
         jr      .word
 .found: ld      a,(SG+VW_AVOL)
-        call    fat_mnt
-        ld      de,0FFFh
-        bit     0,(ix+M_FLAGS)
-        jr      z,.eoc
-        ld      de,0FFFFh
-.eoc:   ld      hl,(SG+VW_ACUR)
+        call    fat_eoc
+        ld      hl,(SG+VW_ACUR)
         ld      a,(SG+VW_AVOL)
         call    fat_set
         ret     c
@@ -398,6 +394,16 @@ fat_alloc:
         ret
 .out:   pop     hl
         scf
+        ret
+
+; fat_eoc — A = a volume: DE = the mark a chain's last entry holds there,
+; 0FFFh or 0FFFFh. Corrupts AF, IX.
+fat_eoc:
+        call    fat_mnt
+        ld      de,0FFFh
+        bit     0,(ix+M_FLAGS)
+        ret     z
+        ld      de,0FFFFh
         ret
 
 ; fat_free_chain — A = a volume, HL = a chain's first cluster: every entry

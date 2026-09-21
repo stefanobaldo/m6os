@@ -747,18 +747,11 @@ ks_write:
         ld      a,(iy+OF_ERRNO)
         scf
         ret
-.fresh: ld      (SG+VV_RBUF),hl
-        ld      (SG+VV_RLEFT),bc
-        ld      hl,0
-        ld      (SG+VV_RDONE),hl
-        ld      (SG+VW_ZB),hl           ; no buffer of zeros yet
-        xor     a
-        ld      (SG+VW_ERR),a
-        ld      a,b
+.fresh: ld      a,b
         or      c
         jp      z,.zero
         bit     5,(iy+OF_FLAGS)         ; OFF_APPEND: at the end
-        jr      z,.noapp
+        jr      z,.pass
         ld      a,(iy+OF_SIZE)
         ld      (iy+OF_POS),a
         ld      a,(iy+OF_SIZE+1)
@@ -769,7 +762,15 @@ ks_write:
         ld      (iy+OF_POS+3),a
         ld      (iy+OF_CLUS),low OF_CLUS_NONE
         ld      (iy+OF_CLUS+1),high OF_CLUS_NONE
-.noapp: push    iy
+.pass:  ; The pass (ks_ftrunc enters here with no bytes, to grow a file).
+        ld      (SG+VV_RBUF),hl
+        ld      (SG+VV_RLEFT),bc
+        ld      hl,0
+        ld      (SG+VV_RDONE),hl
+        ld      (SG+VW_ZB),hl           ; no buffer of zeros yet
+        xor     a
+        ld      (SG+VW_ERR),a
+        push    iy
         pop     hl
         ld      de,OF_SIZE
         add     hl,de
@@ -1349,6 +1350,155 @@ ks_utime:
         call    dir_put_entry
         jp      wr_finish
 .acces: ld      a,E_ACCES
+        scf
+        ret
+
+; ks_ftrunc — SYS_FTRUNC: A = fd, DE:HL = a size: the file cut there — the
+; chain cut after the cluster holding the new last byte, freed whole for
+; a size of 0 — or grown to there through the write pass with no bytes,
+; which lays the zeros and allocates as it goes; the entry rewritten with
+; the size and the time now, the table flushed. The position stays where
+; it was; the cursor is rebuilt by the next read or write. E_BADF
+; for a descriptor not open for writing, E_ISDIR for a directory.
+ks_ftrunc:
+        ld      (SG+VW_P32),hl          ; the new size
+        ld      (SG+VW_P32+2),de
+        call    vfs_begin
+        call    fd_row
+        ret     c
+        ld      (SG+VV_ROW),iy
+        bit     0,(iy+OF_FLAGS)         ; OFF_DIR
+        jp      nz,.isdir
+        bit     4,(iy+OF_FLAGS)         ; OFF_WR
+        jp      z,.badf
+        push    iy
+        pop     hl
+        ld      de,OF_POS
+        add     hl,de
+        ld      de,SG+VW_OSEC           ; the position, kept for the end
+        ld      bc,4
+        ldir
+        push    iy
+        pop     de
+        ld      hl,OF_POS
+        add     hl,de
+        ex      de,hl                   ; de -> the position
+        ld      hl,SG+VW_P32
+        ld      bc,4
+        ldir                            ; the position = the new size
+        ld      l,(iy+OF_SIZE)
+        ld      h,(iy+OF_SIZE+1)
+        ld      de,(SG+VW_P32)
+        or      a
+        sbc     hl,de
+        ld      l,(iy+OF_SIZE+2)
+        ld      h,(iy+OF_SIZE+3)
+        ld      de,(SG+VW_P32+2)
+        sbc     hl,de
+        jp      c,.longer
+        ; Shorter, or the same: the size, the tail, then the chain cut.
+        push    iy
+        pop     de
+        ld      hl,OF_SIZE
+        add     hl,de
+        ex      de,hl
+        ld      hl,SG+VW_P32
+        ld      bc,4
+        ldir
+        ld      (iy+OF_TAIL),0
+        ld      (iy+OF_TAIL+1),0
+        ld      l,(iy+OF_FIRST)
+        ld      h,(iy+OF_FIRST+1)
+        ld      a,h
+        or      l
+        jp      z,.entry                ; no chain to cut
+        ld      hl,(SG+VW_P32)
+        ld      a,h
+        or      l
+        ld      hl,(SG+VW_P32+2)
+        or      h
+        or      l
+        jr      nz,.cut
+        ld      l,(iy+OF_FIRST)         ; empty: the whole chain goes
+        ld      h,(iy+OF_FIRST+1)
+        ld      (iy+OF_FIRST),0
+        ld      (iy+OF_FIRST+1),0
+        jr      .free
+.cut:   ; The cluster holding the last byte: the cursor at size - 1.
+        ld      hl,(SG+VW_P32)
+        ld      de,(SG+VW_P32+2)
+        ld      a,h
+        or      l
+        jr      nz,.d1
+        dec     de
+.d1:    dec     hl
+        ld      (iy+OF_POS),l
+        ld      (iy+OF_POS+1),h
+        ld      (iy+OF_POS+2),e
+        ld      (iy+OF_POS+3),d
+        ld      a,(iy+OF_VOL)
+        call    fat_mnt
+        ld      a,(ix+M_SPCSH)
+        add     a,9
+        push    iy
+        pop     ix
+        call    of_cursor
+        ld      iy,(SG+VV_ROW)
+        ret     c
+        jr      z,.entry                ; shorter than its size said
+        ld      l,(iy+OF_CLUS)
+        ld      h,(iy+OF_CLUS+1)
+        ld      (iy+OF_TAIL),l
+        ld      (iy+OF_TAIL+1),h
+        push    hl
+        ld      a,(iy+OF_VOL)
+        call    fat_next
+        pop     de
+        ret     c
+        jr      z,.entry                ; the chain's end already
+        push    hl                      ; the rest, to free
+        ex      de,hl
+        ld      iy,(SG+VV_ROW)
+        ld      a,(iy+OF_VOL)
+        push    hl
+        call    fat_eoc
+        pop     hl
+        ld      a,(iy+OF_VOL)
+        call    fat_set                 ; the last: an end mark
+        pop     hl
+        ret     c
+.free:  ld      iy,(SG+VV_ROW)
+        ld      a,(iy+OF_VOL)
+        call    fat_free_chain
+        ret     c
+.entry: call    wr_stamp
+        ld      iy,(SG+VV_ROW)
+        call    wr_update_entry
+        call    wr_finish
+        jr      .back
+.longer:
+        ld      hl,0                    ; the write pass with no bytes,
+        ld      b,h                     ;   from the size to the position
+        ld      c,l
+        call    ks_write.pass
+.back:  push    af
+        ld      iy,(SG+VV_ROW)
+        ld      (iy+OF_CLUS),low OF_CLUS_NONE
+        ld      (iy+OF_CLUS+1),high OF_CLUS_NONE
+        push    iy
+        pop     de
+        ld      hl,OF_POS
+        add     hl,de
+        ex      de,hl
+        ld      hl,SG+VW_OSEC
+        ld      bc,4
+        ldir                            ; the position, as it was
+        pop     af
+        ret
+.isdir: ld      a,E_ISDIR
+        scf
+        ret
+.badf:  ld      a,E_BADF
         scf
         ret
 

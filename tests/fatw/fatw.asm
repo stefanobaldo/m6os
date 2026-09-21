@@ -3,7 +3,7 @@
 ; SPDX-License-Identifier: BSD-3-Clause
 ;
 ; fatw — the filesystem's write side: files created, written, extended
-; through a hole, appended to, truncated and deleted; the one writer and
+; through a hole, appended to, truncated, cut short and deleted; the one writer and
 ; the errors around it; a process writing 64K three ways and reading it
 ; back; directories made, filled past a cluster, emptied, removed and
 ; renamed; a volume filled to ENOSPC. Under Nextor: find the driver behind
@@ -862,6 +862,117 @@ t_entry:
         ld      b,E_ACCES
         ld      c,0BAh
         call    t_expect
+        ; ftruncate: a file of 3072 bytes cut to 1000 — its bytes and its
+        ; end — grown to 4000 with zeros, then cut to 0 with no cluster
+        ; left; a reader's descriptor refused.
+        ld      hl,t_buf
+        ld      b,0
+.trpat: ld      (hl),b                  ; byte i = i, twice over
+        inc     hl
+        inc     b
+        jr      nz,.trpat
+        ld      b,0
+.trpat2: ld     (hl),b
+        inc     hl
+        inc     b
+        jr      nz,.trpat2
+        ld      hl,p_tr
+        ld      a,O_CREAT|O_TRUNC|O_RDWR
+        sys     SYS_OPEN
+        jp      c,t_fail
+        ld      (t_fd),a
+        ld      b,6
+.trw:   push    bc
+        ld      a,(t_fd)
+        ld      hl,t_buf
+        ld      bc,512
+        sys     SYS_WRITE
+        pop     bc
+        jp      c,t_fail
+        djnz    .trw
+        ld      a,(t_fd)
+        ld      hl,1000
+        ld      de,0
+        sys     SYS_FTRUNC
+        jp      c,t_fail
+        ld      a,(t_fd)
+        ld      hl,0
+        ld      de,0
+        ld      b,SEEK_SET
+        sys     SYS_LSEEK
+        jp      c,t_fail
+        ld      a,(t_fd)
+        ld      hl,t_buf
+        ld      bc,512
+        sys     SYS_READ
+        jp      c,t_fail
+        ld      a,(t_fd)
+        ld      hl,t_buf                ; the bytes left: 488 of 512
+        ld      bc,512
+        sys     SYS_READ
+        jp      c,t_fail
+        ld      de,488
+        or      a
+        sbc     hl,de
+        ld      a,0BCh
+        jp      nz,t_fail
+        ld      a,(t_buf+100)           ; the pattern, still
+        cp      100
+        ld      a,0BDh
+        jp      nz,t_fail
+        ld      a,(t_fd)
+        ld      hl,4000
+        ld      de,0
+        sys     SYS_FTRUNC              ; grown: zeros to 4000
+        jp      c,t_fail
+        ld      a,(t_fd)
+        ld      hl,t_buf
+        ld      bc,512
+        sys     SYS_READ
+        jp      c,t_fail
+        ld      de,512
+        or      a
+        sbc     hl,de
+        ld      a,0BEh
+        jp      nz,t_fail
+        ld      a,(t_buf+7)
+        or      a
+        ld      a,0BFh
+        jp      nz,t_fail               ; a zero of the growth
+        ld      a,(t_fd)
+        ld      hl,0
+        ld      de,0
+        sys     SYS_FTRUNC
+        jp      c,t_fail
+        ld      hl,p_tr
+        ld      de,t_rec
+        sys     SYS_STATL
+        jp      c,t_fail
+        ld      hl,(t_rec+DE_SIZE)
+        ld      a,h
+        or      l
+        ld      a,0C1h
+        jp      nz,t_fail
+        ld      hl,(t_rec+DE_NAME+DE_LOC+DL_CLUS)
+        ld      a,h
+        or      l
+        ld      a,0C2h
+        jp      nz,t_fail               ; no cluster left
+        ld      a,(t_fd)
+        sys     SYS_CLOSE
+        ld      hl,p_tr
+        xor     a
+        sys     SYS_OPEN
+        jp      c,t_fail
+        ld      (t_fd),a
+        ld      hl,0
+        ld      de,0
+        sys     SYS_FTRUNC
+        ld      b,E_BADF
+        ld      c,0C3h
+        call    t_expect
+        ld      a,(t_fd)
+        sys     SYS_CLOSE
         call    t_clean
         ld      hl,t_ok
         k_call  API_CON_PUTS
@@ -1384,6 +1495,7 @@ p_a:        db  "/tmp/a.txt",0
 p_b:        db  "/tmp/b.txt",0
 p_c:        db  "/tmp/d1/c.txt",0
 p_e:        db  "/tmp/e.txt",0
+p_tr:       db  "/tmp/tr.txt",0
 p_be:       db  "/mnt/b/e.txt",0
 p_ro:       db  "/ro.txt",0
 p_none:     db  "/tmp/none",0

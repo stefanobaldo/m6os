@@ -108,6 +108,8 @@ k_owed_con:
         jr      k_sw_s
     endm
 
+k_sw_ftrunc:
+        k_sw_stub KS_FTRUNC
 k_sw_open:
         k_sw_stub KS_OPEN
 k_sw_close:

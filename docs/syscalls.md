@@ -229,7 +229,8 @@ input is a file or a pipe reads what is typed there: `more` in
 | 37 | `statfs` | `A` = a volume, 0–7; `HL` = a 32-byte buffer; `B` = 0, or 1 to count the free clusters too (see *Files*) | — | `ENODEV`: no volume; `EFAULT`; `EIO` |
 | 38 | `utime` | `HL` = path, `DE` = a FAT date, `BC` = a FAT time | — | `ENOENT`, `ENOTDIR`, `ENAMETOOLONG`, `EACCES`: a volume's root or `/mnt`; `EROFS`, `EIO` |
 | 39 | `statl` | `HL` = path, `DE` = a 265-byte buffer | — | as `stat` |
-| 40–47 | — | — | — | `ENOSYS` |
+| 40 | `ftruncate` | `A` = fd, `DE:HL` = a size | — | `EBADF`: not open for writing; `EISDIR`, `ENOSPC`, `EIO` |
+| 41–47 | — | — | — | `ENOSYS` |
 
 `write` to a descriptor that is the console goes to the screen and `read`
 from one that is the keyboard or the console takes from the keyboard, as
@@ -487,7 +488,11 @@ not: the caller's image is intact then, whatever the error. A process
 whose parent is waiting in `vfork` gets fresh memory for the new image,
 and the parent wakes as the image starts.
 
-`utime` sets a file's or a directory's modification time to the two FAT
+`ftruncate` sets the size of a file open for writing: a shorter size
+cuts the file there and frees the clusters past it, a longer one grows
+it with zeros, allocating as a `write` past the end would; the entry's
+size and time are written, the table flushed, and the position stays
+where it was. `utime` sets a file's or a directory's modification time to the two FAT
 words given, as they are; a volume's root and `/mnt` have no entry to
 stamp (`EACCES`). `statfs` describes a mounted volume in a 32-byte block:
 
