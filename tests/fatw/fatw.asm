@@ -883,10 +883,15 @@ t_entry:
         jp      c,t_fail
         ld      a,(t_fd)
         sys     SYS_CLOSE
-        ld      hl,u_filler
-        ld      bc,u_filler_end-u_filler
-        ld      a,3
-        call    t_run
+        ld      hl,p_filler             ; /filler, a program on the volume
+        ld      de,0
+        ld      bc,t_fdinh
+        xor     a
+        sys     SYS_SPAWNV
+        jp      c,t_fail
+        k_call  API_WAIT
+        jp      c,t_fail
+        ld      a,l
         or      a
         jp      nz,t_fail_status
         ; Full: a new file's first byte cannot be placed.
@@ -1386,6 +1391,7 @@ p_root:     db  "/",0
 p_long83:   db  "/tmp/bad?name.txt",0    ; no name at all: ? is refused
 p_d1:       db  "/tmp/d1",0
 p_writer:   db  "/writer",0
+p_filler:   db  "/filler",0
 t_fdinh:    db  0FFh,0FFh,0FFh          ; spawnv: the caller's 0, 1, 2
 p_d2:       db  "/tmp/d1/d2",0
 p_d3:       db  "/tmp/d1/d2/d3",0
@@ -1453,90 +1459,6 @@ u_cwd_k_end:
         u_image u_cwd
 
 U_PAGE1     equ 4000h           ; page 1, 16K
-; u_filler — three pages: /mnt/b/fill.bin written 16K at a time from page
-; 1 until the volume is full: a short write and then E_NOSPC, or E_NOSPC
-; outright. Prints the KB that fitted. Exits 0, or the check that failed.
-u_filler_k:
-        DISP    P0_PROG
-        ld      hl,.path
-        ld      a,O_CW
-        sys     SYS_OPEN
-        jr      c,.x1
-        ld      (.fd),a
-        ld      hl,0
-        ld      (.kb),hl
-.w:     ld      a,(.fd)
-        ld      hl,U_PAGE1
-        ld      bc,16384
-        sys     SYS_WRITE
-        jr      c,.err
-        ld      bc,16384
-        or      a
-        sbc     hl,bc
-        jr      nz,.short
-        ld      hl,(.kb)
-        ld      de,16
-        add     hl,de
-        ld      (.kb),hl
-        jr      .w
-.short: ld      a,(.fd)                 ; short: the next one is refused
-        ld      hl,U_PAGE1
-        ld      bc,16384
-        sys     SYS_WRITE
-        jr      nc,.x3
-.err:   cp      E_NOSPC
-        jr      nz,.x2
-        ld      hl,(.kb)
-        ld      de,.digits+4
-        ld      b,5
-.dig:   push    bc
-        ld      bc,10
-        call    .div
-        add     a,'0'
-        ld      (de),a
-        dec     de
-        pop     bc
-        djnz    .dig
-        ld      a,1
-        ld      hl,.line
-        ld      bc,.linelen
-        sys     SYS_WRITE
-        ld      a,(.fd)
-        sys     SYS_CLOSE
-        xor     a
-        sys     SYS_EXIT
-.x1:    ld      a,1
-        sys     SYS_EXIT
-.x2:    ld      a,2
-        sys     SYS_EXIT
-.x3:    ld      a,3
-        sys     SYS_EXIT
-; .div — HL = HL / BC, A = the remainder (BC < 256).
-.div:   push    de
-        ld      d,0
-        ld      e,16
-.bit:   add     hl,hl
-        rl      d
-        ld      a,d
-        sub     c
-        jr      c,.no
-        ld      d,a
-        inc     l
-.no:    dec     e
-        jr      nz,.bit
-        ld      a,d
-        pop     de
-        ret
-.path:  db      "/mnt/b/fill.bin",0
-.line:  db      "filler: "
-.digits: db     "00000"
-        db      " KB and full",10
-.linelen equ    $-.line
-.fd:    db      0
-.kb:    dw      0
-        ENT
-u_filler_k_end:
-        u_image u_filler
 
 tblock_end:
         ASSERT  $ < 8000h

@@ -401,95 +401,23 @@ t_entry:
         call    t_clean
 
 ; --- step 12: names made on /mnt/b --------------------------------------
+; By a program on the volume (progs/names.asm): its status is the check
+; that failed, 0 for none; then the directory as it lists.
         ld      a,12
         ld      (t_step),a
         ld      hl,t_k12
         k_call  API_CON_PUTS
-        ld      hl,p_hw                 ; a long name: its chain and alias
-        ld      a,'w'
-        call    t_make
-        ld      hl,p_hw
-        ld      a,'w'
-        ld      c,0E1h
-        call    t_holds
-        ld      hl,p_hwalias            ; /mnt/b/hellow~1.txt
-        ld      a,'w'
-        ld      c,0E3h
-        call    t_holds
-        ld      hl,p_rd                 ; readme.md: a short entry, lower case
-        ld      a,'r'
-        call    t_make
-        ld      hl,p_mixed              ; Mixed.TXT: a chain keeps the case
-        ld      a,'m'
-        call    t_make
-        ld      hl,p_mixedlc            ; /mnt/b/mixed.txt
-        ld      a,'m'
-        ld      c,0E5h
-        call    t_holds
-        ld      hl,p_xyz                ; x.y.z: two dots, alias XY~1.Z
-        ld      a,'x'
-        call    t_make
-        ld      hl,p_xyzalias           ; /mnt/b/xy~1.z
-        ld      a,'x'
-        ld      c,0E7h
-        call    t_holds
-        ; Ten names sharing their alias's base, SPACER (the space is
-        ; dropped, the digit after it is the seventh character): ~1 to ~9,
-        ; then the hash form.
-        ld      b,10
-        ld      a,'0'
-.space: push    bc
-        ld      (p_space+14),a
-        push    af
-        ld      hl,p_space
-        ld      a,'s'
-        call    t_make
-        pop     af
-        inc     a
-        pop     bc
-        djnz    .space
-        ld      hl,p_space9             ; /mnt/b/spacer~9.rom
-        ld      a,'s'
-        ld      c,0E9h
-        call    t_holds
-        ld      hl,p_longb              ; the longest the path allows
-        ld      a,'l'
-        call    t_make
-        ld      hl,p_longb
-        ld      a,'l'
-        ld      c,0EBh
-        call    t_holds
-        ; What cannot be made.
-        ld      hl,p_bad1               ; a?b
-        ld      a,O_CW
-        sys     SYS_OPEN
-        ld      b,E_INVAL
-        ld      c,0EDh
-        call    t_expect
-        ld      hl,p_bad2               ; a.
-        ld      a,O_CW
-        sys     SYS_OPEN
-        ld      b,E_INVAL
-        ld      c,0EFh
-        call    t_expect
-        ld      hl,p_bad3               ; ...
-        ld      a,O_CW
-        sys     SYS_OPEN
-        ld      b,E_INVAL
-        ld      c,0F1h
-        call    t_expect
-        ld      hl,p_bad4               ; a byte above 7Eh
-        ld      a,O_CW
-        sys     SYS_OPEN
-        ld      b,E_INVAL
-        ld      c,0F3h
-        call    t_expect
-        ld      hl,p_bad5               ; a space last
-        ld      a,O_CW
-        sys     SYS_OPEN
-        ld      b,E_INVAL
-        ld      c,0F5h
-        call    t_expect
+        ld      hl,p_names              ; /names
+        ld      de,0
+        ld      bc,t_fdinh
+        xor     a
+        sys     SYS_SPAWNV
+        jp      c,t_fail
+        k_call  API_WAIT
+        jp      c,t_fail
+        ld      a,l
+        or      a
+        jp      nz,t_fail_status
         ld      hl,p_mntb
         ld      de,names_b
         ld      a,15
@@ -775,16 +703,7 @@ t_fail_status:
         call    k_dec8
         k_call  API_CON_NEWLINE
         m6_verdict M6_FAIL
-        jr      t_halt
-
-; t_run — HL = an image, BC = its length, A = its pages: spawn it, wait for
-; it, A = its status. A failure of spawn or wait is a failure of the test.
-t_run:  k_call  API_SPAWN
-        jp      c,t_fail
-        k_call  API_WAIT
-        jp      c,t_fail
-        ld      a,l
-        ret
+        jp      t_halt
 
 ; t_expect — after a syscall: CF must be set with A = B, else fail with
 ; code C (C+1 when the call succeeded); the errno that came is printed
@@ -1035,25 +954,14 @@ t_dirty:    db  " dirty header ",0
 p_root:     db  "/",0
 p_dot:      db  ".",0
 p_mntb:     db  "/mnt/b",0
+p_names:    db  "/names",0
+t_fdinh:    db  0FFh,0FFh,0FFh          ; spawnv: the caller's 0, 1, 2
 p_hw:       db  "/mnt/b/Hello World.txt",0
 p_hwalias:  db  "/mnt/b/hellow~1.txt",0
 p_rd:       db  "/mnt/b/readme.md",0
 p_mixed:    db  "/mnt/b/Mixed.TXT",0
 p_mixedlc:  db  "/mnt/b/mixed.txt",0
 p_xyz:      db  "/mnt/b/x.y.z",0
-p_xyzalias: db  "/mnt/b/xy~1.z",0
-p_space:    db  "/mnt/b/spacer 0.rom",0
-p_space9:   db  "/mnt/b/spacer~9.rom",0
-p_longb:    db  "/mnt/b/"
-            DUP 244
-            db  "y"
-            EDUP
-            db  ".txt",0
-p_bad1:     db  "/mnt/b/a?b",0
-p_bad2:     db  "/mnt/b/a.",0
-p_bad3:     db  "/mnt/b/...",0
-p_bad4:     db  "/mnt/b/a",80h,0
-p_bad5:     db  "/mnt/b/a ",0
 p_ldirb:    db  "/mnt/b/Long Dir",0
 p_ldirb2:   db  "/mnt/b/Renamed Long Dir",0
 p_space3:   db  "/mnt/b/spacer 3.rom",0
