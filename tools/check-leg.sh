@@ -7,11 +7,12 @@
 # and the body, which page 2 shows only while a file function runs. Code
 # in page 3 runs with the program's own page 2 in view as often as not, so
 # it may name nothing of the body's but through the door: the dispatch
-# tables' handlers, lb_call and leg_entry. The assembler cannot say so —
+# tables' handlers, lb_call, leg_entry and the doors of legc.asm, which
+# are dw lines too. The assembler cannot say so —
 # every label resolves — and a slip works until a program's page 2 holds
 # something else; so the sources are read here. The body's labels are those
 # its files define, and the variables laid out after its image; the page-3
-# sources are leg.asm up to the body's OUTPUT line, and legh.asm.
+# sources are leg.asm up to the body's OUTPUT line, legh.asm and legc.asm.
 set -eu
 cd "$(dirname "$0")/.."
 awk '
@@ -21,7 +22,7 @@ function labels(file,    line, m) {
     close(file)
 }
 BEGIN {
-    labels("src/leg/legb.asm"); labels("src/leg/legf.asm"); labels("src/leg/legi.asm")
+    labels("src/leg/legb.asm"); labels("src/leg/legf.asm"); labels("src/leg/legk.asm"); labels("src/leg/legi.asm")
     body["leg_rec"] = body["leg_env"] = body["leg_once"] = 1
     # the variables after the body image: leg_bss lines past legb_end
     past = 0
@@ -33,7 +34,7 @@ BEGIN {
     }
     close("src/leg/leg.asm")
     bad = 0
-    n = split("src/leg/leg.asm src/leg/legh.asm", files, " ")
+    n = split("src/leg/leg.asm src/leg/legh.asm src/leg/legc.asm", files, " ")
     for (i = 1; i <= n; i++) {
         f = files[i]; ln = 0
         while ((getline line < f) > 0) {

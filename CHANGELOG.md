@@ -163,7 +163,11 @@ to install.
   support, and the file, directory, drive, search, process and environment
   functions of MSX-DOS 2 are served over m6's files: the mounted volumes
   are the drives, the program sees every file by its 8.3 name, and its
-  errors are MSX-DOS 2's. The FCB functions are not there yet. Six system
+  errors are MSX-DOS 2's. The CP/M-compatible file functions — an FCB
+  opened, made, closed, searched for, deleted and renamed, its records
+  read and written in sequence, at random and in blocks, its size asked
+  and set — work on the same files, so programs written for MSX-DOS 1
+  and CP/M, the M80 assembler and L80 linker among them, run. Six system
   calls come with it: `segalloc` and `segfree` give a process 16K segments
   beyond its pages, `segmap` puts one into page 1 or 2 and keeps it there;
   `statfs` describes a volume, `utime` sets a modification time, and

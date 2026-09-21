@@ -23,8 +23,26 @@
 ; segments and says why.
         include "kernel/kernel.inc"
         include "lib/prog.inc"
+        include "leg/leg.inc"
 
-        m6_prog 1
+; The header as m6_prog writes it, with the layer's messages' index
+; inside its jump, at LEG_MSGIX of the file, where _EXPLAIN reads it.
+        org     P0_PROG
+        jr      start
+        db      "m6"
+        db      1
+        db      0
+        ASSERT  $-P0_PROG == LEG_MSGIX
+        include "leg/msgix.inc"
+start:  ld      (lib_argc),bc
+        ld      (lib_argv),hl
+        push    bc
+        push    hl
+        call    lib_init
+        pop     hl
+        pop     bc
+        call    main
+        jp      lib_exit
 main:   xor     a                       ; nothing taken yet
         ld      (seg1),a
         ld      (seg2),a
@@ -361,6 +379,47 @@ legb_start:
 legb_end:
         ASSERT  leg_end-leg_start <= LEG_MAX
         ASSERT  legb_end-legb_start <= LEG_BMAX
+
+; The layer's messages for _EXPLAIN (DOS2-PIS §6), read from this file
+; on demand: an index of (code, offset) triples ending in 0, the offsets
+; from the file's start, then the messages, each 0-terminated.
+m_stop: db      "Ctrl-STOP pressed",0
+m_ctrlc: db      "Ctrl-C pressed",0
+m_abort: db      "Disk operation aborted",0
+m_ibdos: db      "Invalid MSX-DOS call",0
+m_isbfn: db      "Invalid sub-function number",0
+m_iparm: db      "Invalid parameter",0
+m_inter: db      "Internal error",0
+m_noram: db      "Not enough memory",0
+m_idrv: db      "Invalid drive",0
+m_ifnm: db      "Invalid filename",0
+m_ipath: db      "Invalid pathname",0
+m_plong: db      "Pathname too long",0
+m_nofil: db      "File not found",0
+m_nodir: db      "Directory not found",0
+m_drful: db      "Root directory full",0
+m_dkful: db      "Disk full",0
+m_dupf: db      "Duplicate filename",0
+m_dire: db      "Invalid directory move",0
+m_filro: db      "Read only file",0
+m_dirne: db      "Directory not empty",0
+m_iattr: db      "Invalid attributes",0
+m_dot:  db      "Invalid . or .. operation",0
+m_sysx: db      "System file exists",0
+m_dirx: db      "Directory exists",0
+m_filex: db      "File exists",0
+m_fopen: db      "File already in use",0
+m_eof:  db      "End of file",0
+m_accv: db      "File access violation",0
+m_iproc: db      "Invalid process id",0
+m_nhand: db      "No spare file handles",0
+m_ihand: db      "Invalid file handle",0
+m_idev: db      "Invalid device operation",0
+m_ienv: db      "Invalid environment string",0
+m_elong: db      "Environment string too long",0
+m_hdead: db      "File handle has been deleted",0
+m_disk: db      "Disk error",0
+m_wprot: db      "Write protected disk",0
 
         include "lib/args.inc"
         include "lib/err.inc"

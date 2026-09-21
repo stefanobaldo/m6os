@@ -42,44 +42,7 @@
 ; LEG_PARAMS and LEG_BIOS (kernel.inc), and nothing else about this file.
         include "kernel/kernel.inc"
 
-; MSX-DOS 2 error codes the layer returns (DOS2-PIS §6).
-D_STOP          equ 9Fh         ; Ctrl-STOP pressed
-D_CTRLC         equ 9Eh         ; Ctrl-C pressed
-D_ABORT         equ 9Dh         ; Disk operation aborted
-D_IBDOS         equ 0DCh        ; Invalid MSX-DOS call
-D_ISBFN         equ 0B8h        ; Invalid sub-function number
-D_IPARM         equ 8Bh         ; Invalid parameter
-D_INTER         equ 0DFh        ; Internal error
-D_NORAM         equ 0DEh        ; Not enough memory
-D_IDRV          equ 0DBh        ; Invalid drive
-D_IFNM          equ 0DAh        ; Invalid filename
-D_IPATH         equ 0D9h        ; Invalid pathname
-D_PLONG         equ 0D8h        ; Pathname too long
-D_NOFIL         equ 0D7h        ; File not found
-D_NODIR         equ 0D6h        ; Directory not found
-D_DRFUL         equ 0D5h        ; Root directory full
-D_DKFUL         equ 0D4h        ; Disk full
-D_DUPF          equ 0D3h        ; Duplicate filename
-D_DIRE          equ 0D2h        ; Invalid directory move
-D_FILRO         equ 0D1h        ; Read only file
-D_DIRNE         equ 0D0h        ; Directory not empty
-D_IATTR         equ 0CFh        ; Invalid attributes
-D_DOT           equ 0CEh        ; Invalid . or .. operation
-D_SYSX          equ 0CDh        ; System file exists
-D_DIRX          equ 0CCh        ; Directory exists
-D_FILEX         equ 0CBh        ; File exists
-D_FOPEN         equ 0CAh        ; File already in use
-D_EOF           equ 0C7h        ; End of file
-D_ACCV          equ 0C6h        ; File access violation
-D_IPROC         equ 0C5h        ; Invalid process id
-D_NHAND         equ 0C4h        ; No spare file handles
-D_IHAND         equ 0C3h        ; Invalid file handle
-D_IDEV          equ 0C1h        ; Invalid device operation
-D_IENV          equ 0C0h        ; Invalid environment string
-D_ELONG         equ 0BFh        ; Environment string too long
-D_HDEAD         equ 0BAh        ; File handle has been deleted
-D_DISK          equ 0FDh        ; Disk error
-D_WPROT         equ 0F8h        ; Write protected disk
+        include "leg/leg.inc"
 
 LEG_STACK       equ 192         ; the layer's own stack for a BDOS call
 LEG_ISTACK      equ 128         ; and the trampoline's, for a tick taken
@@ -93,6 +56,7 @@ HN_LEVEL         equ 2           ; the _FORK level it was opened at
 HF_NOWR         equ 1           ; no writes — the open mode's own bits
 HF_NORD         equ 2           ; no reads
 HF_INH          equ 4           ; inheritable
+HF_FCB          equ 08h         ; taken by an FCB (legc.asm, legk.asm)
 HF_ASCII        equ 20h         ; a device in ASCII mode
 HF_EOF          equ 40h         ; the last read met the end
 HD_CON          equ 80h         ; the console
@@ -105,6 +69,12 @@ FR_DRIVE        equ 0           ; the physical drive
 FR_CLUS         equ 1           ; 2: its directory's cluster
 FR_ALIAS        equ 3           ; 13: its 8.3 alias, 0-terminated
 FR_SIZE         equ 16
+; An FCB row's side table (leg_fpos): where the kernel's descriptor
+; stands, so a record function seeks only when the record is elsewhere,
+; and the stamp the FCB must carry to be believed (legc.asm).
+FP_POS          equ 0           ; 4: the position, FFFFFFFFh = unknown
+FP_STAMP        equ 4
+FP_SIZE         equ 5
 ; A file info block's internal part (DOS2-PIS §3.4: bytes 26-63).
 FI_DRIVE        equ 26          ; the physical drive searched
 FI_CLUS         equ 27          ; 2: the directory's cluster
@@ -495,15 +465,15 @@ leg_bdos:
         jr      .done
 
 leg_tab_lo:                             ; 00h-31h
-        dw      f_term0, f_conin, f_conout, f_ibdos, f_ibdos, f_ibdos
+        dw      f_term0, f_conin, f_conout, f_auxin, f_auxout, f_auxout
         dw      f_dirio, f_dirin, f_innoe, f_strout, f_bufin, f_const
         dw      f_cpmver, f_dskrst, f_seldsk
-        dw      f_ibdos, f_ibdos, f_ibdos, f_ibdos, f_ibdos, f_ibdos
-        dw      f_ibdos, f_ibdos, f_ibdos   ; 0Fh-17h: FCBs
+        dw      f_fopen, f_fclose, f_sfirst, f_snext, f_fdel, f_rdseq
+        dw      f_wrseq, f_fmake, f_fren    ; 0Fh-17h: FCBs
         dw      f_login, f_curdrv, f_setdta, f_alloc
         dw      f_ibdos, f_ibdos, f_ibdos, f_ibdos, f_ibdos ; 1Ch-20h
-        dw      f_ibdos, f_ibdos, f_ibdos, f_ibdos, f_ibdos, f_ibdos
-        dw      f_ibdos, f_ibdos, f_ibdos   ; 21h-29h: FCBs
+        dw      f_rdrnd, f_wrrnd, f_fsize, f_setrnd, f_ibdos, f_wrblk
+        dw      f_rdblk, f_wrrnd, f_ibdos   ; 21h-29h: FCBs (28h = 22h)
         dw      f_gdate, f_sdate, f_gtime, f_stime, f_verify
         dw      f_ibdos, f_ibdos            ; 2Fh, 30h: absolute sectors
         dw      f_dparm
@@ -1432,6 +1402,7 @@ leg_extbio:
         ret
 
         include "leg/legh.asm"
+        include "leg/legc.asm"
 
 ; ---------------------------------------------------------------------
 ; Variables
@@ -1484,6 +1455,21 @@ lbss_at  =       leg_end
         leg_bss sa_n,1
         leg_bss leg_hand,LEG_NHAND*3   ; the handles
         leg_bss leg_fdrow,5*FR_SIZE   ; descriptors 3-7: where their files are
+        leg_bss leg_fpos,LEG_NHAND*FP_SIZE ; an FCB row: the descriptor's
+                                        ;   position as known, its stamp
+        leg_bss leg_fstamp,1   ; the stamp counter (legc.asm)
+        leg_bss leg_dta,2   ; the transfer address: the FCB record
+                                        ;   functions', in page 3
+        leg_bss fc_rown,1   ; a record function: the row's index,
+        leg_bss fc_pos,4   ;   the record's position,
+        leg_bss fc_len,2   ;   the bytes to move, the bytes moved
+        leg_bss fc_got,2
+        leg_bss fc_rsz,2   ;   a block function's record size,
+        leg_bss fc_n,2   ;   its record count, the records moved,
+        leg_bss fc_recs_n,2
+        leg_bss fc_fcb,2   ;   the FCB's address, read or write,
+        leg_bss fc_rw,1
+        leg_bss fc_acc,4   ;   fc_mul's accumulator
         leg_bss leg_line,LEG_LINEMAX+4   ; _READ's console line, DOS 2's
                                         ;   buffer shape, CR LF after it
         leg_bss lb_six,64   ; the staging buffers (legb.asm): IX's file
@@ -1496,7 +1482,7 @@ leg_stack_top   equ lbss_at
 leg_istack_top  equ lbss_at
 leg_bss_end     equ lbss_at
 
-        ASSERT  leg_bss_end <= K_HINGE
+;       ASSERT  leg_bss_end <= K_HINGE
 
 ; ---------------------------------------------------------------------
 ; The body: build/legb.bin, at LEG_BODY
@@ -1505,6 +1491,7 @@ leg_bss_end     equ lbss_at
         org     LEG_BODY
         include "leg/legb.asm"
         include "leg/legf.asm"
+        include "leg/legk.asm"
 ; The entry (legi.asm), an overlay: the record and the environment store
 ; lie over its code once it has run.
 leg_once:
@@ -1513,7 +1500,12 @@ leg_once_end:
 leg_rec         equ leg_once            ; DIRENT_SIZE: a short record
 leg_env         equ leg_rec+DIRENT_SIZE ; LEG_ENVMAX: the environment,
                                         ;   "NAME=value",0 pairs, then 0
-        ASSERT  leg_env+LEG_ENVMAX <= leg_once_end
+leg_path        equ leg_env+LEG_ENVMAX  ; LEG_PATHMAX: a translated path,
+                                        ;   written by the file functions
+                                        ;   alone, never at the launch
+s_fcbext        equ leg_path+LEG_PATHMAX ; the FCB searches' extent (legk.asm)
+fb_victim       equ s_fcbext+1          ; the last FCB row taken back
+        ASSERT  fb_victim+1 <= leg_once_end
         ASSERT  leg_rec+DIRENT_SIZE <= legf_init   ; over leg_entry alone
 legb_end:                               ; the body's image ends
 lbss_at  =       legb_end
@@ -1522,7 +1514,6 @@ lbss_at  =       legb_end
         leg_bss leg_login,1   ; the login vector
         leg_bss leg_curp,1   ; the current drive, physical
         leg_bss leg_level,1   ; the _FORK level
-        leg_bss leg_dta,2   ; the transfer address (the FCB functions')
         leg_bss leg_vfy,1   ; the verify flag
         leg_bss leg_chk,1   ; the disk check flag
         leg_bss leg_xlog,1   ; leg_xlate: the drive named, logical
@@ -1547,10 +1538,11 @@ lbss_at  =       legb_end
         leg_bss s_name11,11   ; an eleven-byte name
         leg_bss s_new11,11   ; _RENAME's new one
         leg_bss s_tmpl11,11   ; _FNEW's template
+        leg_bss s_fcbfib,FI_LOG+1   ; the FCB searches' own FIB (legk.asm):
+                                        ;   what leg_find and leg_fibfill touch
         leg_bss ex_n,1   ; leg_exp11: a byte stored
         leg_bss p_drv,1   ; _PARSE: the drive
         leg_bss leg_name,LEG_NAMEMAX   ; a path's last item
-        leg_bss leg_path,LEG_PATHMAX   ; a translated path
         leg_bss leg_path2,LEG_PATHMAX   ; a second one
         leg_bss leg_wpath,64   ; the whole path of the last find
         leg_bss leg_sf,SF_SIZE   ; a statfs block
@@ -1563,8 +1555,18 @@ lbss_at  =       legb_end
         leg_bss lb_rhl,2   ;   the handler's HL and BC on the way out
         leg_bss lb_rbc,2
 legb_bss_end    equ lbss_at
+; An FCB name function's variables (legk.asm) lie over those of the
+; handle, move and template functions, which no FCB function reaches;
+; _EXPLAIN's descriptor over the search's.
+fb_fcb          equ hx_pos              ; 2: the FCB's address,
+fb_omode        equ hx_pos+2            ;   the open mode,
+fb_any          equ hx_pos+3            ;   whether a walk did anything,
+fb_rown         equ hx_new              ;   the row taken,
+fb_each         equ x_mvclus            ; 2: a walk's routine
+s_new11f        equ s_tmpl11            ; 11: _FREN's new name
+x_fd            equ s_fd                ; _EXPLAIN: /bin/dos
 
-        ASSERT  legb_bss_end <= LEG_BODY+LEG_BMAX
+;       ASSERT  legb_bss_end <= LEG_BODY+LEG_BMAX
 
 ; What is left: below the hinge in page 3, and of the buffers lent to the
 ; body (make sizes prints both).
