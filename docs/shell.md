@@ -84,7 +84,9 @@ A command that ends with a status other than 0 is reported as `[N]`:
 `[1]` for `false`, `[130]` for a command ^C ended, `[141]` for one that
 wrote into a pipe nobody was reading, `[143]` for one `kill` ended —
 128 plus the signal, as `waitpid` returns them. Nothing is printed for
-a status of 0.
+a status of 0, nor for a command that could not be started: its
+message — `sh: nofile: ENOENT` — is the whole report. A background
+list prints its pid in the same brackets when it starts, not a status.
 
 ## Wildcards
 
