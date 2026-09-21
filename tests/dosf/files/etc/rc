@@ -9,6 +9,7 @@ dos /dosf/hmisc.com
 dos /dosf/hslot.com
 dos /dosf/hptr.com
 dos /dosf/htpa.com
+dos /dosf/fcb.com
 /t/tick
 dos /dosf/copy64.com
 /t/tick

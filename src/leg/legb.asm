@@ -23,7 +23,9 @@
 ; is a file info block, bit 7 when DE and HL come back as numbers
 ; (_FTIME's date and time) — otherwise one that comes back pointing into
 ; a staging buffer is a pointer into that argument: the register as it
-; went in, or _PARSE's, _PFILE's and _WPATH's results.
+; went in, or _PARSE's, _PFILE's and _WPATH's results. An FCB (legk.asm)
+; is staged as a file info block: 64 bytes, in and out, which cover its
+; 37 and _FREN's second name.
 LK_PATH         equ 1           ; a string, or a file info block (FFh first)
 LK_STR          equ 2           ; a string, 255 bytes at most
 LK_OUT64        equ 3           ; 64 bytes to fill
@@ -258,7 +260,17 @@ lb_modes:       db 0,SI_PATH,SI_STR,SI_BLOCK|LM_OUT,SI_BLOCK|LM_OUT|LM_CLIP
 ; The descriptors, one a function: 00h-31h, then 40h-70h. A function of
 ; page 3's never comes here and reads 0.
 lb_desc:
-        ds      31h,0                                   ; 00h-30h
+        ds      0Fh,0                                   ; 00h-0Eh
+        db      LK_FIB, LK_FIB, LK_FIB                  ; 0Fh _FOPEN, 10h _FCLOSE,
+                                                        ;   11h _SFIRST: the FCB
+        db      LD_NUM                                  ; 12h _SNEXT: no argument
+        db      LK_FIB                                  ; 13h _FDEL
+        db      0,0                                     ; 14h, 15h: page 3's
+        db      LK_FIB, LK_FIB                          ; 16h _FMAKE, 17h _FREN
+        ds      9,0                                     ; 18h-20h
+        db      0,0                                     ; 21h, 22h: page 3's
+        db      LK_FIB                                  ; 23h _FSIZE
+        ds      0Dh,0                                   ; 24h-30h
         db      LK_OUT32                                ; 31h _DPARM
         db      LK_PATH|LK_PATH<<3|LD_IX                ; 40h _FFIRST
         db      LD_IX                                   ; 41h _FNEXT
@@ -287,28 +299,66 @@ lb_desc:
         ASSERT  $-lb_desc == 32h+31h
 
 ; _EXPLAIN (66h): B = an error code, DE -> a 64-byte buffer: its message,
-; 0-terminated — "Error nnH" for a code the layer does not know.
+; 0-terminated — "Error nnH" for a code the layer does not know. The
+; messages are not in the body: /bin/dos carries them, behind an index
+; at LEG_MSGIX of the file (bin/dos.asm), and they are read from there
+; on demand — an error's path, rare — into a buffer
+; of the body's and copied from it, since the kernel reaches the body's
+; buffers and not a program's page 3.
 f_explain:
-        ld      hl,leg_msgs
+        push    de
+        push    bc
+        ld      hl,s_dosbin
+        ld      a,O_RDONLY
+        leg_sysx SYS_OPEN
+        pop     bc
+        pop     de
+        jr      c,.hex
+        ld      a,l
+        ld      (x_fd),a
+        push    de
+        push    bc
+        ld      hl,LEG_MSGIX
+        ld      bc,LEG_PATHMAX
+        call    .seekread               ; the index
+        jr      c,.close
+        pop     bc
+        push    bc
+        ld      hl,leg_path2
 .find:  ld      a,(hl)
         or      a
-        jr      z,.hex
+        jr      z,.close
         cp      b
         inc     hl
-        jr      z,.copy
-.skip:  ld      a,(hl)
+        jr      z,.at
         inc     hl
-        or      a
-        jr      nz,.skip
+        inc     hl
         jr      .find
+.at:    ld      e,(hl)
+        inc     hl
+        ld      d,(hl)
+        ex      de,hl
+        ld      bc,64
+        call    .seekread
+        jr      c,.close
+        ld      a,(x_fd)
+        leg_sysx SYS_CLOSE
+        pop     bc
+        pop     de
+        xor     a
+        ld      (leg_path2+63),a
+        ld      hl,leg_path2
 .copy:  ld      a,(hl)
         ld      (de),a
         inc     hl
         inc     de
         or      a
         jr      nz,.copy
-        xor     a
         ret
+.close: ld      a,(x_fd)
+        leg_sysx SYS_CLOSE
+        pop     bc
+        pop     de
 .hex:   ld      hl,s_error
 .hexc:  ld      a,(hl)
         or      a
@@ -340,44 +390,19 @@ f_explain:
 .put:   ld      (de),a
         inc     de
         ret
-
-leg_msgs:
-        db      D_STOP,"Ctrl-STOP pressed",0
-        db      D_CTRLC,"Ctrl-C pressed",0
-        db      D_ABORT,"Disk operation aborted",0
-        db      D_IBDOS,"Invalid MSX-DOS call",0
-        db      D_ISBFN,"Invalid sub-function number",0
-        db      D_IPARM,"Invalid parameter",0
-        db      D_INTER,"Internal error",0
-        db      D_NORAM,"Not enough memory",0
-        db      D_IDRV,"Invalid drive",0
-        db      D_IFNM,"Invalid filename",0
-        db      D_IPATH,"Invalid pathname",0
-        db      D_PLONG,"Pathname too long",0
-        db      D_NOFIL,"File not found",0
-        db      D_NODIR,"Directory not found",0
-        db      D_DRFUL,"Root directory full",0
-        db      D_DKFUL,"Disk full",0
-        db      D_DUPF,"Duplicate filename",0
-        db      D_DIRE,"Invalid directory move",0
-        db      D_FILRO,"Read only file",0
-        db      D_DIRNE,"Directory not empty",0
-        db      D_IATTR,"Invalid attributes",0
-        db      D_DOT,"Invalid . or .. operation",0
-        db      D_SYSX,"System file exists",0
-        db      D_DIRX,"Directory exists",0
-        db      D_FILEX,"File exists",0
-        db      D_FOPEN,"File already in use",0
-        db      D_EOF,"End of file",0
-        db      D_ACCV,"File access violation",0
-        db      D_IPROC,"Invalid process id",0
-        db      D_NHAND,"No spare file handles",0
-        db      D_IHAND,"Invalid file handle",0
-        db      D_IDEV,"Invalid device operation",0
-        db      D_IENV,"Invalid environment string",0
-        db      D_ELONG,"Environment string too long",0
-        db      D_HDEAD,"File handle has been deleted",0
-        db      D_DISK,"Disk error",0
-        db      D_WPROT,"Write protected disk",0
-        db      0
+; .seekread — HL = an offset in /bin/dos, BC = a count: as many bytes
+; into leg_path2, fewer at the file's end. CF from the kernel.
+.seekread:
+        push    bc
+        ld      de,0
+        ld      b,SEEK_SET
+        ld      a,(x_fd)
+        leg_sysx SYS_LSEEK
+        pop     bc
+        ret     c
+        ld      a,(x_fd)
+        ld      hl,leg_path2
+        leg_sysx SYS_READ
+        ret
 s_error:        db "Error ",0
+s_dosbin:       db "/bin/dos",0

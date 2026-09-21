@@ -118,7 +118,8 @@ only. Volume labels are not shown: a search asking for them finds nothing.
 
 The table says what each MSX-DOS 2 function does under m6. Functions not
 in it, and the Nextor ones, return `.IBDOS` (invalid function call,
-`DCh`); `_IOCTL` with a subfunction it does not have returns `.ISBFN`
+`DCh`); the CP/M-compatible ones answer `0`, `FFh` or `1` in `A` as
+MSX-DOS 2 does, with the MSX-DOS 2 code for `_ERROR` and `_EXPLAIN`; `_IOCTL` with a subfunction it does not have returns `.ISBFN`
 (`B8h`).
 
 | Function | Under m6 |
@@ -168,14 +169,48 @@ in it, and the Nextor ones, return `.IBDOS` (invalid function call,
 | `6Eh` `_DSKCHK` | the flag, kept and given back |
 | `6Fh` `_DOSVER` | 2.31, not Nextor |
 | `70h` `_REDIR` | nothing is ever redirected: the state answers so, and setting it changes nothing |
+| `03h` `_AUXIN`, `04h` `_AUXOUT`, `05h` `_LSTOUT` | the auxiliary input answers `1Ah`, the end; the auxiliary and list outputs swallow the byte |
+| `0Fh` `_FOPEN` | the file an FCB names opened, for reading and writing — for reading alone when the file is read-only or someone writes it already; an ambiguous name opens the first file that matches, holding the extent asked; a device name (`CON`, `NUL`, `AUX`, `PRN`, `LST`) a device |
+| `10h` `_FCLOSE` | the FCB's file closed; nothing waits to be written |
+| `11h` `_SFIRST`, `12h` `_SNEXT` | the files matching the FCB's name in its drive's current directory, hidden ones too, no system files and no directories; the drive and the directory entry into the transfer address, the extent at `0Ch`, the attributes at `0Dh`, the record count at `0Fh` |
+| `13h` `_FDEL` | every file matching the name deleted, but system, hidden and read-only ones |
+| `14h` `_RDSEQ`, `15h` `_WRSEQ` | the record at the extent and the current record, which move on; a partial record read is padded with zeros |
+| `16h` `_FMAKE` | with extent 0 the file made anew, an existing one emptied; with another extent the existing file opened |
+| `17h` `_FREN` | every file matching the first name renamed to the second, a `?` there keeping the character it had; system and hidden files left alone |
+| `21h` `_RDRND`, `22h` `_WRRND`, `28h` `_WRZER` | the record the random record names; what a write leaves between the end and it is zeros, for both writes |
+| `23h` `_FSIZE` | the file's size in records into the random record |
+| `24h` `_SETRND` | the random record from the extent and the current record |
+| `26h` `_WRBLK`, `27h` `_RDBLK` | records of the size the FCB holds, from and to the random record, which moves past them; `_WRBLK` with no records sets the file's size to the random record's — longer, with zeros, or shorter |
 
-A program has five files open at once, whichever handles it uses for
-them; the sixth `_OPEN` or `_CREATE` is `.NHAND`. `_DUP` takes no file
-of its own. A file has one writer at a time, on m6's side as on the
-program's: `.FOPEN` for a second, and for a file a process of m6 has
+A program has five files open at once, whichever handles or FCBs it
+uses for them; the sixth `_OPEN` or `_CREATE` is `.NHAND`. `_DUP` takes
+no file of its own. A file has one writer at a time, on m6's side as on
+the program's: `.FOPEN` for a second, and for a file a process of m6 has
 open when the program starts. `_HRENAME` and `_HMOVE` close the file
 behind the handle around the change and open it again, its position
 kept.
+
+## Files through FCBs
+
+The CP/M-compatible functions work on the same files, through the same
+five descriptors: an FCB opened by `_FOPEN` or `_FMAKE` takes one, and
+`_FCLOSE` gives it back. A program that opens a sixth file through an
+FCB without closing one does not fail: the FCB opened longest ago
+loses its descriptor, and gets it back, on the same file, the next time
+it is read or written — as a closed FCB does when it is used again,
+which MSX-DOS allows. What the layer keeps in the FCB is what MSX-DOS 2
+keeps there: the name as found, the attributes, the size, the extent's
+record count; the bytes MSX-DOS calls internal say which descriptor and
+where the file is.
+
+What differs from MSX-DOS 2: a second FCB on a file another FCB or
+handle writes gets it for reading only, since a file has one writer at
+a time; `APPEND` is not consulted when a file is not found, the
+environment being the program's own; the volume id written into the FCB
+is never checked, there being no change of media to detect. Bytes `0Eh`
+and `0Fh` are the record size for the block functions and the extent's
+high byte and record count for the others, as in MSX-DOS 2: a program
+that uses both on one FCB sets them again between.
 
 Ctrl-C and Ctrl-STOP are checked at the console functions and end the
 program with `.CTRLC` (`9Eh`) or `.STOP` (`9Fh`), through the abort
@@ -190,7 +225,6 @@ a disk error `.DISK` — and `_EXPLAIN` has the words for each.
 
 ## What is not there
 
-- The FCB functions (`0Fh`–`17h`, `21h`–`28h`): coming.
 - Absolute sector access, a RAM disk, `_FORMAT`, the Nextor functions.
 - Long file names: the program works with 8.3 aliases.
 - Volume labels, redirection of the standard handles, setting the clock.

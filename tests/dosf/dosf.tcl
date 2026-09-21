@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # The harness's half of the legacy file test. The machine boots M6.COM
-# and the kernel runs /etc/rc through the shell: eight raw .COM programs
+# and the kernel runs /etc/rc through the shell: the raw .COM programs
 # under /dosf, each printing "<name> ok" through the BIOS, or the step
 # that failed. When the script's last line shows, the rows are read and
 # the verdict given; the images are then judged by the host's FAT checker
@@ -44,7 +44,7 @@ after time 1 wait_rc
 
 proc check_rc {} {
     expect_screen "rc start" "rc start not on the screen"
-    foreach p {hfile hfind hdir henv hproc hparse hmisc hslot hptr htpa copy64} {
+    foreach p {hfile hfind hdir henv hproc hparse hmisc hslot hptr htpa fcb copy64} {
         if {![has_row "$p ok"]} {
             set line ""
             foreach r [rows] { if {[string match "$p fail*" $r]} { set line $r } }
@@ -53,6 +53,7 @@ proc check_rc {} {
     }
     expect_screen "hmisc via write" "handle 1 did not reach the screen"
     expect_screen "con handle" "a handle opened on CON did not reach the screen"
+    expect_screen "fcb via fcb con" "an FCB opened on CON did not reach the screen"
     # copy64's launch between the two tick stamps: the disk work of 64 KB
     # written, 64 KB copied and 64 KB read back, since the kernel's clock
     # runs inside its calls and stands still while the program computes.
