@@ -4,7 +4,9 @@
 ;
 ; henv — the environment strings: PARAMETERS as typed, PROGRAM as the
 ; whole path, a name not set, one set and read back, too long a buffer,
-; removed, the items walked, names that are none, the store filled.
+; removed, the items walked, names that are none, the store filled;
+; PARAMETERS and PROGRAM replaced and removed like any other string, as a
+; program that loads another sets them for it.
         include "dosf/progs/dosf.inc"
         org     100h
         d_step  1                       ; PARAMETERS: the tail, its case kept
@@ -145,6 +147,48 @@
         ld      a,c
         cp      2
         jp      c,t_fail
+        d_step  9                       ; PARAMETERS and PROGRAM replaced
+        ld      hl,n_params
+        ld      de,v_bar
+        d_fn    _SENV
+        d_ok
+        ld      hl,n_params
+        ld      de,buf
+        ld      b,64
+        d_fn    _GENV
+        d_ok
+        ld      hl,buf
+        ld      de,v_bar
+        call    d_streq
+        jp      nz,t_fail
+        ld      hl,n_program
+        ld      de,v_other
+        d_fn    _SENV
+        d_ok
+        ld      hl,n_program
+        ld      de,buf
+        ld      b,64
+        d_fn    _GENV
+        d_ok
+        ld      hl,buf
+        ld      de,v_other
+        call    d_streq
+        jp      nz,t_fail
+        d_step  10                      ; PARAMETERS removed: empty, not the
+        ld      hl,n_params             ; tail, the 0 written
+        ld      de,s_empty
+        d_fn    _SENV
+        d_ok
+        ld      a,'x'
+        ld      (buf),a
+        ld      hl,n_params
+        ld      de,buf
+        ld      b,64
+        d_fn    _GENV
+        d_ok
+        ld      a,(buf)
+        or      a
+        jp      nz,t_fail
         jp      t_ok
 
         d_lib   "henv"
@@ -153,6 +197,7 @@ n_params: db    'PARAMETERS',0
 v_params: db    'Ab cd',0
 n_program: db   'PROGRAM',0
 v_program: db   'A:\DOSF\HENV.COM',0
+v_other: db     'A:\DOSF\OTHER.COM',0
 n_nope: db      'NOPE',0
 n_foo:  db      'Foo',0
 n_FOO:  db      'FOO',0
