@@ -226,6 +226,13 @@ to install.
 - MSX-DOS 2 programs: one whose output did not end with a newline — UNARJ's
   listing, for one — left the shell's prompt on its last line. The prompt
   now starts on a line of its own after such a program, as under COMMAND2.
+- MSX-DOS 2 programs: `_CREATE` of a directory that already existed
+  answered `.DUPF`, where MSX-DOS 2 answers `.DIRX` — and `.FILEX` when a
+  file holds the name — so SofaRun's "Forget last flashed ROM" stopped
+  with `*** Unable to create A:\SETTINGS` once that directory existed.
+  `_CREATE` and `_FNEW` now answer the code of what is there, and the
+  "create new" flag refuses an existing directory with `.FILEX` as it
+  does a file.
 - A file written when the volume's next free cluster was one whose number
   ends in `FFh` — 255, 511, and so on — came back with a cluster of the
   formatter's fill in front of its bytes and one cluster more than its

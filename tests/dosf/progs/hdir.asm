@@ -3,10 +3,11 @@
 ; SPDX-License-Identifier: BSD-3-Clause
 ;
 ; hdir — directories and drives: the current directory read and changed
-; on A: and on B:, a drive selected, a file named through the other
-; drive's directory; rename with a ? kept, the duplicate refused; move,
-; into itself refused; the attributes and the stamp by name and by
-; handle; a handle renamed and deleted; the deletes and what they refuse.
+; on A: and on B:, a name made twice refused with the code of what is
+; there, a drive selected, a file named through the other drive's
+; directory; rename with a ? kept, the duplicate refused; move, into
+; itself refused; the attributes and the stamp by name and by handle; a
+; handle renamed and deleted; the deletes and what they refuse.
         include "dosf/progs/dosf.inc"
         org     100h
         d_step  1                       ; A:'s directory, up and down
@@ -15,6 +16,21 @@
         ld      de,s_d1
         ld      b,10h
         call    mk
+        ld      de,s_d1                 ; there already: which code says
+        ld      b,10h                   ;   depends on what is there
+        xor     a
+        d_fn    _CREATE
+        d_err   D_DIRX
+        ld      de,s_d1
+        ld      b,90h
+        xor     a
+        d_fn    _CREATE
+        d_err   D_FILEX
+        ld      de,s_d1
+        ld      b,0
+        xor     a
+        d_fn    _CREATE
+        d_err   D_DIRX
         ld      de,s_d1
         d_fn    _CHDIR
         d_ok
@@ -123,6 +139,11 @@
         call    mk
         d_fn    _CLOSE
         d_ok
+        ld      de,s_r3
+        ld      b,10h
+        xor     a
+        d_fn    _CREATE
+        d_err   D_FILEX
         ld      de,s_r2
         ld      hl,n_r3
         d_fn    _RENAME

@@ -165,7 +165,7 @@ MSX-DOS 2 does, with the MSX-DOS 2 code for `_ERROR` and `_EXPLAIN`; `_IOCTL` wi
 | `40h` `_FFIRST`, `41h` `_FNEXT` | a search by name pattern and attributes, the found entry in the FIB with its 8.3 alias; hidden and system entries, and directories, only when asked, `.` and `..` with the directories; `.NOFIL` at the end, and at once for the volume-label bit |
 | `42h` `_FNEW` | a file made from the template, the `?`s filled from the FIB's name; still ambiguous is `.IFNM` |
 | `43h` `_OPEN` | a file, or a directory as a FIB, or a device: `CON` for the console, `NUL`, `AUX` and `PRN` for a sink that reads nothing |
-| `44h` `_CREATE` | a file, emptied when it exists unless bit 7 of `B` says so (`.FILEX`); with the directory bit a directory; the read-only, hidden and system bits set after |
+| `44h` `_CREATE` | a file, emptied when it exists unless bit 7 of `B` says so (`.FILEX`); with the directory bit a directory, `.DIRX` when one is there and `.FILEX` when a file is; the read-only, hidden and system bits set after |
 | `45h` `_CLOSE`, `46h` `_ENSURE`, `47h` `_DUP`, `5Fh` `_FLUSH` | as specified; `_ENSURE` and `_FLUSH` have nothing to do, every write reaches the disk as it is made |
 | `48h` `_READ`, `49h` `_WRITE` | the bytes moved in one piece; `.EOF` when a read finds none; a read asked for more than the memory from its buffer to the TPA's top is cut there, so a program that asks for "everything" of a short file gets it; `.IPARM` for a buffer that starts above the TPA; a write to a device in ASCII mode ends at the first `1Ah`, which is counted and not sent |
 | `4Ah` `_SEEK` | by the three methods; a position that would go negative is `.IPARM` |
