@@ -504,18 +504,22 @@ stamp (`EACCES`). `statfs` describes a mounted volume in a 32-byte block:
 | 4 | 2 | reserved sectors before the first FAT |
 | 6 | 1 | the number of FATs |
 | 7 | 2 | root directory entries |
-| 9 | 2 | total sectors, or 0 when the volume has more than 65 535 |
-| 11 | 1 | media descriptor, `F8h` |
+| 9 | 2 | the total at offset 24, or 0 when it is more than 65 535 |
+| 11 | 1 | the boot sector's media descriptor |
 | 12 | 1 | sectors per FAT, or 0 when the table is 256 sectors or longer |
 | 13 | 2 | the first root directory sector |
 | 15 | 2 | the first data sector |
-| 17 | 2 | the highest cluster number |
+| 17 | 2 | the number of clusters plus two, as Nextor answers |
 | 19 | 1 | 0 |
-| 20 | 4 | the volume id, `FFFFFFFFh` |
-| 24 | 2 | free clusters, when `B` = 1; 0 otherwise |
-| 26 | 6 | 0 |
+| 20 | 4 | the boot sector's volume id, or `FFFFFFFFh` when it has none |
+| 24 | 4 | total sectors: the first data sector plus the whole clusters' sectors, a partial cluster at the end left out |
+| 28 | 1 | 0 for FAT12, 1 for FAT16 |
+| 29 | 1 | 0 |
+| 30 | 2 | free clusters, when `B` = 1; 0 otherwise |
 
-The sectors are counted from the volume's first. A field that cannot
+The block is the one Nextor's `_DPARM` answers, byte for byte, with
+the free count in its last two bytes. The sectors are counted from the
+volume's first. A field that cannot
 hold the volume's number reads 0 rather than the low bits of it, which is
 what MSX-DOS 2 answers for a volume too large to describe. The free count walks
 the whole FAT through the cache, one sector at a time, and costs what

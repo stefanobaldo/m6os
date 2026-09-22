@@ -208,6 +208,14 @@ to install.
   a program may keep what it needs after the one it ran; and `_EXPLAIN`
   answers MSX-DOS 2's `User error n` and `System error n` for a code with
   no message.
+- MSX-DOS 2 programs: `_DPARM` answered a block that differed from
+  Nextor's. On a partitioned volume — any SD card — the reserved sectors
+  and the first root and data sectors were counted from the start of the
+  device rather than of the volume. The total sectors counted a partial
+  cluster at the end of the volume and the maximum cluster was one short,
+  the media descriptor was always `F8h` and the volume id always `−1`,
+  and the 32-bit total and the filesystem type Nextor adds at offsets 24
+  and 28 were missing. The block is now Nextor's, byte for byte.
 - A file written when the volume's next free cluster was one whose number
   ends in `FFh` — 255, 511, and so on — came back with a cluster of the
   formatter's fill in front of its bytes and one cluster more than its
