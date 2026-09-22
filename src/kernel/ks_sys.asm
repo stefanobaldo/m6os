@@ -239,7 +239,8 @@ ks_signal:
 ; original page 0 back in page 0, so that the interrupt vector is there
 ; whatever the program mapped; the PSG silenced; the console up again,
 ; keeping the screen and the cursor when the program left SCREEN 0 at 80
-; columns and clearing it otherwise — read from the BIOS variables in the
+; columns, on a new line when it left the cursor inside one, as COMMAND2
+; does, and clearing it otherwise — read from the BIOS variables in the
 ; legacy copy, through page 1, since page 2 is this code; the buffers the
 ; cache lent to the layer's body (ks_dosenter) returned, free, through
 ; page 1 too; the keyboard's baseline taken from the matrix as it is, so
@@ -310,6 +311,8 @@ ks_dos_check:
         jr      c,.col
         xor     a
 .col:   ld      (iy+1),a                ; con_col
+        or      a                       ; left inside a line: the next
+        call    nz,K_API+3*API_CON_NEWLINE ; output starts below it
         jr      .kbd
 .clear: xor     a
         ld      b,CON_ROWS
