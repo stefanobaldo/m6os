@@ -2496,22 +2496,13 @@ f_genv: push    de
         ld      a,D_ELONG
         jp      leg_fail
 
-; e_find — HL -> a name: HL -> its value, 0-terminated — PARAMETERS and
-; PROGRAM made up here, the store searched otherwise, s_empty for a name
-; not set. CF with .IENV for a name that is none. Corrupts everything.
+; e_find — HL -> a name: HL -> its value, 0-terminated, from the store —
+; PARAMETERS and PROGRAM among the rest since the entry put them there
+; (e_seed) — or s_empty for a name not set. CF with .IENV for a name that
+; is none. Corrupts everything.
 e_find: ld      a,(hl)
         or      a
         jr      z,.ienv
-        push    hl
-        ld      de,s_parameters
-        call    leg_stricmp
-        pop     hl
-        jr      z,.params
-        push    hl
-        ld      de,s_program
-        call    leg_stricmp
-        pop     hl
-        jr      z,.prog
         ex      de,hl                   ; de -> the name wanted
         ld      hl,leg_env
 .pair:  ld      a,(hl)
@@ -2530,21 +2521,33 @@ e_find: ld      a,(hl)
 .none:  ld      hl,s_empty
         xor     a
         ret
-.params:
-        ld      hl,leg_params
-        ld      a,(hl)
-        cp      ' '
-        ret     nz
-        inc     hl
-        xor     a
-        ret
-.prog:  call    e_program
-        ret
 .ienv:  ld      a,D_IENV
         jp      leg_fail
 s_parameters:   db "PARAMETERS",0
 s_program:      db "PROGRAM",0
 s_empty:        db 0
+
+; e_seed — the end of the entry: the store begins with the two strings
+; COMMAND2 sets before it runs a program, PARAMETERS — the tail, its
+; first blank dropped — then PROGRAM, as pairs the program may read,
+; replace or remove like any other, so that a program it loads itself
+; finds what it set there. Then into the program.
+e_seed: xor     a
+        ld      (leg_env),a
+        ld      de,leg_params
+        ld      a,(de)
+        cp      ' '
+        jr      nz,.set
+        inc     de
+.set:   ld      hl,s_parameters
+        call    f_senv
+        call    e_program
+        jr      c,.go
+        ex      de,hl
+        ld      hl,s_program
+        call    f_senv
+.go:
+        jp      leg_go                  ; the tail, in page 3
 
 ; e_namecmp — HL -> a pair "NAME=value", DE -> a name: Z with HL -> the
 ; value when the names match. Corrupts AF, HL, DE.
@@ -2729,8 +2732,8 @@ f_senv: push    de
         ld      a,D_IENV
         jp      leg_fail
 
-; _FENV (6Dh): DE = an item number from 1, HL -> a buffer: the item's
-; name, "" past the end; .ELONG when it does not fit 255... the buffer
+; _FENV (6Dh): DE = an item number from 1, HL -> a buffer: the name of
+; the store's item, "" past the end; .ELONG when it does not fit 255... the buffer
 ; is the program's: 255 bytes assumed.
 f_fenv: push    hl
         ld      a,d
@@ -2739,12 +2742,6 @@ f_fenv: push    hl
         ld      a,e
         or      a
         jr      z,.none
-        dec     a
-        ld      hl,s_parameters
-        jr      z,.copy
-        dec     a
-        ld      hl,s_program
-        jr      z,.copy
         ld      c,a
         ld      hl,leg_env
 .pair:  ld      a,(hl)
@@ -2765,16 +2762,6 @@ f_fenv: push    hl
         jr      .cn
 .end:   xor     a
         ld      (de),a
-        pop     hl
-        ret
-.copy:  pop     de
-        push    de
-.cc:    ld      a,(hl)
-        ld      (de),a
-        inc     hl
-        inc     de
-        or      a
-        jr      nz,.cc
         pop     hl
         ret
 .none:  pop     hl

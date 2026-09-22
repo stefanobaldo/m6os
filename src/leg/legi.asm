@@ -181,9 +181,8 @@ leg_entry:
         ld      (leg_mapvar+4),a        ; the user's: the TPA's four
         call    legf_init
         call    leg_fcbs
-        xor     a                       ; the environment store, empty: it
-        ld      (leg_env),a             ; lies over code that has run
-        jp      leg_go                  ; the tail, in page 3
+        jp      e_seed                  ; the environment store, over code
+                                        ; that has run, and the tail
 
 ; legf_init — the drives and the current directory, from the kernel:
 ; every volume mounted is a drive; the shell's directory is the current

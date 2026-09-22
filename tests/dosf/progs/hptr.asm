@@ -246,9 +246,9 @@ calls:  ld      hl,(base)
         ld      de,args+A_VAL
         call    d_streq
         jp      nz,t_fail
-        t_st    15                      ; _FENV: item 3, HL B bytes
-        p_hl    A_OUT
-        ld      de,3
+        t_st    15                      ; _FENV: item 2, HL B bytes — after
+        p_hl    A_OUT                   ; PROGRAM; with no tail there is no
+        ld      de,2                    ; PARAMETERS
         ld      b,64
         d_fn    _FENV
         d_ok
