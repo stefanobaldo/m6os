@@ -2431,6 +2431,63 @@ f_stime:
         ld      b,0
         ret
 
+; _ERROR (65h): B = the last error code.
+f_error:
+        ld      a,(leg_lasterr)
+        ld      b,a
+        xor     a
+        ret
+
+; _DOSVER (6Fh): the kernel and MSXDOS2.SYS versions, 2.31 both; not
+; Nextor — the handshake in B, HL, DE is not answered, and IX comes back
+; as it went.
+f_dosver:
+        ld      bc,0231h
+        ld      de,0231h
+        xor     a
+        ret
+
+; _CPMVER (0Ch): HL = 0022h, CP/M 2.2.
+f_cpmver:
+        ld      hl,0022h
+        ld      a,l
+        ld      b,h
+        ret
+
+; _GTIME (2Ch): the clock through the kernel — H = hours, L = minutes,
+; D = seconds (the FAT field holds halves, so even), E = 0.
+f_gtime:
+        leg_sys SYS_TIME                ; HL = FAT date, DE = FAT time
+        ld      a,d
+        rrca
+        rrca
+        rrca
+        and     1Fh
+        ld      h,a                     ; hours
+        ld      a,d
+        and     7
+        ld      b,a
+        ld      a,e
+        rlca
+        rlca
+        rlca
+        and     7
+        or      a
+        ld      c,a
+        ld      a,b
+        add     a,a
+        add     a,a
+        add     a,a
+        or      c
+        ld      l,a                     ; minutes
+        ld      a,e
+        and     1Fh
+        add     a,a
+        ld      d,a                     ; seconds
+        ld      e,0
+        xor     a
+        ret
+
 ; leg_div — HL / DE: HL = the quotient, E = the remainder (DE < 256, HL
 ; < 256). Corrupts AF, BC.
 leg_div:

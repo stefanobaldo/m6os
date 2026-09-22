@@ -1107,7 +1107,7 @@ PR_ALIAS        equ 3           ;      8.3 alias, 0-terminated (13)
 LEG_BIOS        equ LEG_BASE+100h ; the CP/M BIOS jump table, 17 entries
 LEG_MAX         equ K_HINGE-LEG_BASE ; the most page 3 holds of the layer,
                                 ;   its variables included
-LEG_LEND        equ 15          ; the layer's body: the block cache's last
+LEG_LEND        equ 16          ; the layer's body: the block cache's last
 LEG_BMAX        equ LEG_LEND*512 ;  buffers, lent by dosenter, hold it and
 LEG_BODY        equ 8000h+ST_BUF+(BUF_N-LEG_LEND)*512 ; its variables; page
                                 ;   2 shows it there during a file call

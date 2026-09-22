@@ -37,9 +37,9 @@ three pages of its TPA and one more for what is above it — so `dos` is
 refused with `ENOMEM` while another process besides the shell is alive.
 
 What serves the program's file calls is not above its TPA. It takes the
-place of fifteen of the disk cache's twenty-two sector buffers for the
+place of sixteen of the disk cache's twenty-two sector buffers for the
 program's run, and is brought into page 2 for the length of a file call
-and out again before the program goes on; the cache works with the seven
+and out again before the program goes on; the cache works with the six
 that are left, and the first command after the program finds the others
 empty. During a file call interrupts are held off between the kernel's
 own calls, for a few milliseconds at most: the BIOS's tick may come that
