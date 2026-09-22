@@ -216,6 +216,13 @@ to install.
   the media descriptor was always `F8h` and the volume id always `−1`,
   and the 32-bit total and the filesystem type Nextor adds at offsets 24
   and 28 were missing. The block is now Nextor's, byte for byte.
+- MSX-DOS 2 programs on a 128K machine found no free segment, where
+  MSX-DOS 2 leaves one: SofaRun's "Forget last flashed ROM" stopped with
+  `*** Out of segments`, and a program that needs a segment of its own
+  could not have one. The shell's segment, frozen while the program runs,
+  is now counted free and is the program's when it asks for it, its bytes
+  kept in `/m6.swp` on the boot volume for the run. See
+  [`docs/dos.md`](docs/dos.md).
 - MSX-DOS 2 programs: one whose output did not end with a newline — UNARJ's
   listing, for one — left the shell's prompt on its last line. The prompt
   now starts on a line of its own after such a program, as under COMMAND2.

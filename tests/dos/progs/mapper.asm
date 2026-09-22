@@ -6,13 +6,16 @@
 ; pages: GET_P1 and GET_P2 name them; a pattern written into page 2's
 ; segment through WR_SEG comes back through RD_SEG and is seen at 8000h;
 ; PUT_P2 of page 1's segment shows page 1's bytes at 8000h and GET_P2
-; answers it; the TPA's segment put back. Then ALL_SEG: a segment, freed
-; again with FRE_SEG, or the carry the 128K machine gives with nothing
-; free — asked for by slot, as a program that keeps a table of its
-; segments asks, so the slot must come back in B for ENASLT to take; and
-; IX and IY, which a program keeps its own things in, as they went, with
-; a segment or without. "mapper ok seg" or "mapper ok noseg", or the step
-; that failed.
+; answers it; the TPA's segment put back. Then ALL_SEG: a segment —
+; asked for by slot, as a program that keeps a table of its segments
+; asks, so the slot must come back in B for ENASLT to take — filled
+; whole and read back, freed with FRE_SEG, and asked for again, which
+; must answer the same one; IX and IY, which a program keeps its own
+; things in, as they went, with a segment or without. EXTBIO must count
+; one free first: on the 128K machine it is the shell's page, lent for
+; the run, and the script goes on after this program only if the
+; shell's bytes came back. "mapper ok seg", "mapper ok noseg" when a
+; machine gives none, or the step that failed.
         include "dos/progs/dos.inc"
         org     100h
         ld      a,1
@@ -22,6 +25,9 @@
         call    EXTBIO
         or      a
         jp      z,fail                  ; no mapper support
+        ld      a,c
+        or      a
+        jp      z,fail                  ; no segment counted free
         ld      (tab),hl
         ld      a,b
         ld      (slot),a                ; the mapper's slot
@@ -119,13 +125,36 @@
         push    af
         call    regs
         pop     af
-        jr      c,.noseg
+        jp      c,.noseg
         ld      (seg),a
         ld      a,6
         ld      (step),a
         ld      a,(slot)
         cp      b
         jp      nz,fail                 ; B is not the mapper's slot
+        ; 10: all 16K of it the program's: a pattern written through
+        ; page 2 and read back, the TPA's page 2 put back
+        ld      a,10
+        ld      (step),a
+        ld      a,(seg)
+        call    m_p2
+        ld      hl,8000h
+.fill:  ld      a,h
+        xor     l
+        ld      (hl),a
+        inc     hl
+        bit     6,h
+        jr      z,.fill                 ; to C000h
+        ld      hl,8000h
+.chk:   ld      a,h
+        xor     l
+        cp      (hl)
+        jp      nz,fail
+        inc     hl
+        bit     6,h
+        jr      z,.chk
+        ld      a,(s2)
+        call    m_p2
         ld      a,7
         ld      (step),a
         ld      a,(seg)
@@ -139,11 +168,16 @@
         ld      b,a
         call    m_all
         jp      c,fail
-        ld      (seg),a
+        ld      c,a
         ld      a,b
         or      a
         jp      nz,fail
+        ; 11: the segment step 7 freed, answered again
+        ld      a,11
+        ld      (step),a
         ld      a,(seg)
+        cp      c
+        jp      nz,fail
         call    m_fre
         jp      c,fail
         d_puts  s_ok

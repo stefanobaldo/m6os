@@ -7,8 +7,9 @@
 # files run through dos; what they print goes to the screen through the
 # BIOS, so the checks read rows. When the script's last line shows, this
 # types at the login shell — a program that reads a line, ps, a program
-# that marks its legacy page 3 and waits for a key — and gives the
-# verdict, since the product has no mailbox.
+# that marks its legacy page 3 and waits for a key, the disk error
+# routine, a program given the shell's own page on the 128K machine and
+# UP after it — and gives the verdict, since the product has no mailbox.
 set show_screen 1
 set problems {}
 set machine [machine_info config_name]
@@ -40,6 +41,11 @@ proc expect_next {want next msg} {
     if {$i < 0 || [lindex $rs [expr {$i + 1}]] ne $next} { problem $msg }
 }
 proc expect_absent {want msg} { if {[has_row $want]} { problem $msg } }
+proc count_match {re} {
+    set n 0
+    foreach r [rows] { if {[regexp $re $r]} { incr n } }
+    return $n
+}
 
 # The block cache's headers, read from the mapper's RAM: how many buffers
 # are lent to an MSX-DOS program's layer (their volume byte is VOL_LENT,
@@ -85,7 +91,7 @@ array set key {
     i {3 0x40} l {4 0x02} m {4 0x04} n {4 0x08} o {4 0x10} p {4 0x20}
     r {4 0x80} s {5 0x01}
     t {5 0x02} w {5 0x10} x {5 0x20} y {5 0x40} 7 {0 0x80} / {2 0x10}
-    . {2 0x08} space {8 0x01} ret {7 0x80}
+    . {2 0x08} space {8 0x01} ret {7 0x80} arrow {8 0x20}
 }
 proc down {k} { keymatrixdown {*}$::key($k) }
 proc up {k}   { keymatrixup   {*}$::key($k) }
@@ -133,11 +139,9 @@ proc check_rc {} {
     expect_next "noeol" "after noeol" "the line after noeol, which ends in the middle of a line, is not on the row below it"
     expect_screen "wboot twice" "wboot's ret and _TERM did not both reach its WBOOT jump through 0000h"
     expect_screen {[5]} "wboot's _TERM with 5 was not reported as \[5\] after its jp 0"
-    if {$::machine eq "m6-msx2-128k"} {
-        expect_screen "mapper ok noseg" "the mapper program did not end in mapper ok noseg on the 128K machine, where nothing is free"
-    } else {
-        expect_screen "mapper ok seg" "the mapper program did not end in mapper ok seg on the 4 MB machine"
-    }
+    # On the 128K machine the segment is the script's shell's, lent: the
+    # lines after it run only if its bytes came back.
+    expect_screen "mapper ok seg" "the mapper program did not end in mapper ok seg"
     expect_screen "dos: nofile.com: ENOENT" "the shell's .com fallback did not reach dos for a missing file"
     set hellos [count_rows "hello from dos"]
     if {$::machine eq "m6-msx2-128k"} {
@@ -200,6 +204,20 @@ proc type_at_shell {} {
     tap [expr {$t + 2.9}] space
     at [expr {$t + 4.2}] {
         expect_screen "defer ok" "defer's _OPEN was not made again after its routine asked for it"
+    }
+    # The login shell's page lent to a program on the 128K machine, and
+    # its history there after: UP brings the line back. The spaces the
+    # keys above left in the keyboard's buffer come with it.
+    set t [typeline [expr {$t + 4.4}] {d o s space / d o s / m a p p e r . c o m}]
+    at [expr {$t + 4.0}] {
+        set ::before [count_match {^/ \$ +dos /dos/mapper\.com$}]
+        if {[count_rows "mapper ok seg"] < 1} { problem "mapper at the login shell did not end in mapper ok seg" }
+    }
+    tap [expr {$t + 4.1}] arrow
+    at [expr {$t + 4.8}] {
+        if {[count_match {^/ \$ +dos /dos/mapper\.com$}] != $::before + 1} {
+            problem "UP after mapper at the login shell did not bring its line back: the shell's history is lost"
+        }
         finish_up
     }
 }
