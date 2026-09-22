@@ -69,7 +69,7 @@ proc disk_error_once {} {
     }]
 }
 set stseg -1
-set LENT 15         ;# buffers the layer's body takes while a program runs
+set LENT 16         ;# buffers the layer's body takes while a program runs
 proc lent {} {
     set n 0
     for {set i 0} {$i < 22} {incr i} {

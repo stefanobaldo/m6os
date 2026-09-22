@@ -298,6 +298,16 @@ lb_desc:
         db      0,0,0                                   ; 6Eh-70h
         ASSERT  $-lb_desc == 32h+31h
 
+; leg_digit — A = a number, C = a power of ten: H = its digit there, as
+; a character, and A = the rest. For _EXPLAIN's decimal.
+leg_digit:
+        ld      h,'0'-1
+.sub:   inc     h
+        sub     c
+        jr      nc,.sub
+        add     a,c
+        ret
+
 ; _EXPLAIN (66h): B = an error code, DE -> a 64-byte buffer: its message,
 ; 0-terminated, and B = 0 — or, for a code the layer has no words for,
 ; MSX-DOS 2's "User error n" below 40h and "System error n" from it, in
