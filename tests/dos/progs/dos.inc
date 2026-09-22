@@ -10,6 +10,7 @@ _CONIN      equ 01h
 _CONOUT     equ 02h
 _STROUT     equ 09h
 _BUFIN      equ 0Ah
+_JOIN       equ 61h
 _TERM       equ 62h
 EXTBIO      equ 0FFCAh
 JIFFY       equ 0FC9Eh

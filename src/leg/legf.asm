@@ -2277,8 +2277,10 @@ f_fork: ld      a,(leg_level)
         ret
 
 ; _JOIN (61h): B = a level: every handle opened above it closed, the
-; level back; 0 closes everything but the standard handles. Out: B = C =
-; 0. Segments stay with the program to its end.
+; level back; 0 closes everything but the standard handles. Out: B and C
+; = the codes of the last _TERM, the child's that a program running
+; another reads here, as under MSX-DOS 2. Segments stay with the program
+; to its end.
 f_join: ld      a,(leg_level)
         cp      b
         jr      c,.iproc
@@ -2304,8 +2306,10 @@ f_join: ld      a,(leg_level)
         ld      a,c
         cp      LEG_NHAND
         jr      c,.row
-        ld      b,0
-        ld      c,0
+        ld      a,(leg_code)
+        ld      b,a
+        ld      a,(leg_code2)
+        ld      c,a
         xor     a
         ret
 .iproc: ld      a,D_IPROC

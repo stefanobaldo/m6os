@@ -162,7 +162,7 @@ MSX-DOS 2 does, with the MSX-DOS 2 code for `_ERROR` and `_EXPLAIN`; `_IOCTL` wi
 | `5Ah` `_CHDIR` | the drive's current directory; `.NODIR` for what is not a directory |
 | `5Bh` `_PARSE`, `5Ch` `_PFILE`, `5Dh` `_CHKCHR` | the string functions, as specified, with no disk access |
 | `5Eh` `_WPATH` | the whole path of the last file found or made |
-| `60h` `_FORK`, `61h` `_JOIN` | a level count: `_JOIN` closes the handles opened above the level it is given; segments the program allocated stay its own until it ends |
+| `60h` `_FORK`, `61h` `_JOIN` | a level count: `_JOIN` closes the handles opened above the level it is given and answers the codes of the last `_TERM`, as a program that runs another reads its child's; segments the program allocated stay its own until it ends |
 | `63h` `_DEFAB` | the abort routine, called when the program ends |
 | `64h` `_DEFER` | the disk error routine, called for a disk error with the choice of abort, retry and ignore |
 | `65h` `_ERROR` | the last error code |
