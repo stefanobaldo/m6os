@@ -48,7 +48,10 @@ late, and none is lost.
 The program's console is the screen and the keyboard, through the BIOS,
 whatever the command line says: `dos prog.com > out` redirects nothing
 the program prints, and `cat in | dos prog.com` feeds it nothing. The
-standard handles of a `.COM` are the console, as at a prompt.
+standard handles of a `.COM` are the console, as at a prompt. A program
+that ends with the cursor inside a line — its output did not end with a
+newline — leaves the next output to start on the line below, as COMMAND2
+does after it.
 
 ## What the program finds
 

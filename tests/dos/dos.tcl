@@ -33,6 +33,12 @@ proc count_rows {want} {
     return $n
 }
 proc expect_screen {want msg} { if {![has_row $want]} { problem $msg } }
+# The row after want is next: the two on adjacent rows.
+proc expect_next {want next msg} {
+    set rs [rows]
+    set i [lsearch -exact $rs $want]
+    if {$i < 0 || [lindex $rs [expr {$i + 1}]] ne $next} { problem $msg }
+}
 proc expect_absent {want msg} { if {[has_row $want]} { problem $msg } }
 
 # The block cache's headers, read from the mapper's RAM: how many buffers
@@ -123,6 +129,8 @@ proc check_rc {} {
     expect_screen {[7]} "exit7's _TERM with 7 was not reported as \[7\]"
     expect_screen "jp0" "jp0 did not print before its jp 0"
     expect_screen "ret" "ret did not print before its ret"
+    expect_next "ret" "noeol" "ret's line, which ends in CR LF, is not followed at once by the next program's"
+    expect_next "noeol" "after noeol" "the line after noeol, which ends in the middle of a line, is not on the row below it"
     expect_screen "wboot twice" "wboot's ret and _TERM did not both reach its WBOOT jump through 0000h"
     expect_screen {[5]} "wboot's _TERM with 5 was not reported as \[5\] after its jp 0"
     if {$::machine eq "m6-msx2-128k"} {
