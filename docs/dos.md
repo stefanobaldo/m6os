@@ -68,7 +68,10 @@ Program Interface Specification describes it:
   there when the call returns. An argument that lies in page 2 of the
   program's memory is reached wherever it is.
 - Page 0 as the specification lays it out: the warm-boot jump at `0000h`
-  into a CP/M BIOS jump table, `RDSLT`, `WRSLT`, `CALSLT`, `ENASLT` and
+  into a CP/M BIOS jump table — every way a program ends, `ret`, `jp 0`
+  and `_TERM`, goes through it, so a program that aims the table's
+  warm-boot jump at its own code gets control back, as a file manager
+  does to run a program and return — `RDSLT`, `WRSLT`, `CALSLT`, `ENASLT` and
   `CALLF` at `000Ch`–`0030h`, the interrupt vector at `0038h`, the two
   unopened FCBs at `005Ch` and `006Ch` built from the first two words of
   the tail, the tail itself at `0080h`, upper-cased, with its length
@@ -124,7 +127,7 @@ MSX-DOS 2 does, with the MSX-DOS 2 code for `_ERROR` and `_EXPLAIN`; `_IOCTL` wi
 
 | Function | Under m6 |
 |---|---|
-| `00h` `_TERM0`, `62h` `_TERM` | ends the program; the code in `B` is the status the shell reports |
+| `00h` `_TERM0`, `62h` `_TERM` | ends the program through the abort routine and `jp 0`; the code in `B` is the status the shell reports |
 | `01h` `_CONIN`, `07h` `_DIRIN`, `08h` `_INNOE` | a key from the BIOS, echoed by `_CONIN` only |
 | `02h` `_CONOUT`, `09h` `_STROUT` | to the screen through the BIOS |
 | `06h` `_DIRIO` | direct console I/O, as specified |

@@ -159,13 +159,12 @@ leg_params:     ds 128                  ; the tail as typed
 ; Entering and leaving
 
 ; leg_go — the end of the entry (legi.asm), outside the body: the
-; program's page 2 back, the stack where MSX-DOS puts it with WBOOT under
-; it so that a ret ends the program, and into the program with interrupts
-; enabled.
+; program's page 2 back, the stack where MSX-DOS puts it with 0000h under
+; it so that a ret ends the program through the jump there, and into the
+; program with interrupts enabled.
 leg_go: call    leg_bout
-        ld      hl,LEG_BIOS             ; a ret from the program is WBOOT
+        ld      hl,0                    ; a ret from the program is jp 0
         push    hl
-        ld      hl,0
         ld      d,h
         ld      e,l
         ld      b,h
@@ -342,10 +341,13 @@ leg_stback:
         out     (0FEh),a
         ret
 
-; leg_term — A = the termination code: the abort routine, if the program
-; defined one (DE = its address, _DEFAB), with A = the code and B = the
-; error that caused it, then the crossing that ends the process with the
-; code as its status. Never returns.
+; leg_term — A = the termination code: the BDOS call in progress left,
+; the program's stack back; the abort routine, if the program defined
+; one (DE = its address, _DEFAB), with A = the code and B = the error
+; that caused it; then jp 0, as MSX-DOS 2 ends a program: whatever the
+; jump there leads to runs — leg_wboot, or the code of a program that
+; aimed the WBOOT jump at itself to run another and come back. Never
+; returns.
 leg_term:
         ld      b,0
 leg_term2:                              ; B = the error that caused it
@@ -355,20 +357,29 @@ leg_term2:                              ; B = the error that caused it
         ld      a,(leg_inb)             ; from the body: the program's page
         or      a                       ; 2 and its slots, for its routine
         call    nz,leg_bout
-        ei
+        ld      hl,leg_nest             ; no call is in progress any more
+        xor     a
+        cp      (hl)
+        ld      (hl),a
+        jr      z,.user
+        ld      sp,(leg_usp)
+.user:  ei
         ld      hl,(leg_defab)
         ld      a,h
         or      l
-        jr      z,.go
-        ld      a,(leg_code)
-        ld      b,0
-        ld      de,.go
+        jp      z,0
+        ld      de,0                    ; the routine returns to jp 0
         push    de
         ld      a,(leg_code2)
         ld      b,a
         ld      a,(leg_code)
         jp      (hl)
-.go:    di
+
+; leg_wboot — the BIOS table's WBOOT, where jp 0 leads: the crossing
+; that ends the process, with the code of the _TERM that led here as its
+; status — 0 for a program that never called one.
+leg_wboot:
+        di
         ld      sp,K_HINGE_SP
         call    leg_ramin               ; whatever slots the program ends
         ld      a,(leg_code)            ; with, the kernel's window is RAM
@@ -377,11 +388,6 @@ leg_term2:                              ; B = the error that caused it
         exx
         ex      af,af'
         jp      K_HINGE
-
-; leg_wboot — jp 0, a ret from the program, the BIOS table's WBOOT.
-leg_wboot:
-        xor     a
-        jp      leg_term
 
 ; leg_abort — A = D_STOP or D_CTRLC: the program ends with it, as
 ; MSX-DOS ends one whose console function met the key.
