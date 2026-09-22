@@ -92,8 +92,21 @@ Program Interface Specification describes it:
   `ALL_SEG`, `FRE_SEG`, `RD_SEG`, `WR_SEG`, `CAL_SEG`, `CALLS`, `PUT_Pn`
   and `GET_Pn` for pages 0–2. `ALL_SEG` answers the mapper's slot in `B`
   when it is asked by slot, and the routines keep `IX` and `IY`. A
-  segment the program allocates is freed when it ends. On a 128K machine
-  with a shell up there is none to give.
+  segment the program allocates is freed when it ends.
+- On a 128K machine the kernel has no segment left once the program is
+  loaded, where MSX-DOS 2 leaves one free; the program is given its
+  parent's instead — the shell's page, which is frozen while the program
+  runs. The free count, in the variable table and in `C` from `EXTBIO`,
+  counts it, so a program that looks for a free segment before it runs
+  another finds one, and one that only looks writes nothing. When the
+  program allocates it, its 16K are first written to `/m6.swp` on the
+  boot volume — a hidden file, created the first time and written over
+  after that — and read back when the program ends, however it ends:
+  two transfers of 16K, paid only by a program that takes the segment. It is not lent inside a BDOS call, from a disk error
+  routine, nor when the volume cannot take the file; `ALL_SEG` then
+  answers that there is none. If the bytes cannot be read back — the card
+  taken out while the program ran — the parent is ended rather than
+  resumed on them, and at the keyboard a new shell starts.
 - `_DOSVER` answers kernel 2.31 and MSXDOS2.SYS 2.31. m6 is not Nextor
   and does not answer Nextor's handshake, so a program takes its MSX-DOS 2
   paths; the Nextor functions (`71h`–`7Eh`) are refused.

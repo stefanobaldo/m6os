@@ -379,6 +379,10 @@ leg_term2:                              ; B = the error that caused it
 ; status — 0 for a program that never called one.
 leg_wboot:
         di
+        ld      sp,leg_stack_top        ; the program's is over, and a BDOS
+        ld      hl,ll_back              ; call it was in with it: a lent
+        ld      (leg_fn),hl             ; segment back, interrupts still off
+        call    leg_ldoor.in
         ld      sp,K_HINGE_SP
         call    leg_ramin               ; whatever slots the program ends
         ld      a,(leg_code)            ; with, the kernel's window is RAM
@@ -1052,6 +1056,43 @@ leg_isr:
 ; ---------------------------------------------------------------------
 ; The mapper support routines (DOS2-PIS §5)
 
+; leg_lend, leg_unlend — the lend (legl.asm): ALL_SEG with the kernel out
+; of segments, FRE_SEG of one the kernel refused. leg_ldoor — HL = the
+; body's routine, A its argument: run on the layer's stack, since the
+; lend maps page 1 over what the program's may be and the body page 2,
+; with the body in; refused (CF) inside a BDOS call, whose stack that
+; is. Out: AF and HL as the routine leaves them, interrupts enabled.
+; leg_ldoor.in — the same already on the layer's stack, the routine in
+; leg_fn, L its argument; interrupts left off (leg_wboot).
+leg_lend:
+        ld      hl,ll_lend
+        jr      leg_ldoor
+leg_unlend:
+        ld      hl,ll_unlend
+leg_ldoor:
+        ld      (leg_fn),hl
+        ld      l,a
+        ld      a,(leg_nest)
+        or      a
+        scf
+        ret     nz
+        ld      (leg_usp),sp
+        ld      sp,leg_stack_top
+        call    .in
+        ld      sp,(leg_usp)
+        ei
+        ret
+.in:    ld      a,3
+        call    leg_bin
+        ld      a,l
+        call    .go
+        push    af
+        call    leg_bout
+        pop     af
+        ret
+.go:    ld      hl,(leg_fn)
+        jp      (hl)
+
 leg_maptab:
         jp      m_all_seg
         jp      m_fre_seg
@@ -1091,6 +1132,7 @@ m_all_seg:
         push    iy
         push    bc
         leg_sys SYS_SEGALLOC
+        call    c,leg_lend              ; none: the parent's, if it can be
         pop     bc
         pop     iy
         pop     ix
@@ -1121,7 +1163,11 @@ m_fre_seg:
         push    bc
         push    ix
         push    iy
+        push    af
         leg_sys SYS_SEGFREE
+        pop     hl                      ; H = the segment
+        ld      a,h
+        call    c,leg_unlend            ; not the kernel's: the lent one?
         pop     iy
         pop     ix
         pop     bc
@@ -1445,6 +1491,7 @@ leg_bss_end     equ lbss_at
         include "leg/legb.asm"
         include "leg/legf.asm"
         include "leg/legk.asm"
+        include "leg/legl.asm"
 ; The entry (legi.asm), an overlay: the record and the environment store
 ; lie over its code once it has run.
 leg_once:
@@ -1507,6 +1554,14 @@ lbss_at  =       legb_end
         leg_bss lb_st,1   ;   what was staged: bit 0 DE, 1 HL, 2 IX
         leg_bss lb_rhl,2   ;   the handler's HL and BC on the way out
         leg_bss lb_rbc,2
+        leg_bss ll_st,1   ; the lend (legl.asm): LL_*, the segment,
+        leg_bss ll_seg,1   ;   the parent it is from,
+        leg_bss ll_ppid,1
+        leg_bss ll_new,1   ;   1 when the file was created
+        leg_bss ll_fd,1   ; ll_io: the descriptor, the syscall,
+        leg_bss ll_op,1
+        leg_bss ll_at,2   ;   where in page 1, the program's page 1
+        leg_bss ll_p1,1
 legb_bss_end    equ lbss_at
 ; An FCB name function's variables (legk.asm) lie over those of the
 ; handle, move and template functions, which no FCB function reaches;

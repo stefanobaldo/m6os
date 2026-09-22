@@ -167,9 +167,15 @@ leg_entry:
         ld      l,255                   ; 256 segments: the byte says 255
 .total: ld      a,l
         ld      (leg_mapvar+1),a
+        call    ll_init                 ; A = 1: the parent's page to lend
+        push    af
         ld      hl,SC_SEGMENTS_FREE
         leg_sys SYS_SYSCONF
-        ld      a,l
+        pop     af
+        add     a,l                     ; counted free: an ALL_SEG gets it
+        jr      nc,.free
+        ld      a,255
+.free:  ld      l,a
         ld      (leg_mapvar+2),a
         ld      a,(leg_mapvar+1)
         sub     l
@@ -366,3 +372,45 @@ leg_fcbs:
         djnz    .pad
         ret
 
+; ll_init — the segment the program's parent could lend it (legl.asm):
+; the parent's page 0, when the parent is a process of its own — not
+; process 0, whose pages are the kernel's — alive, and shares no page
+; with the program, as a vfork parent would. Whether it is blocked in
+; wait is asked when the segment is taken: at the entry the shell may
+; not have reached its waitpid yet. Out: A = 1 when there is one, 0
+; otherwise; ll_st, ll_seg and ll_ppid set.
+ll_init:
+        xor     a
+        ld      (ll_st),a               ; LL_NONE
+        leg_sys SYS_GETPID
+        ld      a,l
+        ld      hl,leg_path2
+        leg_sys SYS_PROCINFO
+        jr      c,.none
+        ld      a,(leg_path2+P_PPID)
+        ld      (ll_ppid),a
+        cp      PP_NONE
+        jr      z,.none
+        ld      hl,leg_path2
+        leg_sys SYS_PROCINFO
+        jr      c,.none
+        ld      a,(leg_path2+P_NPAGES)
+        or      a
+        jr      z,.none                 ; process 0
+        ld      a,(leg_path2+P_STATE)
+        cp      PS_ZOMBIE
+        jr      z,.none                 ; its segments are free already
+        ld      a,(leg_path2+P_SEG)
+        ld      hl,leg_segs
+        ld      b,3
+.own:   cp      (hl)
+        jr      z,.none                 ; one of the program's pages
+        inc     hl
+        djnz    .own
+        ld      (ll_seg),a
+        ld      a,LL_HOME
+        ld      (ll_st),a
+        ld      a,1
+        ret
+.none:  xor     a
+        ret
