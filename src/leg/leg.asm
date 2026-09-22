@@ -388,6 +388,17 @@ leg_wboot:
         ex      af,af'
         jp      K_HINGE
 
+; leg_digit — A = a number, C = a power of ten: H = its digit there, as
+; a character, and A = the rest. For _EXPLAIN's decimal (legb.asm), here
+; because the body has no room for it.
+leg_digit:
+        ld      h,'0'-1
+.sub:   inc     h
+        sub     c
+        jr      nc,.sub
+        add     a,c
+        ret
+
 ; leg_abort — A = D_STOP or D_CTRLC: the program ends with it, as
 ; MSX-DOS ends one whose console function met the key.
 leg_abort:

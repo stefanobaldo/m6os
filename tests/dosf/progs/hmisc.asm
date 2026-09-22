@@ -105,11 +105,14 @@
         d_fn    _SDATE
         cp      0FFh
         jp      nz,t_fail
-        d_step  5                       ; the messages
-        ld      b,D_NOFIL
-        ld      de,buf
+        d_step  5                       ; the messages: B = 0 with one,
+        ld      b,D_NOFIL               ; MSX-DOS 2's words in decimal
+        ld      de,buf                  ; without, B kept
         d_fn    _EXPLAIN
         d_ok
+        ld      a,b
+        or      a
+        jp      nz,t_fail
         ld      hl,buf
         ld      de,m_nofil
         call    d_streq
@@ -126,8 +129,27 @@
         ld      de,buf
         d_fn    _EXPLAIN
         d_ok
+        ld      a,b
+        cp      12h
+        jp      nz,t_fail
         ld      hl,buf
         ld      de,m_12
+        call    d_streq
+        jp      nz,t_fail
+        ld      b,40h
+        ld      de,buf
+        d_fn    _EXPLAIN
+        d_ok
+        ld      hl,buf
+        ld      de,m_40
+        call    d_streq
+        jp      nz,t_fail
+        ld      b,0FFh
+        ld      de,buf
+        d_fn    _EXPLAIN
+        d_ok
+        ld      hl,buf
+        ld      de,m_ff
         call    d_streq
         jp      nz,t_fail
         d_step  6                       ; the last error
@@ -303,7 +325,9 @@ s_via:  db      'hmisc via write',13,10
 s_conh: db      'con handle',13,10
 m_nofil: db     'File not found',0
 m_isbfn: db     'Invalid sub-function number',0
-m_12:   db      'Error 12H',0
+m_12:   db      'User error 18',0
+m_40:   db      'System error 64',0
+m_ff:   db      'System error 255',0
 s_ctlz: db      'ab',1Ah,'cd'
 s_crlf2: db     13,10
 h1:     db      0

@@ -168,7 +168,7 @@ MSX-DOS 2 does, with the MSX-DOS 2 code for `_ERROR` and `_EXPLAIN`; `_IOCTL` wi
 | `63h` `_DEFAB` | the abort routine, called when the program ends |
 | `64h` `_DEFER` | the disk error routine, called for a disk error with the choice of abort, retry and ignore |
 | `65h` `_ERROR` | the last error code |
-| `66h` `_EXPLAIN` | the message for a code, in the MSX-DOS 2 words; `Error nnH` for one m6 does not know |
+| `66h` `_EXPLAIN` | the message for a code, in the MSX-DOS 2 words; for one m6 has no words for, MSX-DOS 2's `User error n` below `40h` and `System error n` from it |
 | `6Ah` `_ASSIGN` | a logical drive mapped to a physical one, queried, or cleared |
 | `6Bh` `_GENV`, `6Ch` `_SENV`, `6Dh` `_FENV` | the environment, a store of 256 bytes that starts with the two strings COMMAND2 sets before it runs a program — `PARAMETERS`, the command tail, and `PROGRAM`, the program's own path, drive and all — which the program may replace or remove like any other; no `PATH`, no `PROMPT`, none of COMMAND2's other strings |
 | `6Eh` `_DSKCHK` | the flag, kept and given back |
