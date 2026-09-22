@@ -703,25 +703,27 @@ f_create:
         call    x_create
         jp      leg_xfail
 
+x_iattr: ld      a,D_IATTR
+        jp      leg_fail
 ; x_create — leg_name in the directory entered, (o_attr) the attributes
 ; and the flag: made as _CREATE says, a file left open on (o_fd) with the
 ; handle in B, a directory closed with B = FFh. CF with the code.
 x_create:
         ld      a,(o_attr)
         and     DA_LABEL
-        jr      nz,.iattr
-        ld      a,(o_attr)
-        and     DA_DIR
-        jr      nz,.dir
+        jr      nz,x_iattr
         ld      a,(o_attr)
         rlca
-        jr      nc,.make
+        jr      nc,.any
         ld      hl,leg_name             ; create new: nothing may be there
         ld      de,leg_rec
         leg_sysx SYS_STATL
         ld      a,D_FILEX
         jp      nc,leg_fail
-.make:  ld      a,(o_mode)
+.any:   ld      a,(o_attr)
+        and     DA_DIR
+        jr      nz,.dir
+        ld      a,(o_mode)
         call    o_flags
         or      O_CREAT|O_TRUNC
         cp      O_RDONLY|O_CREAT|O_TRUNC
@@ -744,9 +746,21 @@ x_create:
 .take:  jp      o_take
 .dir:   ld      hl,leg_name
         leg_sysx SYS_MKDIR
-        call    leg_err
-        ret     c
-        ld      a,(o_attr)
+        jr      nc,.made
+        cp      E_EXIST
+        scf
+        jp      nz,leg_err
+        ld      hl,leg_name             ; there already: a directory is
+        ld      de,leg_rec              ;   .DIRX, a file .FILEX, as
+        leg_sysx SYS_STATL              ;   "find new entry" answers
+        jr      c,.filex
+        ld      a,(leg_rec+DE_ATTR)
+        and     DA_DIR
+        ld      a,D_DIRX
+        jp      nz,leg_fail
+.filex: ld      a,D_FILEX
+        jp      leg_fail
+.made:  ld      a,(o_attr)
         and     DA_HIDDEN
         jr      z,.dirok
         ld      hl,leg_name
@@ -754,8 +768,6 @@ x_create:
 .dirok: ld      b,0FFh
         xor     a
         ret
-.iattr: ld      a,D_IATTR
-        jp      leg_fail
 
 ; _CLOSE (45h): B = a handle: its row freed, the descriptor closed when no
 ; other row names it.
@@ -1131,7 +1143,7 @@ f_fnew: ld      (s_fib),ix
         ld      a,b
         ld      (o_attr),a
         and     DA_LABEL
-        jp      nz,x_create.iattr
+        jp      nz,x_iattr
         ld      a,(de)
         inc     a
         jr      z,.fib

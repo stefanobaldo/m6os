@@ -79,6 +79,7 @@ D_FILRO     equ 0D1h
 D_DIRNE     equ 0D0h
 D_IATTR     equ 0CFh
 D_DOT       equ 0CEh
+D_DIRX      equ 0CCh
 D_FILEX     equ 0CBh
 D_FOPEN     equ 0CAh
 D_EOF       equ 0C7h
