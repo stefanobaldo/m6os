@@ -2168,6 +2168,7 @@ f_alloc:
         djnz    .z
         ld      hl,(leg_sf+SF_FREE)
         ld      de,(leg_sf+SF_MAXCLUS)
+        dec     de                      ; the clusters: the maximum - 2
         dec     de
         ld      bc,512
         ld      a,(leg_sf+SF_SPC)

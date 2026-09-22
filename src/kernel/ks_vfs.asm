@@ -2313,7 +2313,7 @@ ks_read:
 
 ; ks_statfs — SYS_STATFS: A = a volume, HL = a 32-byte buffer, B = 0, or
 ; 1 to count the volume's free clusters too. Out: the block SF_* in the
-; buffer, from the mount and volume rows. E_NODEV for a row not filled,
+; buffer, from the mount row. E_NODEV for a row not filled,
 ; E_FAULT, E_IO. The free count walks the whole table through the cache —
 ; sector by sector for FAT16, cluster by cluster for FAT12 — and costs
 ; what that costs: ~1.4 s for a 256-sector FAT16 through an SD card.
@@ -2337,110 +2337,71 @@ ks_statfs:
         ld      (hl),0
         ldir
         ld      a,(SG+VV_SFVOL)
-        call    fat_mnt                 ; ix -> the mount row
-        ld      l,a
-        ld      h,0
-        ld      e,l
-        ld      d,h
-        add     hl,hl
-        add     hl,de                   ; * 3
-        add     hl,hl
-        add     hl,hl                   ; * 12
-        ld      de,K_VOL
-        add     hl,de
-        push    hl
-        pop     iy                      ; iy -> the volume row
-        ld      hl,SG+ST_LNAME
-        inc     a
-        ld      (hl),a                  ; SF_DRIVE
-        inc     hl
-        ld      (hl),low 512            ; SF_SECSIZE
-        inc     hl
-        ld      (hl),high 512
-        inc     hl
+        call    fat_mnt                 ; ix -> the mount row, whose
+        inc     a                       ;   sectors are the volume's own
+        ld      (SG+ST_LNAME+SF_DRIVE),a
+        ld      hl,512
+        ld      (SG+ST_LNAME+SF_SECSIZE),hl
         ld      a,(ix+M_SPC)
-        ld      (hl),a                  ; SF_SPC
-        inc     hl
-        ld      e,(iy+V_FIRST)
-        ld      d,(iy+V_FIRST+1)        ; de = the volume's first sector,
-        ld      a,(ix+M_FAT)            ;   its low word
-        sub     e
-        ld      (hl),a                  ; SF_RESERVED = M_FAT - V_FIRST
-        inc     hl
-        ld      a,(ix+M_FAT+1)
-        sbc     a,d
-        ld      (hl),a
-        inc     hl
+        ld      (SG+ST_LNAME+SF_SPC),a
+        ld      l,(ix+M_FAT)
+        ld      h,(ix+M_FAT+1)
+        ld      (SG+ST_LNAME+SF_RESERVED),hl
         ld      a,(ix+M_NFATS)
-        ld      (hl),a                  ; SF_NFATS
-        inc     hl
-        ld      a,(ix+M_ROOTN)          ; SF_ROOTENT = sectors * 16
-        ld      c,a
-        ld      a,(ix+M_ROOTN+1)
-        ld      b,a
-        sla     c
-        rl      b
-        sla     c
-        rl      b
-        sla     c
-        rl      b
-        sla     c
-        rl      b
-        ld      (hl),c
-        inc     hl
-        ld      (hl),b
-        inc     hl
-        ld      a,(iy+V_COUNT+2)        ; SF_TOTAL: the sectors when they
-        or      (iy+V_COUNT+3)          ;   fit the field, else zero, which
-        ld      c,(iy+V_COUNT)          ;   is what MSX-DOS 2 answers for a
-        ld      b,(iy+V_COUNT+1)        ;   volume too large to express
-        jr      z,.total
-        ld      bc,0
-.total: ld      (hl),c
-        inc     hl
-        ld      (hl),b
-        inc     hl
-        ld      (hl),0F8h               ; SF_MEDIA
-        inc     hl
-        ld      a,(ix+M_FATSZ+1)        ; SF_FATSZ: the same, in a byte
-        or      a
+        ld      (SG+ST_LNAME+SF_NFATS),a
+        ld      l,(ix+M_ROOTN)          ; SF_ROOTENT = sectors * 16
+        ld      h,(ix+M_ROOTN+1)
+        add     hl,hl
+        add     hl,hl
+        add     hl,hl
+        add     hl,hl
+        ld      (SG+ST_LNAME+SF_ROOTENT),hl
+        ld      a,(ix+M_MEDIA)
+        ld      (SG+ST_LNAME+SF_MEDIA),a
+        ld      a,(ix+M_FATSZ+1)        ; SF_FATSZ: 0 when a byte cannot
+        or      a                       ;   hold it
         ld      a,(ix+M_FATSZ)
         jr      z,.fatsz
         xor     a
-.fatsz: ld      (hl),a
+.fatsz: ld      (SG+ST_LNAME+SF_FATSZ),a
+        ld      l,(ix+M_ROOT)
+        ld      h,(ix+M_ROOT+1)
+        ld      (SG+ST_LNAME+SF_ROOTSEC),hl
+        ld      l,(ix+M_NCLUS)
+        ld      h,(ix+M_NCLUS+1)
+        push    hl
         inc     hl
-        ld      a,(ix+M_ROOT)
-        sub     e
-        ld      (hl),a                  ; SF_ROOTSEC = M_ROOT - V_FIRST
         inc     hl
-        ld      a,(ix+M_ROOT+1)
-        sbc     a,d
-        ld      (hl),a
-        inc     hl
-        ld      a,(ix+M_DATA)
-        sub     e
-        ld      (hl),a                  ; SF_DATASEC = M_DATA - V_FIRST
-        inc     hl
-        ld      a,(ix+M_DATA+1)
-        sbc     a,d
-        ld      (hl),a
-        inc     hl
-        ld      c,(ix+M_NCLUS)
-        ld      b,(ix+M_NCLUS+1)
-        inc     bc
-        ld      (hl),c                  ; SF_MAXCLUS = M_NCLUS + 1
-        inc     hl
-        ld      (hl),b
-        inc     hl
-        inc     hl                      ; SF_DIRTY: 0
-        ld      a,0FFh
-        ld      (hl),a                  ; SF_VOLID: -1
-        inc     hl
-        ld      (hl),a
-        inc     hl
-        ld      (hl),a
-        inc     hl
-        ld      (hl),a
+        ld      (SG+ST_LNAME+SF_MAXCLUS),hl      ; the clusters + 2, as Nextor
+        pop     hl
+        ld      b,(ix+M_SPCSH)          ; SF_TOTAL32 = the clusters'
+        xor     a                       ;   sectors + the data sector: a
+        inc     b                       ;   partial cluster at the end is
+        jr      .spc                    ;   left out, as Nextor does
+.shift: add     hl,hl
+        rla
+.spc:   djnz    .shift
+        ld      e,(ix+M_DATA)
+        ld      d,(ix+M_DATA+1)
+        ld      (SG+ST_LNAME+SF_DATASEC),de
+        add     hl,de
+        adc     a,0
+        ld      (SG+ST_LNAME+SF_TOTAL32),hl
+        ld      (SG+ST_LNAME+SF_TOTAL32+2),a
+        or      a                       ; SF_TOTAL: 0 when the field
+        jr      z,.total                ;   cannot hold it, as MSX-DOS 2
+        ld      hl,0                    ;   answers
+.total: ld      (SG+ST_LNAME+SF_TOTAL),hl
+        push    ix
+        pop     hl
+        ld      de,M_VOLID
+        add     hl,de
+        ld      de,SG+ST_LNAME+SF_VOLID
+        ld      bc,4
+        ldir
+        ld      a,(ix+M_FLAGS)
+        and     MF_FAT16
+        ld      (SG+ST_LNAME+SF_FS),a
         ld      a,(SG+VV_SFFLG)
         or      a
         jp      z,.out

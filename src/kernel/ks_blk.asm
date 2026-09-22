@@ -591,7 +591,8 @@ bi_row:
 ; SG_SCRATCH, validated: fill mount row A from it. Every sector relative to
 ; the volume: the FAT at the reserved count, the root after the FATs, the
 ; data after the root; the type from the cluster count, never from the
-; string at 36h (the CI image's is garbage). Corrupts everything.
+; string at 36h (the CI image's is garbage). Corrupts everything, the
+; boot sector's volume id included.
 bi_mount:
         add     a,a
         add     a,a
@@ -602,6 +603,25 @@ bi_mount:
         ld      d,0
         ld      ix,SG_MNT
         add     ix,de
+        ld      a,(SG_SCRATCH+15h)      ; the media descriptor
+        ld      (ix+M_MEDIA),a
+        ld      a,(SG_SCRATCH+26h)      ; the volume id at 27h, when the
+        cp      29h                     ;   sector has one: the extended
+        jr      z,.volid                ;   signature, or MSX-DOS 2's
+        ld      a,(SG_SCRATCH+20h)      ;   "VOL_ID" at 20h; else -1
+        cp      'V'
+        jr      z,.volid
+        ld      hl,-1
+        ld      (SG_SCRATCH+27h),hl
+        ld      (SG_SCRATCH+29h),hl
+.volid: push    ix
+        pop     hl
+        ld      de,M_VOLID
+        add     hl,de
+        ex      de,hl
+        ld      hl,SG_SCRATCH+27h
+        ld      bc,4
+        ldir
         ld      a,(SG_SCRATCH+0Dh)      ; sectors per cluster
         ld      (ix+M_SPC),a
         ld      b,0

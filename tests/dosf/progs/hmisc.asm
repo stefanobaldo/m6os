@@ -49,6 +49,7 @@
         pop     de
         ld      hl,(buf+17)
         dec     hl
+        dec     hl
         or      a
         sbc     hl,de
         jp      nz,t_fail
@@ -315,6 +316,68 @@
         ld      c,71h
         call    BDOS
         d_err   D_IBDOS
+        d_step  14                      ; _DPARM as Nextor fills it
+        ld      e,0
+        d_fn    _ALLOC
+        ld      (nclus),de
+        ld      l,0
+        ld      de,buf
+        d_fn    _DPARM
+        d_ok
+        ld      hl,(nclus)              ; the maximum: the clusters + 2
+        inc     hl
+        inc     hl
+        ld      de,(buf+17)
+        or      a
+        sbc     hl,de
+        jp      nz,t_fail
+        ld      hl,(nclus)              ; the total: the data sector + the
+        ld      de,0                    ;   clusters' sectors, the volume's
+        ld      a,(buf+3)               ;   last, partial one left out
+.dpmul: rrca
+        jr      c,.dpadd
+        add     hl,hl
+        rl      e
+        jr      .dpmul
+.dpadd: ld      bc,(buf+15)
+        add     hl,bc
+        jr      nc,.dpnc
+        inc     de
+.dpnc:  ld      (tot),hl
+        ld      (tot+2),de
+        ld      hl,tot
+        ld      de,buf+24
+        ld      bc,4
+        call    d_memeq
+        jp      nz,t_fail
+        ld      hl,(tot+2)              ; the 16-bit field: 0 when it does
+        ld      a,h                     ;   not hold the total
+        or      l
+        ld      hl,(tot)
+        jr      z,.dpfit
+        ld      hl,0
+.dpfit: ld      de,(buf+9)
+        or      a
+        sbc     hl,de
+        jp      nz,t_fail
+        ld      a,(buf+11)              ; the volume's media byte
+        cp      0F0h
+        jp      nz,t_fail
+        ld      hl,buf+20               ; its volume id, not -1
+        ld      a,(hl)
+        ld      b,3
+.dpid:  inc     hl
+        and     (hl)
+        djnz    .dpid
+        inc     a
+        jp      z,t_fail
+        ld      hl,buf+28               ; FAT12, and nothing after it
+        ld      b,4
+.dpz:   ld      a,(hl)
+        or      a
+        jp      nz,t_fail
+        inc     hl
+        djnz    .dpz
         jp      t_ok
 
         d_lib   "hmisc"
@@ -336,4 +399,6 @@ t_j:    dw      0
 lowstk: ds      64
 lowstk_top:
 free:   dw      0
+nclus:  dw      0
+tot:    ds      4
 buf:    ds      64

@@ -235,7 +235,9 @@ start:
         jp      nz,x21
         ; (7) the last volume is the slave's, 66 046 sectors with a
         ; table of 256: both fields are too narrow for it and read 0,
-        ; not the low bits, and the cluster count still fits.
+        ; not the low bits, the whole count is in the 32-bit field, and
+        ; the maximum cluster, 65 501 clusters + 2, still fits. The boot
+        ; sector's media byte and volume id, and FAT16.
         ld      a,(K_BLK_NVOL)
         dec     a
         ld      hl,sf
@@ -253,10 +255,49 @@ start:
         cp      1
         jp      nz,x22
         ld      hl,(sf+SF_MAXCLUS)
-        ld      de,65502
+        ld      de,65503
         or      a
         sbc     hl,de
         jp      nz,x22
+        ld      hl,sf+SF_RESERVED
+        ld      de,f16_res
+        ld      b,f16_rese-f16_res
+.res:   ld      a,(de)
+        cp      (hl)
+        jp      nz,x22
+        inc     hl
+        inc     de
+        djnz    .res
+        ld      hl,sf+SF_ROOTSEC
+        ld      de,f16_sec
+        ld      b,f16_tail-f16_sec
+.sec:   ld      a,(de)
+        cp      (hl)
+        jp      nz,x22
+        inc     hl
+        inc     de
+        djnz    .sec
+        ld      hl,sf+SF_TOTAL32
+        ld      de,f16_tail
+        ld      b,f16_end-f16_tail
+.tail:  ld      a,(de)
+        cp      (hl)
+        jp      nz,x22
+        inc     hl
+        inc     de
+        djnz    .tail
+        ld      a,(sf+SF_MEDIA)
+        cp      0F8h
+        jp      nz,x22
+        ld      hl,sf+SF_VOLID
+        ld      de,f16_volid
+        ld      b,4
+.volid: ld      a,(de)
+        cp      (hl)
+        jp      nz,x22
+        inc     hl
+        inc     de
+        djnz    .volid
         xor     a
 exit:   sys     SYS_EXIT
 x1:    ld      a,1
@@ -358,6 +399,15 @@ n_smnt:     db  "/mnt",0
 names:      db  "HELLO",0,"TWO",0,"THREE",0,"BIG16K",0,0
 s_free:     db  "free ",0
 s_nl:       db  10,0
+f16_res:    dw  1                   ; SF_RESERVED, from the volume's
+            db  2                   ;   start, not the device's
+f16_rese:
+f16_sec:    dw  513                 ; SF_ROOTSEC: 1 + 2 * 256
+            dw  545                 ; SF_DATASEC: + 32
+f16_tail:   dd  66046               ; SF_TOTAL32
+            db  1                   ; SF_FS: FAT16
+f16_end:
+f16_volid:  dd  4D365446h           ; what mkdisk.tcl writes at 27h
 marks:      db  0,0,0,0
 fd:         db  0
 binclus:    dw  0

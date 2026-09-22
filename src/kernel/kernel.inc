@@ -422,23 +422,27 @@ DL_SIZE         equ 8
 LOC_VOL         equ 0
 LOC_CLUS        equ 1
 LOC_SIZE        equ 3
-; What statfs fills: the MSX-DOS 2 _DPARM block, 32 bytes.
+; What statfs fills: the MSX-DOS 2 _DPARM block, 32 bytes, with what
+; Nextor answers in it: the total counts the whole clusters only, and the
+; maximum cluster is the clusters + 2.
 SF_DRIVE        equ 0           ; the volume + 1
 SF_SECSIZE      equ 1           ; 2: 512
 SF_SPC          equ 3           ; sectors per cluster
 SF_RESERVED     equ 4           ; 2: sectors before the first FAT
 SF_NFATS        equ 6
 SF_ROOTENT      equ 7           ; 2: root directory entries
-SF_TOTAL        equ 9           ; 2: the volume's sectors, 0 above 65535
-SF_MEDIA        equ 11          ; F8h
+SF_TOTAL        equ 9           ; 2: SF_TOTAL32, 0 above 65535
+SF_MEDIA        equ 11          ; the boot sector's media descriptor
 SF_FATSZ        equ 12          ; sectors per FAT, 0 above 255
 SF_ROOTSEC      equ 13          ; 2: the root directory's first sector
 SF_DATASEC      equ 15          ; 2: the first data sector
-SF_MAXCLUS      equ 17          ; 2: the highest cluster number
+SF_MAXCLUS      equ 17          ; 2: the clusters + 2
 SF_DIRTY        equ 19          ; 0
-SF_VOLID        equ 20          ; 4: -1, not read
-SF_FREE         equ 24          ; 2: free clusters, with B = 1; else 0
-SF_SIZE         equ 32          ; 26-31 zero
+SF_VOLID        equ 20          ; 4: the boot sector's, -1 when it has none
+SF_TOTAL32      equ 24          ; 4: the data sector + the clusters' sectors
+SF_FS           equ 28          ; 0 FAT12, 1 FAT16
+SF_FREE         equ 30          ; 2: free clusters, with B = 1; else 0
+SF_SIZE         equ 32          ; 29 zero
 DA_RDONLY       equ 01h
 DA_HIDDEN       equ 02h
 DA_SYSTEM       equ 04h
@@ -834,7 +838,9 @@ M_DATA          equ 16          ; 4: the sector of cluster 2
 M_NCLUS         equ 20          ; 2: data clusters, at most 65524
 M_HINT          equ 22          ; 2: where a new file's first cluster is
                                 ;    looked for; 2 at mount
-                                ; 24-31 spare
+M_MEDIA         equ 24          ; the boot sector's media descriptor
+M_VOLID         equ 25          ; 4: its volume id, -1 when it has none
+                                ; 29-31 spare
 MF_FAT16        equ 1           ; else FAT12
 
 OFT_N           equ 24
