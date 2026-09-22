@@ -44,10 +44,9 @@
 
         include "leg/leg.inc"
 
-LEG_STACK       equ 192         ; the layer's own stack for a BDOS call
-LEG_ISTACK      equ 128         ; and the trampoline's, for a tick taken
-                                ; while the program's stack is not in
-                                ; page 3 (leg_isr)
+LEG_STACK       equ 176         ; the layer's own stack for a BDOS call
+LEG_ISTACK      equ 128         ; and the trampoline's, for every tick
+                                ; but one inside a tick (leg_isr)
 ; The handle table (legf.asm): LEG_NHAND rows of three bytes.
 LEG_NHAND       equ 16
 HN_FD            equ 0           ; a descriptor 3-7, a device HD_*, or free
@@ -1053,21 +1052,26 @@ rs_go:  ld      (rs_dir),a
 ; through CALSLT, which scans the keyboard, counts JIFFY and runs the
 ; hooks in this copy of its work area.
 ;
-; The BIOS is called with its own slot in page 0, so a program whose
-; stack is in pages 0-2 — XCOPY puts its at 2800h, and nothing forbids
-; it — would lose the stack under the tick. The trampoline moves to a
-; stack of its own in this page first, as MSX-DOS's page-0 handler does,
-; and keeps the interrupted SP on it. A stack already in page 3 stays
-; where it is: that is a tick during a BDOS call, or a tick inside a
-; hook that enabled interrupts again, and the frame in progress must not
-; be written over.
+; The trampoline moves to a stack of its own in this page first, as
+; MSX-DOS 2's interrupt entry does, and keeps the interrupted SP on it:
+; the BIOS is called with its own slot in page 0, so a program whose
+; stack is in pages 0-2 — XCOPY puts its at 2800h — would lose the stack
+; under the tick, and a program whose stack is in page 3 would find the
+; tick's fifty bytes written under its SP, where MultiMente keeps what it
+; needs back after running a program. Only the return and AF land on the
+; program's stack, less than MSX-DOS 2's eight bytes. A stack at or above
+; the trampoline's stays where it is: that is a tick inside a hook that
+; enabled interrupts again, or one during a crossing, and the frame in
+; progress must not be written over.
 leg_isr:
         di
         ld      (leg_isp),sp
         push    af
+        ld      a,(leg_isp)
+        sub     leg_istack & 0FFh
         ld      a,(leg_isp+1)
-        cp      0C0h                    ; page 3: the stack stays there
-        jr      c,.move
+        sbc     a,leg_istack >> 8
+        jr      c,.move                 ; below the trampoline's stack
         pop     af
         call    .tick
         ei
