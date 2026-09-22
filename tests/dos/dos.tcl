@@ -123,6 +123,8 @@ proc check_rc {} {
     expect_screen {[7]} "exit7's _TERM with 7 was not reported as \[7\]"
     expect_screen "jp0" "jp0 did not print before its jp 0"
     expect_screen "ret" "ret did not print before its ret"
+    expect_screen "wboot twice" "wboot's ret and _TERM did not both reach its WBOOT jump through 0000h"
+    expect_screen {[5]} "wboot's _TERM with 5 was not reported as \[5\] after its jp 0"
     if {$::machine eq "m6-msx2-128k"} {
         expect_screen "mapper ok noseg" "the mapper program did not end in mapper ok noseg on the 128K machine, where nothing is free"
     } else {

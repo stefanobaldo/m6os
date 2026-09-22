@@ -22,7 +22,7 @@
 ; the BIOS area; the mapper variable table filled through the kernel; the
 ; program read from its file into the three pages through the kernel —
 ; over the launcher, which is gone from here; the two FCBs from the tail;
-; the stack where MSX-DOS puts it with WBOOT under it so that a ret ends
+; the stack where MSX-DOS puts it with 0000h under it so that a ret ends
 ; the program; and into the program with interrupts enabled.
 leg_entry:
         ; The DOS page 0: 0000h-003Fh and 0051h-007Fh cleared, the stub at

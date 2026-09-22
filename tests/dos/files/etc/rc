@@ -14,6 +14,7 @@ dos /dos/hello.com
 dos /dos/exit7.com
 dos /dos/jp0.com
 dos /dos/ret.com
+dos /dos/wboot.com
 dos /dos/mapper.com
 dos /dos/con10k.com
 # A second live process on the base machine leaves no segment for the
