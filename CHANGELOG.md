@@ -196,6 +196,18 @@ to install.
   bytes than fit between its buffer and the TPA's top read nothing and
   answered `.IPARM`, where MSX-DOS 2 reads what the file has; and a
   function called with another slot switched into page 1 or 2 crashed.
+- MSX-DOS 2 programs that run other programs and come back — MultiMente
+  running a `.COM` from its file list — simply ended, and what they ran
+  saw what they had not asked for. `_TERM` and a `ret` from the program
+  now leave through the jump at `0000h`, as under MSX-DOS 2, so a program
+  that points it at its own code gets control back; `_JOIN` answers the
+  code the program ended with; `PARAMETERS` and `PROGRAM` are ordinary
+  environment strings that a program may set for the one it loads, and an
+  empty one reads back empty rather than as whatever the buffer held; a
+  timer tick no longer writes fifty bytes under the program's stack, where
+  a program may keep what it needs after the one it ran; and `_EXPLAIN`
+  answers MSX-DOS 2's `User error n` and `System error n` for a code with
+  no message.
 - A file written when the volume's next free cluster was one whose number
   ends in `FFh` — 255, 511, and so on — came back with a cluster of the
   formatter's fill in front of its bytes and one cluster more than its

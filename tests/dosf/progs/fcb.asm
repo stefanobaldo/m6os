@@ -625,7 +625,7 @@ n_con:  db      "CON        "
 s_via:  db      "fcb via fcb con",13,10,1Ah
 s_vialen equ    $-s_via
 s_nofil: db     "File not found",0
-s_e12:  db      "Error 12H",0
+s_e12:  db      "User error 18",0
 dta:    dw      0
 cmp:    dw      0
 fcb1:   ds      37

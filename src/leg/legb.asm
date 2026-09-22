@@ -299,7 +299,9 @@ lb_desc:
         ASSERT  $-lb_desc == 32h+31h
 
 ; _EXPLAIN (66h): B = an error code, DE -> a 64-byte buffer: its message,
-; 0-terminated — "Error nnH" for a code the layer does not know. The
+; 0-terminated, and B = 0 — or, for a code the layer has no words for,
+; MSX-DOS 2's "User error n" below 40h and "System error n" from it, in
+; decimal, and B as it came. The
 ; messages are not in the body: /bin/dos carries them, behind an index
 ; at LEG_MSGIX of the file (bin/dos.asm), and they are read from there
 ; on demand — an error's path, rare — into a buffer
@@ -313,7 +315,7 @@ f_explain:
         leg_sysx SYS_OPEN
         pop     bc
         pop     de
-        jr      c,.hex
+        jr      c,.none
         ld      a,l
         ld      (x_fd),a
         push    de
@@ -346,6 +348,7 @@ f_explain:
         pop     bc
         pop     de
         xor     a
+        ld      b,a
         ld      (leg_path2+63),a
         ld      hl,leg_path2
 .copy:  ld      a,(hl)
@@ -359,36 +362,44 @@ f_explain:
         leg_sysx SYS_CLOSE
         pop     bc
         pop     de
-.hex:   ld      hl,s_error
-.hexc:  ld      a,(hl)
+.none:  ld      hl,s_user
+        ld      a,b
+        cp      40h
+        jr      c,.word
+        ld      hl,s_system
+.word:  ld      a,(hl)
         or      a
         jr      z,.digits
         ld      (de),a
         inc     hl
         inc     de
-        jr      .hexc
-.digits:
-        ld      a,b
-        rrca
-        rrca
-        rrca
-        rrca
-        call    .nib
-        ld      a,b
-        call    .nib
-        ld      a,'H'
+        jr      .word
+.digits:                                ; the hundreds and the tens but
+        ld      a,b                     ; a leading 0, then the units
+        ld      c,100
+        call    leg_digit
+        ld      l,h
+        ld      c,10
+        call    leg_digit
+        add     a,'0'
+        ld      c,a
+        ld      a,l
+        cp      '0'
+        jr      z,.nohun
+        ld      (de),a
+        inc     de
+        jr      .tens
+.nohun: ld      a,h
+        cp      '0'
+        jr      z,.units
+.tens:  ld      a,h
+        ld      (de),a
+        inc     de
+.units: ld      a,c
         ld      (de),a
         inc     de
         xor     a
         ld      (de),a
-        ret
-.nib:   and     0Fh
-        add     a,'0'
-        cp      '9'+1
-        jr      c,.put
-        add     a,'A'-'9'-1
-.put:   ld      (de),a
-        inc     de
         ret
 ; .seekread — HL = an offset in /bin/dos, BC = a count: as many bytes
 ; into leg_path2, fewer at the file's end. CF from the kernel.
@@ -404,5 +415,6 @@ f_explain:
         ld      hl,leg_path2
         leg_sysx SYS_READ
         ret
-s_error:        db "Error ",0
+s_user:         db "User error ",0
+s_system:       db "System error ",0
 s_dosbin:       db "/bin/dos",0
