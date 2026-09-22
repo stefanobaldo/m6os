@@ -79,7 +79,9 @@ Program Interface Specification describes it:
   `PARAMETERS` and `PROGRAM` are there to be asked for.
 - The BIOS, live: every ROM routine reachable through `CALSLT`, the
   interrupt handler scanning the keyboard and counting `JIFFY`, `H.TIMI`
-  and the other hooks the program may set. The console functions go
+  and the other hooks the program may set. The handler and the hooks run
+  on a stack of their own, as under MSX-DOS 2, so a tick leaves the
+  program's stack as it was but for four bytes. The console functions go
   through `CHPUT`, `CHGET` and `CHSNS`, so what the BIOS does with escape
   sequences and the cursor, the program gets.
 - The mapper support routines, found through `EXTBIO` (`D` = 4, `E` = 1
