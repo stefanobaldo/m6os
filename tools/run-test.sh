@@ -24,7 +24,7 @@
 #
 # Files on the volume: tests/<name>/files/, a directory tree, is copied
 # into the staging directory as it is; a test with a `product` marker
-# boots build/m6.com as M6.COM and carries every build/bin/* in BIN/; each program built from
+# boots the product (below) and carries every build/bin/* in BIN/; each program built from
 # tests/<name>/progs/<prog>.asm (build/<name>.progs/<prog>) is copied to
 # the path tests/<name>/progs/<prog>.dest names; and tests/<name>/files.tcl,
 # if present, is sourced by mkdisk.tcl before the import, with M6_STAGING
@@ -46,11 +46,22 @@ export OPENMSX_USER_DATA="$ROOT/tools/openmsx"
 M6_TZ_OFFSET=$(date +%z)
 export M6_TZ_OFFSET
 
-# A test with a `product` marker boots the product itself, build/m6.com
-# as M6.COM with every utility in BIN/, instead of a program of its own.
+# A test with a `product` marker boots the product itself, with every
+# utility in BIN/, instead of a program of its own. The marker says which
+# way: empty, build/m6.com as M6.COM, run from AUTOEXEC.BAT under Nextor's
+# own system files; `nextor.sys`, build/nextor.sys as NEXTOR.SYS, loaded
+# by the Nextor kernel ROM with nothing else of Nextor's on the disk;
+# `nextor.sys chain`, the same with Nextor's NEXTOR.SYS as MSXDOS2.SYS and
+# COMMAND2.COM beside it, for a test that has the loader load Nextor — its
+# AUTOEXEC.BAT comes from the test's files/.
+product=""
 if [ -f "tests/$name/product" ]; then
-    com="build/m6.com"
-    upper=M6
+    product=$(cat "tests/$name/product")
+    case $product in
+        "") product=m6.com; com="build/m6.com"; upper=M6 ;;
+        "nextor.sys"|"nextor.sys chain") com="build/nextor.sys"; upper=NEXTOR ;;
+        *) echo "run-test: $name: the product marker says '$product'; empty, nextor.sys or nextor.sys chain" >&2; exit 2 ;;
+    esac
 else
     com="build/$name.com"
     upper=$(echo "$name" | tr '[:lower:]' '[:upper:]')
@@ -68,11 +79,14 @@ staging="build/$name.staging"
 # loose, so an alsa-lib update puts the noise back in the log instead of
 # silently widening what the filter hides. stderr is collected first so
 # openMSX's exit status survives, which a pipeline would replace with grep's.
+# The file is read as text whatever it holds: a screen dumped on a failure
+# may carry NULs, and grep would otherwise print one line saying so in
+# place of the screen.
 openmsx_run() {
     status=0
     "$OPENMSX" -machine "$machine" -setting tools/openmsx/settings.xml \
         -command "set renderer none" "$@" 2> "build/$name.$machine.err" || status=$?
-    grep -v \
+    grep -a -v \
         -e '^ALSA lib seq_hw\.c:[0-9]*:(snd_seq_hw_open) open /dev/snd/seq failed: ' \
         -e '^error: Could not open sequencer: ' \
         "build/$name.$machine.err" >&2 || :
@@ -204,10 +218,19 @@ for machine in $machines; do
         [ -f "tests/$name/args" ] && args=$(sed -n "${run}p" "tests/$name/args")
         echo "  machine $machine run $run${args:+ ($args)}"
         rm -rf "$staging" && mkdir -p "$staging"
-        cp .tools/nextor/NEXTOR.SYS .tools/nextor/COMMAND2.COM "$staging/"
-        cp "$com" "$staging/$upper.COM"
-        printf '%s%s\r\n' "$upper" "${args:+ $args}" > "$staging/AUTOEXEC.BAT"
-        if [ -f "tests/$name/product" ]; then
+        case $product in
+            "nextor.sys")
+                cp "$com" "$staging/NEXTOR.SYS" ;;
+            "nextor.sys chain")
+                cp "$com" "$staging/NEXTOR.SYS"
+                cp .tools/nextor/NEXTOR.SYS "$staging/MSXDOS2.SYS"
+                cp .tools/nextor/COMMAND2.COM "$staging/" ;;
+            *)
+                cp .tools/nextor/NEXTOR.SYS .tools/nextor/COMMAND2.COM "$staging/"
+                cp "$com" "$staging/$upper.COM"
+                printf '%s%s\r\n' "$upper" "${args:+ $args}" > "$staging/AUTOEXEC.BAT" ;;
+        esac
+        if [ -n "$product" ]; then
             mkdir -p "$staging/bin"
             for b in build/bin/*; do
                 case $b in *.lst) ;; *) cp "$b" "$staging/bin/" ;; esac
