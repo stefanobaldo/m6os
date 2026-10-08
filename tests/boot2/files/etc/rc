@@ -1,4 +1,4 @@
-# The mode-2 product test's script: one file written, and the line the
+# The NEXTOR.SYS product test's script: one file written, and the line the
 # harness waits for.
-echo mode2 > /boot2
+echo nextor > /boot2
 echo rc done
