@@ -21,6 +21,11 @@ to install.
   kernel: the top page of memory below the drivers' work areas, the interrupt
   vector and the memory mapper become m6's. The cartridge's Nextor 2 driver is
   still called directly for every sector afterwards; Nextor 2 drivers only.
+- Booting as `NEXTOR.SYS`. `build/nextor.sys`, put on the card in place of
+  Nextor's own system file (kept as `MSXDOS2.SYS`), is loaded by the Nextor
+  kernel ROM directly and boots m6 without the MSX-DOS 2 layer or `M6.COM`.
+  ESC held while the machine boots, or `CALL SYSTEM2` from Disk BASIC,
+  loads Nextor instead; so does a boot that fails, after printing its code.
 - Memory. The kernel finds every memory mapper in the machine and allocates 16K
   segments of the one it runs in, never handing out a segment that does not
   exist or was already in use when it started. A `mem=<K>` argument caps the
