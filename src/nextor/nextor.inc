@@ -39,7 +39,21 @@ NXE_NOTDEVICE   equ 3           ; the driver is drive-based
 NXE_NOSIGN      equ 4           ; no driver header where _GDLI said
 
 ; What the module calls and reads outside itself.
+; The BDOS entry a loader calls: 0005h under the DOS layer. A loader the
+; kernel ROM starts on its own (NEXTOR.SYS) has nothing there and calls
+; the kernel's own entry, the Disk BASIC one at F37Dh: it says so with
+; DEFINE NX_BDOS_KERNEL before including this file.
+NX_KBDOS        equ 0F37Dh      ; the kernel's BDOS entry, live without a .SYS
+    IFDEF NX_BDOS_KERNEL
+BDOS            equ NX_KBDOS
+    ELSE
 BDOS            equ 0005h
+    ENDIF
+NX_SYS_FIRST    equ 3F00h       ; what the kernel ROM reads of NEXTOR.SYS
+                                ; into 0100h before jumping to it: one
+                                ; _READ of this many bytes (bank0/dosboot.mac;
+                                ; the DOS 2 boot sector's loader reads the
+                                ; same); a larger file reads its own tail
 NX_GDRVR        equ 78h         ; _GDRVR: driver information
 NX_GDLI         equ 79h         ; _GDLI: drive letter information
 NX_E_IDRVR      equ 0B6h        ; .IDRVR: no such driver

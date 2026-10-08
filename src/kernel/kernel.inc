@@ -1214,5 +1214,7 @@ KT_SCRATCH      equ 8100h       ; 64: _GDLI / _GDRVR blocks
 KT_BUF_A        equ 8200h       ; 512: the reference sector, read via Nextor
 KT_BUF_B        equ 8400h       ; 512: what the driver returns
 KT_BUF_C        equ 8600h       ; 512: patterns
+KT_CHAIN        equ 8800h       ; 128: NEXTOR.SYS's stub that loads Nextor
+                                ; over the loader (loader/nextor.asm)
 KT_LSTACK       equ 9000h       ; the loader's stack top (page 2: the DOS
                                 ; stack sits under DOSHIM and is overwritten)
