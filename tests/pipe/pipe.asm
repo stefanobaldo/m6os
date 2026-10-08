@@ -28,6 +28,8 @@ CALSLT      equ B_CALSLT
         org     100h
 
 start:
+        ld      hl,(B_JIFFY)            ; the boot's clock, before anything
+        ld      (REC+KR_JIFFY),hl
         ld      sp,KT_LSTACK
         ld      a,DBG_ASCII
         out     (DBG_MODE),a
@@ -93,6 +95,10 @@ start:
         ld      (REC+KR_KSEG_SRC),hl
         ld      hl,ksimage_end-ksimage
         ld      (REC+KR_KSEG_LEN),hl
+        ld      hl,kbimage
+        ld      (REC+KR_BOOT_SRC),hl
+        ld      hl,kbimage_end-kbimage
+        ld      (REC+KR_BOOT_LEN),hl
         call    ld_takeover
         jp      fail                    ; it returns only with A = F3h
 
@@ -227,7 +233,10 @@ kimage_end:
 ksimage:
         incbin  "build/kseg.bin"
 ksimage_end:
-        ASSERT  ksimage_end < 8000h
+kbimage:
+        incbin  "build/kboot.bin"
+kbimage_end:
+        ASSERT  kbimage_end < 8000h
 
 ; The second half, in page 1 of the loader's memory, which the kernel
 ; keeps as process 0's page 1 so the block runs where it lies. It runs

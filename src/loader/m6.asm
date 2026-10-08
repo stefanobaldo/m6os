@@ -6,8 +6,8 @@
 ; boots the kernel, which then runs /etc/rc and a shell. Steps: SCREEN 0
 ; at 80 columns; a Nextor 2 kernel, or a refusal; the driver behind the
 ; current drive; the capture; mem=<K> from the command line; the
-; takeover, with the resident and the switched part carried in this
-; file. A failure prints its code and returns to DOS.
+; takeover, with the resident, the switched part and the boot image
+; carried in this file. A failure prints its code and returns to DOS.
         include "nextor/nextor.inc"
         include "kernel/kernel.inc"
         include "version.inc"
@@ -16,6 +16,8 @@ NB_TERM     equ 62h
 
         org     100h
 start:
+        ld      hl,(B_JIFFY)            ; the boot's clock, before anything
+        ld      (REC+KR_JIFFY),hl
         ld      sp,KT_LSTACK            ; page 2: the DOS stack dies in the
                                         ; takeover
         call    ld_screen80
@@ -55,6 +57,10 @@ start:
         ld      (REC+KR_KSEG_SRC),hl
         ld      hl,ksimage_end-ksimage
         ld      (REC+KR_KSEG_LEN),hl
+        ld      hl,kbimage
+        ld      (REC+KR_BOOT_SRC),hl
+        ld      hl,kbimage_end-kbimage
+        ld      (REC+KR_BOOT_LEN),hl
         call    ld_takeover
         jp      fail                    ; it returns only with A = F3h
 
@@ -94,6 +100,8 @@ ld_block_len equ 0
 ; The images, read while page 1 may be switched away by a driver call:
 ; the code above stays in page 0, the images below it may extend into
 ; page 1 and never into page 2, where the loader's stack and scratch are.
+; The boot image is copied from here to KB_BASE in page 0 by the kernel,
+; over the two images' dead sources.
         ASSERT  $ < 4000h
 kimage:
         incbin  "build/kernel.bin"
@@ -101,4 +109,7 @@ kimage_end:
 ksimage:
         incbin  "build/kseg.bin"
 ksimage_end:
-        ASSERT  ksimage_end < 8000h
+kbimage:
+        incbin  "build/kboot.bin"
+kbimage_end:
+        ASSERT  kbimage_end < 8000h

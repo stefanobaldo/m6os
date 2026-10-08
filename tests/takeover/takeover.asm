@@ -38,6 +38,8 @@ SECNUM      equ 8148h           ; 4 bytes: sector number handed to nx_rw
         org     100h
 
 start:
+        ld      hl,(B_JIFFY)            ; the boot's clock, before anything
+        ld      (REC+KR_JIFFY),hl
         ld      sp,KT_LSTACK            ; page 2: the DOS stack is under
                                         ; DOSHIM and dies in the takeover
         ld      a,DBG_ASCII
@@ -507,6 +509,10 @@ start:
         ld      (REC+KR_KSEG_SRC),hl
         ld      hl,ksimage_end-ksimage
         ld      (REC+KR_KSEG_LEN),hl
+        ld      hl,kbimage
+        ld      (REC+KR_BOOT_SRC),hl
+        ld      hl,kbimage_end-kbimage
+        ld      (REC+KR_BOOT_LEN),hl
         call    ld_takeover
         jp      fail                    ; it returns only with A = F3h
 
@@ -1230,7 +1236,8 @@ t_rtc_last: dw  0
 t_loop_fn:  dw  0
 t_secnum:   ds  4
 tblock_end:
-        ASSERT  tblock_end < 4000h      ; the block, in page 0
+        ASSERT  tblock_end < KB_BASE    ; the block, in page 0, below the
+                                        ; boot image's place
 
 ; Everything above runs, or is read, while a driver call or an inter-slot
 ; call may have switched page 1 away, so it stays in page 0; the two images
@@ -1243,5 +1250,8 @@ kimage_end:
 ksimage:
         incbin  "build/kseg.bin"
 ksimage_end:
-        ASSERT  ksimage_end < 8000h     ; the resident copies it from pages 0-1
+kbimage:
+        incbin  "build/kboot.bin"
+kbimage_end:
+        ASSERT  kbimage_end < 8000h     ; the resident copies it from pages 0-1
 

@@ -9,22 +9,24 @@
 ; here may be reached once k_main has jumped on: the routines are k_main
 ; itself and what it calls once and nothing else calls — the interrupt
 ; vector, the font moved to where the console keeps it, mapper detection
-; and the allocator's tables, the loading of the switched part, and the
-; boot failure. The console's and the keyboard's
+; and the allocator's tables, the loading of the switched part and of
+; the boot image, and the boot failure. The console's and the keyboard's
 ; set-up stay resident: the exit of an MSX-DOS program runs them again
-; (k_dos_check, dos.asm). The scheduler's first row and the release of the
-; loader's pages run in the switched part (KS_BOOT, ks_boot.asm). The image
+; (k_dos_check, dos.asm). What else runs once runs from the boot image
+; (kboot.asm), and the release of the loader's pages from the switched
+; part (KS_BOOT, ks_boot.asm). The image
 ; is copied as a whole by every loader, so no loader knows the overlay
 ; exists; the block that closes it in kernel.asm fails the build past 1024
 ; bytes.
 
 ; k_main — the boot sequence, once the loader has jumped here with the
 ; record filled: the interrupt vector, the console — the VDP programmed
-; for 80 columns — the keyboard, memory, the switched part of the kernel;
-; then, through the window, the process table with the kernel as process
-; 0 and the loader's memory released (KS_BOOT), the storage enumerated
-; and listed and the cache emptied, the summary of the memory printed.
-; Then, if the record names an address, jump there — a program in the
+; for 80 columns — the keyboard, memory, the switched part of the kernel
+; and the boot image; then the boot image, under the storage gate — the
+; process table with the kernel as process 0, the storage enumerated and
+; listed and the cache emptied, the summary of the memory and the boot
+; time printed — and, through the window, the loader's memory released
+; (KS_BOOT). Then, if the record names an address, jump there — a program in the
 ; loader's page 0 or 1, which KS_BOOT kept as process 0's, so it runs as
 ; process 0 where it lies — else k_init (main.asm). Without a switched
 ; image there is no scheduler and no storage: the record's address, or
@@ -54,12 +56,12 @@ k_main:
         ld      a,(K_KSEG)
         or      a
         jr      z,.nokseg               ; no switched part: no scheduler,
-        kwin_call KS_BOOT               ; no storage, no summary
-        kwin_call_s KS_BLK_INIT
-        kwin_call_s KS_CACHE_INIT
-        ld      a,(K_BLK_ROOT)          ; process 0 starts in /
-        ld      (K_PROC+P_CWD),a
-        kwin_call KS_SUMMARY
+        call    kboot_load              ; no storage, no summary
+        jp      nz,k_boot_fail
+        k_stgate_enter                  ; the storage segment in page 1,
+        call    KB_BASE                 ; the boot image in page 0
+        k_stgate_leave
+        kwin_call KS_BOOT               ; the loader's pages released
 .nokseg:
         ld      hl,(K_REC+KR_TEST)
         ld      a,h
@@ -389,6 +391,42 @@ kwin_load:
         ret
 .noseg: ld      a,0F5h
         or      a
+        ret
+
+; kboot_load — copy the boot image from where the record says to KB_BASE,
+; in the loader's page 0. Out: Z if done, or if it is already there
+; (KR_BOOT_SRC = KB_BASE, which is how a ROM delivers it); NZ with A =
+; 0F6h when there is none, the source is not in page 1, or the length is
+; not 1 to KB_MAX. The source must be in page 1 so that it lies above the
+; destination: a forward ldir then never overwrites a byte it has not
+; read. Corrupts AF, BC, DE, HL.
+kboot_load:
+        ld      hl,(K_REC+KR_BOOT_SRC)
+        ld      de,KB_BASE
+        or      a
+        sbc     hl,de
+        ret     z                       ; in place already
+        add     hl,de
+        ld      a,h
+        and     0C0h
+        cp      40h
+        jr      nz,.bad                 ; not in page 1 (none: 0000h)
+        ld      bc,(K_REC+KR_BOOT_LEN)
+        ld      a,b
+        or      c
+        jr      z,.bad                  ; empty
+        ld      a,b
+        cp      high KB_MAX
+        jr      c,.fits
+        jr      nz,.bad                 ; above KB_MAX
+        ld      a,c
+        or      a
+        jr      nz,.bad
+.fits:  ldir
+        xor     a                       ; Z
+        ret
+.bad:   ld      a,0F6h
+        or      a                       ; NZ
         ret
 
 ; vdp_move_font — A = the previous system's R#4: copy the 2048-byte font

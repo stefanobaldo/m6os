@@ -20,9 +20,10 @@ OPENMSX   := $(if $(wildcard .tools/openmsx/bin/openmsx),.tools/openmsx/bin/open
 # modules from src/ (the build passes -Isrc); every src/ file is a prerequisite
 # of every test binary, so a module edit rebuilds the tests that include it.
 # The resident kernel image, src/kernel/kernel.asm, builds to build/kernel.bin
-# at its own address, and the switched part, src/kernel/kseg.asm, to
-# build/kseg.bin; a test that loads them includes both binaries and the
-# resident's exported labels.
+# at its own address, the switched part, src/kernel/kseg.asm, to
+# build/kseg.bin, and the boot image, src/kernel/kboot.asm, to
+# build/kboot.bin; a test that loads them includes the three binaries and
+# the resident's exported labels.
 # A test directory holding a `product` marker boots the product,
 # build/m6.com, instead of a program of its own.
 PRODUCT_TESTS := $(notdir $(patsubst %/,%,$(dir $(wildcard tests/*/product))))
@@ -36,6 +37,9 @@ PROG_SRCS := $(wildcard tests/*/progs/*.asm)
 PROG_BINS := $(foreach p,$(PROG_SRCS),build/$(word 2,$(subst /, ,$(p))).progs/$(basename $(notdir $(p))))
 KERNEL    := build/kernel.bin
 KSEG      := build/kseg.bin
+# The boot image, src/kernel/kboot.asm: what runs once at boot, carried by
+# every loader beside the other two and run from the loader's page 0.
+KBOOT     := build/kboot.bin
 # The legacy layer, src/leg/leg.asm: what a .COM program finds above its
 # TPA, and the layer's body, which lives outside it — two images from one
 # source, both carried inside build/bin/dos.
@@ -63,7 +67,7 @@ INCLUDES  := -Itests $(if $(wildcard src),-Isrc)
 
 .PHONY: all check check-sjasmplus check-openmsx check-tools fetch sizes clean distclean
 
-all: check-sjasmplus $(KERNEL) $(KSEG) $(LEG) $(M6COM) $(BIN_BINS) $(TEST_BINS) $(PROG_BINS) sizes
+all: check-sjasmplus $(KERNEL) $(KSEG) $(KBOOT) $(LEG) $(M6COM) $(BIN_BINS) $(TEST_BINS) $(PROG_BINS) sizes
 
 build:
 	mkdir -p build
@@ -77,6 +81,12 @@ $(KERNEL): src/kernel/kernel.asm tests/m6test.inc $(SRC_FILES) | build
 # a loader carries it and the resident copies it into a segment at boot.
 $(KSEG): src/kernel/kseg.asm $(SRC_FILES) | build
 	$(SJASMPLUS) --nologo --msg=war $(INCLUDES) --raw=$@ --lst=build/kseg.lst $<
+
+# The boot image, src/kernel/kboot.asm, at KB_BASE: a loader carries it and
+# the resident copies it into the loader's page 0 at boot. The source's own
+# assertion keeps it under its 4K ceiling.
+$(KBOOT): src/kernel/kboot.asm $(SRC_FILES) | build
+	$(SJASMPLUS) --nologo --msg=war $(INCLUDES) --raw=$@ --lst=build/kboot.lst $<
 
 # The layer: two raw images, written by the source's own OUTPUT lines —
 # build/leg.bin at LEG_BASE and build/legb.bin, the body, at LEG_BODY. The
@@ -92,7 +102,7 @@ build/bin/dos: $(LEG) $(LEGB)
 # A pattern rule cannot say tests/%/%.asm (only the first % is the stem), so
 # one explicit rule is generated per test.
 define test_rule
-build/$(1).com: tests/$(1)/$(1).asm tests/m6test.inc $$(SRC_FILES) $$(KERNEL) $$(KSEG) | build
+build/$(1).com: tests/$(1)/$(1).asm tests/m6test.inc $$(SRC_FILES) $$(KERNEL) $$(KSEG) $$(KBOOT) | build
 	$$(SJASMPLUS) --nologo --msg=war $$(INCLUDES) --raw=$$@ --lst=build/$(1).lst $$<
 endef
 $(foreach t,$(TESTS),$(eval $(call test_rule,$(t))))
@@ -105,7 +115,7 @@ build/$(1).progs/$(2): tests/$(1)/progs/$(2).asm tests/m6prog.inc $$(SRC_FILES) 
 endef
 $(foreach p,$(PROG_SRCS),$(eval $(call prog_rule,$(word 2,$(subst /, ,$(p))),$(basename $(notdir $(p))))))
 
-$(M6COM): src/loader/m6.asm $(SRC_FILES) src/version.inc $(KERNEL) $(KSEG) | build
+$(M6COM): src/loader/m6.asm $(SRC_FILES) src/version.inc $(KERNEL) $(KSEG) $(KBOOT) | build
 	$(SJASMPLUS) --nologo --msg=war $(INCLUDES) --raw=$@ --lst=build/m6.lst $<
 
 # One rule per utility, with the one-page check.
@@ -121,11 +131,12 @@ $(foreach b,$(patsubst src/bin/%.asm,%,$(BIN_SRCS)),$(eval $(call bin_rule,$(b))
 # One line per binary, "SIZE <name> <bytes>": what the build reports today
 # and what size limits are later checked against. kernel.bin is the resident
 # image, the number the 16K target is measured against; kseg.bin the
-# switched part, against the window's 16K. Then "ROOM kernel <bytes>": what
+# switched part, against the window's 16K; kboot.bin the boot image,
+# against its 4K. Then "ROOM kernel <bytes>": what
 # the resident leaves below the address it must end under, read from the
 # labels the image exports.
-sizes: $(KERNEL) $(KSEG) $(LEG) $(M6COM) $(BIN_BINS) $(TEST_BINS) $(PROG_BINS)
-	@for f in $(KERNEL) $(KSEG) $(LEG) $(LEGB) $(M6COM) $(BIN_BINS) $(TEST_BINS) $(PROG_BINS); do \
+sizes: $(KERNEL) $(KSEG) $(KBOOT) $(LEG) $(M6COM) $(BIN_BINS) $(TEST_BINS) $(PROG_BINS)
+	@for f in $(KERNEL) $(KSEG) $(KBOOT) $(LEG) $(LEGB) $(M6COM) $(BIN_BINS) $(TEST_BINS) $(PROG_BINS); do \
 	    printf 'SIZE %s %s\n' "$$(basename $$f)" "$$(wc -c < $$f | tr -d ' ')"; \
 	done
 	@roof=$$(sed -n 's/^K_IMAGE_ROOF: EQU 0x0*\([0-9A-Fa-f]*\)$$/\1/p' build/kernel.exp); \

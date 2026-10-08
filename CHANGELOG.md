@@ -179,6 +179,9 @@ to install.
   alive. See [`docs/dos.md`](docs/dos.md).
 - `ftruncate`: a file open for writing cut to a size, or grown to one
   with zeros.
+- The boot summary ends with the boot time — `boot: 346 ticks` — in 60 Hz
+  ticks since power-on, the Nextor boot that came before included, so a
+  boot can be timed by reading the screen.
 
 ### Fixed
 
