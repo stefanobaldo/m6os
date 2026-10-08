@@ -55,7 +55,7 @@ proc post_verdict {} {
     set fh [open $path rb]
     set got [read $fh]
     close $fh
-    if {$got ne "mode2\n"} { return "/boot2 holds \"[string map {\n \\n} $got]\", not \"mode2\\n\"" }
+    if {$got ne "nextor\n"} { return "/boot2 holds \"[string map {\n \\n} $got]\", not \"nextor\\n\"" }
     puts stderr "harness: $::test: /boot2 holds what the script wrote"
     return ""
 }
