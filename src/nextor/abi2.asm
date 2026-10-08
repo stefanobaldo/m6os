@@ -29,8 +29,10 @@
 nx_find:
         push    ix
         push    hl
+        push    ix                      ; the kernel's F37Dh entry corrupts IX
         ld      c,NX_GDLI
         call    BDOS
+        pop     ix
         pop     hl
         or      a
         jp      nz,.done
@@ -67,7 +69,9 @@ nx_find:
         ld      e,0FFh                  ; a driver embedded in the kernel ROM
         xor     a                       ; by slot and segment, not by index
         ld      c,NX_GDRVR
+        push    ix
         call    BDOS
+        pop     ix
         pop     hl
         or      a
         jr      nz,.pop2
