@@ -1228,7 +1228,8 @@ t_t1:       dw  0
 t_row:      dw  0
 t_prog:     dw  0
 t_pi:       ds  PROCINFO_SIZE
-t_buf:      ds  64
+t_buf       equ KT_BUF_A            ; 64 used, in the storage segment's
+                                        ; test area: the block has no room
 t_buf256:   ds  1
 tblock_end:
         ASSERT  $ < 8000h

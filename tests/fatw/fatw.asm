@@ -1541,7 +1541,8 @@ t_len:      dw  0
 t_calls:    dw  0
 t_seen:     ds  8
 t_rec:      ds  DIRENT_SIZE
-t_buf:      ds  512
+t_buf       equ KT_BUF_A            ; 512, in the storage segment's test
+                                        ; area: the block has no room for it
 
 ; The user programs, assembled for P0_PROG and copied there by spawn.
     macro u_image name
