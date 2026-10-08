@@ -40,6 +40,27 @@ start:
         ld      (nb_sp),sp              ; the kernel's stack, for the stub
         ld      sp,KT_LSTACK            ; page 2: the kernel's stack dies
                                         ; in the takeover
+        ; Page 1's slot, the kernel ROM's, for the stub's Disk BASIC:
+        ; ld_tail gives page 1 its RAM and nothing gives it back.
+        in      a,(PPI_A)
+        rrca
+        rrca
+        and     3
+        ld      c,a                     ; the primary slot
+        ld      b,0
+        ld      hl,B_EXPTBL
+        add     hl,bc
+        bit     7,(hl)
+        jr      z,.slot1
+        ld      hl,B_SLTTBL
+        add     hl,bc
+        ld      a,(hl)
+        and     0Ch                     ; page 1's secondary slot
+        or      c
+        or      80h
+        ld      c,a
+.slot1: ld      a,c
+        ld      (nb_slot1),a
         ; ESC held: Nextor. Row 7 of the matrix, bit 2, read with
         ; interrupts off because the BIOS's tick rewrites the row select.
         di
@@ -162,6 +183,8 @@ chain:
         ldir
         ld      hl,(nb_sp)
         ld      (st_sp),hl              ; into the copy
+        ld      a,(nb_slot1)
+        ld      (st_slot1),a
         jp      KT_CHAIN
 stub:
         DISP    KT_CHAIN
@@ -187,9 +210,13 @@ stub:
         jr      nz,.basic
         ld      sp,(st_sp)
         jp      100h
-.basic: jp      NB_BASIC
+.basic: ld      a,(st_slot1)            ; the kernel ROM, wherever
+        ld      h,40h                   ; page 1 was left
+        call    ENASLT
+        jp      NB_BASIC
 st_fh:  db      0
 st_sp:  dw      0
+st_slot1: db    0
 s_msxdos2: db   '\MSXDOS2.SYS',0
         ENT
 stub_end:
@@ -204,6 +231,7 @@ s_fail:     db  "m6: boot failed, code $"
 s_chain:    db  "m6: loading Nextor",13,10,'$'
 s_self:     db  '\NEXTOR.SYS',0
 nb_sp:      dw  0
+nb_slot1:   db  0
 nb_fh:      db  0
 REC:        ds  KREC_SIZE
 
