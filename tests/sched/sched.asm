@@ -43,6 +43,8 @@ T_ELAPSED_MAX equ 90            ; interleaved, not one after the other
         org     100h
 
 start:
+        ld      hl,(B_JIFFY)            ; the boot's clock, before anything
+        ld      (REC+KR_JIFFY),hl
         ld      sp,KT_LSTACK            ; page 2: the DOS stack dies in the
                                         ; takeover
         ld      a,DBG_ASCII
@@ -128,6 +130,10 @@ start:
         ld      (REC+KR_KSEG_SRC),hl
         ld      hl,ksimage_end-ksimage
         ld      (REC+KR_KSEG_LEN),hl
+        ld      hl,kbimage
+        ld      (REC+KR_BOOT_SRC),hl
+        ld      hl,kbimage_end-kbimage
+        ld      (REC+KR_BOOT_LEN),hl
         call    ld_takeover
         jp      fail                    ; it returns only with A = F3h
 
@@ -274,6 +280,9 @@ kimage_end:
 ksimage:
         incbin  "build/kseg.bin"
 ksimage_end:
+kbimage:
+        incbin  "build/kboot.bin"
+kbimage_end:
 
 
 ; The second half, in page 1 of the loader's memory, which the kernel

@@ -253,6 +253,7 @@ sched_resume:
         reti
 
 ; k_cur, k_pid and k_nrun are in the header (K_CUR, K_PID, K_NRUN), where
-; the switched part reads and, at boot, writes them (ks_boot.asm).
+; the switched part reads them and the boot image writes them first
+; (kboot.asm, sched_init).
 k_owed:         db 0            ; the current process owes a switch: a tick
                                 ; found it in the kernel with k_nrun >= 2

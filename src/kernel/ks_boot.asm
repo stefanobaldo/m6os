@@ -2,66 +2,16 @@
 ; Copyright (c) 2026 Stefano Baldo
 ; SPDX-License-Identifier: BSD-3-Clause
 ;
-; The boot's tail, in the switched part: the scheduler's first row and the
-; release of the loader's pages, run once by k_main through the window as
-; soon as the switched image is loaded (KS_BOOT, ks_boot). Both write the
-; header's fields only — K_PROC, K_FD, K_PX, K_MAP, K_CUR, K_PID, K_NRUN —
-; and reach the allocator's two boot-time entries through K_API2, so they
-; depend on the contract and not on the resident's layout; nothing here is
-; needed again, which is why it is not resident.
-
-ks_boot:
-        call    sched_init
-        jp      sched_release_boot
-
-; sched_init — row 0 and the scalars, before anything runs. Corrupts
-; everything. Reached through KS_BOOT.
-sched_init:
-        ld      hl,K_PROC
-        ld      (hl),PS_FREE
-        ld      de,K_PROC+1
-        ld      bc,NPROC*P_SIZE-1
-        ldir
-        ld      hl,K_PROC
-        ld      (hl),PS_RUN             ; process 0: runnable, pid 0, a
-        ld      (K_CUR),hl              ; ring of one
-        ld      a,low K_PROC
-        ld      (K_PROC+P_NEXT),a
-        ld      hl,0
-        ld      (K_PID),hl
-        ld      a,1
-        ld      (K_NRUN),a
-        ld      a,PP_NONE
-        ld      (K_PROC+P_PPID),a
-        ld      hl,K_MAP                ; its pages: what is mapped now,
-        ld      de,K_PROC+P_SEG         ; until sched_release_boot
-        ld      bc,3
-        ldir
-        ; Every descriptor closed, then process 0's three: the keyboard on
-        ; 0, the console on 1 and 2.
-        ld      hl,K_FD
-        ld      (hl),FD_NONE
-        ld      de,K_FD+1
-        ld      bc,NPROC*NOFILE-1
-        ldir
-        ld      a,FD_KBD
-        ld      (K_FD+0),a
-        ld      a,FD_CON
-        ld      (K_FD+1),a
-        ld      (K_FD+2),a
-        ; The extension table: zero, every row waiting on no pipe.
-        ld      hl,K_PX
-        ld      b,NPROC
-.px:    ld      (hl),0FFh               ; PX_WCHAN
-        inc     hl
-        xor     a
-        ld      c,PX_SIZE-1
-.pxz:   ld      (hl),a
-        inc     hl
-        dec     c
-        jr      nz,.pxz
-        djnz    .px
-        ret
+; The boot's tail, in the switched part: the release of the loader's
+; pages, run once by k_main through the window after the boot image has
+; run (KS_BOOT, sched_release_boot). It remaps page 0 under its caller,
+; which is why it runs from here, called from page 3, and not from the
+; boot image in page 0. It writes the header's fields only — K_PROC,
+; K_MAP — and reaches the allocator's two boot-time entries through
+; K_API2, so it depends on the contract and not on the resident's
+; layout; nothing here is needed again, which is why it is not resident.
+; The scheduler's first row, which used to precede it here, is the boot
+; image's (kboot.asm, sched_init).
 
 ; sched_release_boot — once the switched image is loaded: the boot
 ; segments of pages 0 and 1 go to the allocator, the boot segment of page

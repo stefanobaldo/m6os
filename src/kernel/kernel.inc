@@ -507,9 +507,9 @@ E_NAMETOOLONG   equ 63          ; Linux's number, as ENOSYS
 ; only — it may be a ROM bank.
 KS_BASE         equ 8000h
 KS_SYSCONF      equ KS_BASE+0   ; the body of SYS_SYSCONF
-KS_SUMMARY      equ KS_BASE+3   ; the boot summary of the memory
-KS_BLK_INIT     equ KS_BASE+6   ; the enumeration and the listing (ks_blk.asm)
-KS_CACHE_INIT   equ KS_BASE+9   ; every buffer free
+KS_SUMMARY      equ KS_BASE+3   ; E_NOSYS: the boot image's
+KS_BLK_INIT     equ KS_BASE+6   ; E_NOSYS: the boot image's
+KS_CACHE_INIT   equ KS_BASE+9   ; E_NOSYS: the boot image's
 KS_BGET         equ KS_BASE+12  ; the cache's entries, as API_B* say
 KS_BWRITE       equ KS_BASE+15
 KS_BDROP        equ KS_BASE+18
@@ -517,8 +517,18 @@ KS_BINVAL       equ KS_BASE+21
 KS_BREAD_DIRECT equ KS_BASE+24
 KS_BWRITE_DIRECT equ KS_BASE+27
 KS_RTC_READ     equ KS_BASE+30
-KS_BOOT         equ KS_BASE+33  ; the scheduler's first row and the boot
-                                ; pages released (ks_boot.asm), once
+KS_BOOT         equ KS_BASE+33  ; the loader's pages released, after the
+                                ; boot image has run (ks_boot.asm)
+; The boot image (kboot.asm): what runs once, assembled at KB_BASE in the
+; loader's page 0, where k_main copies it from where the record says
+; (KR_BOOT_SRC, KR_BOOT_LEN) and calls its first byte under the storage
+; gate, the window closed. KB_MAX is its ceiling: 3000h-3FFFh is dead in
+; every loader by then — the resident's source or the switched image's,
+; both copied already — and a loader's own code and page-0 blocks stay
+; below KB_BASE.
+KB_BASE         equ 3000h
+KB_MAX          equ 1000h
+
 ; The table's first part ends before the interrupt entry at KS_BASE+0038h;
 ; it continues after the subslot stub, from KS_TABLE2.
 KS_TABLE2       equ KS_BASE+K_SSLOT+K_SSLOT_LEN
@@ -701,7 +711,14 @@ KR_DRVS         equ 73          ; 4 x (slot, bank): the device-based Nextor
                                 ; drivers with a valid header, in _GDRVR
                                 ; order; the block layer's driver index
                                 ; 0-3 is the position here
-KREC_SIZE       equ 81
+KR_BOOT_SRC     equ 81          ; 2: where the boot image is: in page 1 of
+                                ;    the loader's memory, or KB_BASE when
+                                ;    it is already in place; 0 = none
+KR_BOOT_LEN     equ 83          ; 2: its length, 1 to KB_MAX
+KR_JIFFY        equ 85          ; 2: JIFFY as the loader found it on entry,
+                                ;    60 Hz ticks since power-on: the boot
+                                ;    time is this plus K_TICKS
+KREC_SIZE       equ 87
 
 ; Memory (mem.asm). Owners in the segment table; the mapper table's layout.
 MEM_FREE        equ 0           ; owner: nobody
@@ -765,6 +782,22 @@ ST_ARGV         equ 1200h       ; ARGV_MAX: exec's argument block, gathered
 ST_BUF          equ 1400h       ; BUF_N sector buffers of 512
 BUF_N           equ 22
 BUF_SCRATCH     equ 21          ; the enumeration's buffer at boot
+; Where the switched image and the boot image see the storage segment:
+; page 1, under the storage gate.
+SG              equ 4000h               ; the storage segment, from here
+SG_INFO         equ SG+ST_INFO
+SG_HDR          equ SG+ST_HDR
+SG_BUF          equ SG+ST_BUF
+SG_SCRATCH      equ SG_BUF+BUF_SCRATCH*512 ; where blk_dev_rw reads to
+SLOT_BUF0       equ ST_BUF/256          ; the slot of buffer 0; a buffer is
+                                        ; two slots
+SG_MNT          equ SG+ST_MNT
+MBR_TABLE       equ 1BEh                ; the partition table in an MBR/EBR
+PE_TYPE         equ 4                   ; a partition entry: the type byte
+PE_FIRST        equ 8                   ; 4: first sector, relative
+PE_COUNT        equ 12                  ; 4: sectors
+PT_EXTENDED     equ 05h
+PT_EXTENDED_LBA equ 0Fh
 H_VOL           equ 0           ; a header: the volume; FFh = free
 H_SEC           equ 1           ; 4: the sector
 H_AGE           equ 5           ; the clock's value at the last touch
