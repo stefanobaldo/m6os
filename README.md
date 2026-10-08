@@ -32,6 +32,17 @@ loader prints its version, takes the machine over, lists the volumes it
 mounts and the memory it finds, runs `/etc/rc` if there is one, and gives
 you a shell. `M6 mem=128` caps the memory at 128K on a larger machine.
 
+The other way is one file in place of Nextor's own: rename the card's
+`NEXTOR.SYS` to `MSXDOS2.SYS` and put m6's `NEXTOR.SYS` — `make` builds
+it as `build/nextor.sys` — in its place, with `BIN/` and `ETC/RC` as
+above. The Nextor kernel in the cartridge then loads m6 directly, with
+nothing of the MSX-DOS 2 layer in between, and the boot is shorter by
+that much. To get Nextor back, hold ESC while the machine boots, or type
+`CALL SYSTEM2` at the Disk BASIC prompt: either loads `MSXDOS2.SYS`, as
+the kernel itself would if m6's file were not there. A boot that fails
+prints its code and loads Nextor the same way. This way takes no
+arguments; `mem=` is `M6.COM`'s.
+
 An MSX-DOS 2 program on the card runs with `dos name.com`, or by its name
 alone when it ends in `.com`, and hands the machine back when it ends:
 [`docs/dos.md`](docs/dos.md) says what it finds.
