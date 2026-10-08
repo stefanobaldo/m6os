@@ -494,7 +494,55 @@ t_entry:
         ld      a,0E7h
         jp      c,t_fail                ; fewer than 64 bytes untouched
 
-; --- step 12: verdict ------------------------------------------------------
+; --- step 12: the gate's stack switch --------------------------------------
+; A three-page process moves its stack into page 2 to 128 bytes below
+; the switched image's end — its natural BFFEh is above the image now
+; that the image has room, and a push there changes nothing the
+; comparison can see — and makes 512 switched calls from it, ~50 ms, so
+; ticks land inside the window too; then the switched image is compared
+; with its source. With the gate's stack switch the image is
+; byte-identical; without it the gate's call, the body's pushes and the
+; handler's frame land in the image. The image is process 0's page 0 here; of
+; its source, ksimage in this file, the part from 4000h on is still in
+; the loader's page 1, which the kernel kept for this block — the upper
+; half of the image, where a stack at BFFEh pushes.
+        ld      a,12
+        ld      (t_step),a
+        ld      hl,t_k12
+        k_call  API_CON_PUTS
+        ld      hl,u_burst
+        ld      bc,u_burst_end-u_burst
+        ld      a,3
+        call    t_run
+        cp      7
+        ld      c,a
+        ld      a,0E8h
+        jp      nz,t_fail_status
+        ASSERT  ksimage_end-ksimage > 4000h-ksimage+128 ; the burst's stack
+                                        ; lies in the compared half
+        ld      hl,4000h-ksimage        ; the image, in page 0: the first
+                                        ; offset whose source is in page 1
+        ld      de,4000h                ; the source, in page 1
+        ld      bc,ksimage_end-4000h
+.cmp:   ld      a,(de)
+        cpi
+        jr      nz,.diff
+        inc     de
+        jp      pe,.cmp
+        ld      hl,t_k12b
+        k_call  API_CON_PUTS
+        jr      .verdict
+.diff:  dec     hl
+        push    hl
+        ld      hl,t_k12c
+        k_call  API_CON_PUTS
+        pop     hl
+        k_call  API_CON_HEX16
+        ld      a,0E8h
+        jp      t_fail
+
+; --- step 13: verdict ------------------------------------------------------
+.verdict:
         ld      hl,t_pass
         k_call  API_CON_PUTS
         m6_verdict M6_PASS
@@ -616,6 +664,9 @@ t_k10b:     db  "   resident: ",0
 t_k10c:     db  "   switched: ",0
 t_k11:      db  "11 kernel stack: ",0
 t_k11b:     db  " bytes untouched",10,0
+t_k12:      db  "12 gate stack: ",0
+t_k12b:     db  "image intact",10,0
+t_k12c:     db  "image changed at ",0
 t_ticks:    db  " ticks = ",0
 t_us:       db  " us",10,0
 t_pass:     db  "PASS",10,0
@@ -748,6 +799,41 @@ u_stack3_k:
 u_stack3_k_end:
 u_stack3      equ u_stack3_k
 u_stack3_end  equ u_stack3+(u_stack3_k_end-u_stack3_k)
+
+; u_burst — three pages: the stack moved to 128 bytes below the switched
+; image's end, in page 2, then 512 switched calls and exit(7). Status 1:
+; the stack did not start in page 2; 2: a call failed.
+u_burst_k:
+        DISP    P0_PROG
+        ld      hl,0
+        add     hl,sp
+        ld      a,h
+        cp      0BFh
+        jr      nz,.s1
+        ld      sp,8000h+(ksimage_end-ksimage)-128 ; inside the image
+        ld      b,2
+.outer: push    bc
+        ld      c,0                     ; 256 calls
+.inner: push    bc
+        ld      hl,SC_PAGESIZE
+        sys     SYS_SYSCONF
+        pop     bc
+        jr      c,.s2
+        dec     c
+        jr      nz,.inner
+        pop     bc
+        djnz    .outer
+        ld      a,7
+        sys     SYS_EXIT
+.s1:    ld      a,1
+        sys     SYS_EXIT
+.s2:    pop     bc
+        ld      a,2
+        sys     SYS_EXIT
+        ENT
+u_burst_k_end:
+u_burst      equ u_burst_k
+u_burst_end  equ u_burst+(u_burst_k_end-u_burst_k)
 
 ; The three timing loops: T_ITER iterations of push bc, sixteen argument
 ; loads, sixteen calls or none, pop bc. The push and pop are there because
