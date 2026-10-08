@@ -26,6 +26,7 @@ to install.
   kernel ROM directly and boots m6 without the MSX-DOS 2 layer or `M6.COM`.
   ESC held while the machine boots, or `CALL SYSTEM2` from Disk BASIC,
   loads Nextor instead; so does a boot that fails, after printing its code.
+  Without `MSXDOS2.SYS` on the card, either ends at the Disk BASIC prompt.
 - Memory. The kernel finds every memory mapper in the machine and allocates 16K
   segments of the one it runs in, never handing out a segment that does not
   exist or was already in use when it started. A `mem=<K>` argument caps the
