@@ -54,8 +54,11 @@ LEGB      := build/legb.bin
 BIN_SRCS  := $(wildcard src/bin/*.asm)
 BIN_BINS  := $(patsubst src/bin/%.asm,build/bin/%,$(BIN_SRCS))
 PAGE_MAX  := 16102
-# The product: src/loader/m6.asm with both kernel images embedded.
+# The product, with the three kernel images embedded: src/loader/m6.asm,
+# run under Nextor as M6.COM, and src/loader/nextor.asm, loaded by the
+# Nextor kernel ROM as NEXTOR.SYS in place of Nextor's own.
 M6COM     := build/m6.com
+NEXTORSYS := build/nextor.sys
 SRC_FILES := $(wildcard src/*.inc src/*/*.asm src/*/*.inc)
 # sjasmplus rejects an include path that does not exist, so -Isrc is passed
 # only once there is a src/ to point at.
@@ -67,7 +70,7 @@ INCLUDES  := -Itests $(if $(wildcard src),-Isrc)
 
 .PHONY: all check check-sjasmplus check-openmsx check-tools fetch sizes clean distclean
 
-all: check-sjasmplus $(KERNEL) $(KSEG) $(KBOOT) $(LEG) $(M6COM) $(BIN_BINS) $(TEST_BINS) $(PROG_BINS) sizes
+all: check-sjasmplus $(KERNEL) $(KSEG) $(KBOOT) $(LEG) $(M6COM) $(NEXTORSYS) $(BIN_BINS) $(TEST_BINS) $(PROG_BINS) sizes
 
 build:
 	mkdir -p build
@@ -118,6 +121,9 @@ $(foreach p,$(PROG_SRCS),$(eval $(call prog_rule,$(word 2,$(subst /, ,$(p))),$(b
 $(M6COM): src/loader/m6.asm $(SRC_FILES) src/version.inc $(KERNEL) $(KSEG) $(KBOOT) | build
 	$(SJASMPLUS) --nologo --msg=war $(INCLUDES) --raw=$@ --lst=build/m6.lst $<
 
+$(NEXTORSYS): src/loader/nextor.asm $(SRC_FILES) src/version.inc $(KERNEL) $(KSEG) $(KBOOT) | build
+	$(SJASMPLUS) --nologo --msg=war $(INCLUDES) --raw=$@ --lst=build/nextor.lst $<
+
 # One rule per utility, with the one-page check.
 define bin_rule
 build/bin/$(1): src/bin/$(1).asm $$(SRC_FILES) | build
@@ -135,8 +141,8 @@ $(foreach b,$(patsubst src/bin/%.asm,%,$(BIN_SRCS)),$(eval $(call bin_rule,$(b))
 # against its 4K. Then "ROOM kernel <bytes>": what
 # the resident leaves below the address it must end under, read from the
 # labels the image exports.
-sizes: $(KERNEL) $(KSEG) $(KBOOT) $(LEG) $(M6COM) $(BIN_BINS) $(TEST_BINS) $(PROG_BINS)
-	@for f in $(KERNEL) $(KSEG) $(KBOOT) $(LEG) $(LEGB) $(M6COM) $(BIN_BINS) $(TEST_BINS) $(PROG_BINS); do \
+sizes: $(KERNEL) $(KSEG) $(KBOOT) $(LEG) $(M6COM) $(NEXTORSYS) $(BIN_BINS) $(TEST_BINS) $(PROG_BINS)
+	@for f in $(KERNEL) $(KSEG) $(KBOOT) $(LEG) $(LEGB) $(M6COM) $(NEXTORSYS) $(BIN_BINS) $(TEST_BINS) $(PROG_BINS); do \
 	    printf 'SIZE %s %s\n' "$$(basename $$f)" "$$(wc -c < $$f | tr -d ' ')"; \
 	done
 	@roof=$$(sed -n 's/^K_IMAGE_ROOF: EQU 0x0*\([0-9A-Fa-f]*\)$$/\1/p' build/kernel.exp); \
