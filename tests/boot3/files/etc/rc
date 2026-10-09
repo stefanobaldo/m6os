@@ -1,0 +1,4 @@
+# The kernel ROM product test's script: one file written, and the line the
+# harness waits for.
+echo rom > /boot3
+echo rc done
