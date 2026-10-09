@@ -12,6 +12,18 @@
 NX_K_SIZE       equ 40FEh       ; number of kernel banks = the driver's bank
 NX_CUR_BANK     equ 40FFh       ; bank currently visible in page 1
 NX_CHGBNK       equ 7FD0h       ; A = bank; makes it visible; corrupts AF
+; The entries a driver calls in that page, which a kernel ROM of m6's
+; must serve at the same addresses (bank0/doshead.mac; guide §4.2):
+NX_GSLOT1       equ 402Dh       ; A = the slot of page 1
+NX_RDBANK       equ 403Ch       ; ld a,(hl) / ret, run in the bank it reads
+NX_CALLB0       equ 403Fh       ; call a bank-0 routine: not served by m6
+NX_CALBNK       equ 4042h       ; A = bank, IX = routine: call it there
+NX_GWORK        equ 4045h       ; A = slot or 0 -> IX = its SLTWRK entry
+NX_CALBNK_BODY  equ 40C7h       ; where CALBNK's jp lands; its bytes from
+                                ; 40DBh to 40E1h run in the bank called
+NX_INIT         equ 40F6h       ; the cartridge INIT of a Nextor bank
+NX_DRV_INIT     equ 4136h       ; A = 0: HL = work area size, Cy = TIMI;
+                                ; A = 1: initialise the hardware
 
 ; The driver header and jump table, in the driver bank.
 NX_DRV_SIGN     equ 4100h       ; "NEXTOR_DRIVER",0
