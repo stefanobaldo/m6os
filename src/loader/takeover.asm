@@ -16,6 +16,12 @@
 ;                 KR_TEST names then lies in the program's own page 1,
 ;                 which the kernel keeps as process 0's, and runs in place
 ;
+; A program that has already put the resident at K_BASE — the kernel ROM,
+; which copies it there itself before page 1 becomes RAM — says DEFINE
+; LD_IMAGE_IN_PLACE before including this file and sets ld_image to
+; K_BASE: the fit check reads the image's end from the header where it
+; lies, and the copy is left out.
+;
 ; Both expect a stack outside page 3 (the DOS stack sits under DOSHIM,
 ; which the takeover overwrites) and interrupts enabled on entry.
 
@@ -88,6 +94,7 @@ ld_takeover:
         ld      de,B_FCALL
         ld      bc,5
         ldir
+    IFNDEF LD_IMAGE_IN_PLACE
         ld      hl,(ld_image+K_END-K_BASE)
         ld      de,K_BASE
         or      a
@@ -97,6 +104,7 @@ ld_takeover:
         ld      hl,ld_image             ; the resident
         ld      de,K_BASE
         ldir
+    ENDIF
         ld      bc,ld_block_len
         ld      a,b
         or      c

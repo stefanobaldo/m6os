@@ -9,8 +9,10 @@
 ;
 ; In:  IX -> KREC_SIZE-byte record. Fills every field except KR_DRV,
 ;      KR_FIRST, KR_TARGET and KR_TPRE, which the caller fills. Uses
-;      KT_SCRATCH for the _GDRVR blocks, and nx_header (abi2.asm, which
-;      the including file includes first).
+;      KT_SCRATCH for the _GDRVR blocks, nx_header (abi2.asm, which the
+;      including file includes first) and nx_capture_bios (capbios.asm,
+;      the half that reads the BIOS alone, included at the end of this
+;      file; a loader with no Nextor under it includes that file alone).
 ; Out: interrupts enabled. Corrupts everything but IX.
 ;
 ; The wall — the lowest page-3 address a driver still refers to — comes
@@ -115,53 +117,7 @@ nx_capture:
         djnz    .slot
         ld      (ix+KR_WALL),l
         ld      (ix+KR_WALL+1),h
-        ; The VDP ports, from the main ROM.
-        ld      a,(B_EXPTBL)
-        ld      hl,0006h
-        call    B_RDSLT
-        ei
-        ld      (ix+KR_VDPRD),a
-        ld      a,(B_EXPTBL)
-        ld      hl,0007h
-        call    B_RDSLT
-        ei
-        ld      (ix+KR_VDPWR),a
-        ; The screen as SCREEN 0 has it.
-        ld      hl,(B_TXTNAM)
-        ld      (ix+KR_NAMBAS),l
-        ld      (ix+KR_NAMBAS+1),h
-        ld      a,(B_LINLEN)
-        ld      (ix+KR_COLS),a
-        ld      a,(B_LINL40)
-        cp      41
-        ld      a,40
-        jr      c,.stride
-        ld      a,80
-.stride:
-        ld      (ix+KR_STRIDE),a
-        ld      a,(B_CRTCNT)
-        ld      (ix+KR_ROWS),a
-        ld      a,(B_CSRY)
-        ld      (ix+KR_CSRY),a
-        ; The VDP registers as the BIOS's shadows have them: R#0-R#7 from
-        ; RG0SAV, R#8 and R#9 from RG8SAV.
-        push    ix
-        pop     de
-        ld      hl,KR_VDPREG
-        add     hl,de
-        ex      de,hl
-        ld      hl,B_RG0SAV
-        ld      bc,8
-        ldir
-        ld      hl,B_RG8SAV
-        ld      bc,2
-        ldir
-        ; The keyboard type, from the main ROM.
-        ld      a,(B_EXPTBL)
-        ld      hl,002Ch
-        call    B_RDSLT
-        ei
-        ld      (ix+KR_KBDTYPE),a
+        call    nx_capture_bios         ; the BIOS half (capbios.asm)
         ; The drivers: _GDRVR for index 1 to 7; kept when the flags say a
         ; device-based Nextor driver and the header is where K_SIZE says;
         ; four stored, a fifth counted.
@@ -216,3 +172,5 @@ nx_capture:
 
 nxc_index:
         db      0
+
+        include "nextor/capbios.asm"
