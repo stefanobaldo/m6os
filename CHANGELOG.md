@@ -27,6 +27,12 @@ to install.
   ESC held while the machine boots, or `CALL SYSTEM2` from Disk BASIC,
   loads Nextor instead; so does a boot that fails, after printing its code.
   Without `MSXDOS2.SYS` on the card, either ends at the Disk BASIC prompt.
+- Booting from the cartridge. `make rom` builds `build/m6-sunriseide.rom`, a
+  kernel ROM for Sunrise IDE compatible cartridges with the Sunrise IDE
+  driver of the Nextor kernel ROM taken into it; flashed in place of that
+  kernel, it boots m6 with no system file on the card, the card's first FAT
+  volume as the root. Built locally from the Nextor ROM `make fetch`
+  downloads; not distributed.
 - Memory. The kernel finds every memory mapper in the machine and allocates 16K
   segments of the one it runs in, never handing out a segment that does not
   exist or was already in use when it started. A `mem=<K>` argument caps the

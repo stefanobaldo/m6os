@@ -49,7 +49,9 @@ land in `.tools/` (ignored by git) and the ROMs in `tools/openmsx/systemroms/`;
 
 `make` alone assembles everything into `build/` and prints one
 `SIZE <name> <bytes>` line per binary: the three kernel images, the product
-as `build/m6.com` and `build/nextor.sys`, the commands in `build/bin/` — each
+as `build/m6.com`, `build/nextor.sys` and — once `make fetch` has put the
+Nextor kernel ROM in the pool, whose driver bank it takes — the kernel ROM
+`build/m6-sunriseide.rom`, the commands in `build/bin/` — each
 refused above one page —
 and the test programs. `tools/run-test.sh <name>` runs a single
 test: it builds a disk image with the Nextor system files, the program and an
@@ -57,8 +59,10 @@ test: it builds a disk image with the Nextor system files, the program and an
 128K mapper, and reads the program's verdict from memory. A test directory
 holding a `product` marker boots the product itself, with every command in
 `BIN/`: `M6.COM` under Nextor's system files when the marker is empty,
-`NEXTOR.SYS` alone on the disk when it says `nextor.sys`, and with Nextor's
-own system file beside it as `MSXDOS2.SYS` when it says `nextor.sys chain`;
+`NEXTOR.SYS` alone on the disk when it says `nextor.sys`, with Nextor's
+own system file beside it as `MSXDOS2.SYS` when it says `nextor.sys chain`,
+and the kernel ROM in the cartridge with nothing of a system's on the disk
+when it says `rom`;
 its `<name>.tcl` gives the verdict from the screen and from the files the run
 left on the image. `make check` also runs
 `tools/check-version.sh`, which requires the version in `src/version.inc`
