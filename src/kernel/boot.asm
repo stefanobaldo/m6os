@@ -396,21 +396,13 @@ kwin_load:
 ; kboot_load — copy the boot image from where the record says to KB_BASE,
 ; in the loader's page 0. Out: Z if done, or if it is already there
 ; (KR_BOOT_SRC = KB_BASE, which is how a ROM delivers it); NZ with A =
-; 0F6h when there is none, the source is not in page 1, or the length is
-; not 1 to KB_MAX. The source must be in page 1 so that it lies above the
-; destination: a forward ldir then never overwrites a byte it has not
-; read. Corrupts AF, BC, DE, HL.
+; 0F6h when the length is not 1 to KB_MAX, or when there is none or the
+; source is not in page 1. The length is checked first, in every case: a
+; record saying the image is in place with no length, or too much of one,
+; is as wrong as one pointing nowhere. The source must be in page 1 so
+; that it lies above the destination: a forward ldir then never overwrites
+; a byte it has not read. Corrupts AF, BC, DE, HL.
 kboot_load:
-        ld      hl,(K_REC+KR_BOOT_SRC)
-        ld      de,KB_BASE
-        or      a
-        sbc     hl,de
-        ret     z                       ; in place already
-        add     hl,de
-        ld      a,h
-        and     0C0h
-        cp      40h
-        jr      nz,.bad                 ; not in page 1 (none: 0000h)
         ld      bc,(K_REC+KR_BOOT_LEN)
         ld      a,b
         or      c
@@ -422,7 +414,17 @@ kboot_load:
         ld      a,c
         or      a
         jr      nz,.bad
-.fits:  ldir
+.fits:  ld      hl,(K_REC+KR_BOOT_SRC)
+        ld      de,KB_BASE
+        or      a
+        sbc     hl,de
+        ret     z                       ; in place already
+        add     hl,de
+        ld      a,h
+        and     0C0h
+        cp      40h
+        jr      nz,.bad                 ; not in page 1 (none: 0000h)
+        ldir
         xor     a                       ; Z
         ret
 .bad:   ld      a,0F6h
