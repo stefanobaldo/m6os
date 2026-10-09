@@ -567,8 +567,17 @@ bi_row:
         inc     (hl)
         ld      hl,SG+SV_NDEV
         inc     (hl)
-        ; The boot volume: the record's driver, device, LUN and first sector.
-        ld      a,(SG+SV_DRV)
+        ; The boot volume: the record's driver, device, LUN and first
+        ; sector — or, when the record names no driver (a loader with no
+        ; drive under it, the kernel ROM), the first volume found.
+        ld      a,(K_REC+KR_DRV+NXD_SLOT)
+        or      a
+        jr      nz,.recdrv
+        ld      a,(K_BLK_ROOT)
+        cp      VOL_NONE
+        jr      nz,.notroot             ; the first is the root already
+        jr      .root
+.recdrv: ld     a,(SG+SV_DRV)
         add     a,a
         add     a,KR_DRVS
         ld      e,a
@@ -603,7 +612,7 @@ bi_row:
         inc     hl
         inc     de
         djnz    .first
-        pop     af
+.root:  pop     af
         push    af
         ld      (K_BLK_ROOT),a
 .notroot:
