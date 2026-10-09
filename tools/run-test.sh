@@ -53,14 +53,17 @@ export M6_TZ_OFFSET
 # by the Nextor kernel ROM with nothing else of Nextor's on the disk;
 # `nextor.sys chain`, the same with Nextor's NEXTOR.SYS as MSXDOS2.SYS and
 # COMMAND2.COM beside it, for a test that has the loader load Nextor — its
-# AUTOEXEC.BAT comes from the test's files/.
+# AUTOEXEC.BAT comes from the test's files/; `rom`, the kernel ROM
+# build/m6-sunriseide.rom in the cartridge instead of Nextor's, with no
+# system file on the disk at all.
 product=""
 if [ -f "tests/$name/product" ]; then
     product=$(cat "tests/$name/product")
     case $product in
         "") product=m6.com; com="build/m6.com"; upper=M6 ;;
         "nextor.sys"|"nextor.sys chain") com="build/nextor.sys"; upper=NEXTOR ;;
-        *) echo "run-test: $name: the product marker says '$product'; empty, nextor.sys or nextor.sys chain" >&2; exit 2 ;;
+        "rom") com="build/m6-sunriseide.rom"; upper=M6 ;;
+        *) echo "run-test: $name: the product marker says '$product'; empty, nextor.sys, nextor.sys chain or rom" >&2; exit 2 ;;
     esac
 else
     com="build/$name.com"
@@ -201,8 +204,15 @@ if [ -f "tests/$name/disk" ]; then
     master=$(sed -n 1p "tests/$name/disk")
     slave=$(sed -n 2p "tests/$name/disk")
 fi
+# The cartridge: the Nextor kernel ROM, or the kernel ROM m6 builds, which
+# the extension finds in the ROM pool beside the Nextor one — copied there
+# now, so the emulator sees this build's.
 ext=m6-sunriseide-nextor
-[ -n "$slave" ] && ext=m6-sunriseide-nextor-2
+if [ "$product" = rom ]; then
+    cp "$com" tools/openmsx/systemroms/m6-sunriseide.rom
+    ext=m6-sunriseide-m6
+fi
+[ -n "$slave" ] && ext=$ext-2
 # The argument lines, read with their line numbers so an empty line counts.
 if [ -f "tests/$name/args" ]; then
     runs=$(grep -c '' "tests/$name/args")
@@ -225,6 +235,8 @@ for machine in $machines; do
                 cp "$com" "$staging/NEXTOR.SYS"
                 cp .tools/nextor/NEXTOR.SYS "$staging/MSXDOS2.SYS"
                 cp .tools/nextor/COMMAND2.COM "$staging/" ;;
+            "rom")
+                ;;                      # nothing of a system's on the disk
             *)
                 cp .tools/nextor/NEXTOR.SYS .tools/nextor/COMMAND2.COM "$staging/"
                 cp "$com" "$staging/$upper.COM"
