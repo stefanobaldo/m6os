@@ -158,13 +158,15 @@ $(ROM16): src/rom/rom.asm $(SRC_FILES) src/version.inc $(KERNEL) $(KSEG) $(KBOOT
 	$(SJASMPLUS) --nologo --msg=war $(INCLUDES) -I$(ROM_POOL) -D'NEXTOR_ROM="$(notdir $(NEXTOR_ROM16))"' --raw=$@ --lst=build/rom16.lst --exp=build/rom16.exp $<
 	@tools/check-rom.sh $@ $(NEXTOR_ROM16)
 # Any other cartridge: the kernel ROM given by path, the output named after
-# it, in build/ beside the other two; nothing of the input is kept.
+# it, in build/ beside the other two; nothing of the input is kept. The
+# target is phony, so .DELETE_ON_ERROR does not reach the output: a failed
+# step removes it itself.
 rom-from: $(KERNEL) $(KSEG) $(KBOOT) tools/check-rom.sh | build
 	@[ -n "$(DRIVER_ROM)" ] || { echo "usage: make rom-from DRIVER_ROM=<eight-bank Nextor kernel ROM>" >&2; exit 2; }
 	@[ -f "$(DRIVER_ROM)" ] || { echo "$(DRIVER_ROM): no such file" >&2; exit 2; }
 	@case "$(DRIVER_ROM)" in *" "*) echo "$(DRIVER_ROM): the path must not contain a space (the assembler takes the name as a definition)" >&2; exit 2 ;; esac
-	$(SJASMPLUS) --nologo --msg=war $(INCLUDES) -I$(dir $(DRIVER_ROM)) -D'NEXTOR_ROM="$(notdir $(DRIVER_ROM))"' --raw=$(ROM_FROM) --lst=$(ROM_FROM:.rom=.lst) --exp=$(ROM_FROM:.rom=.exp) src/rom/rom.asm
-	@tools/check-rom.sh $(ROM_FROM) $(DRIVER_ROM)
+	$(SJASMPLUS) --nologo --msg=war $(INCLUDES) -I$(dir $(DRIVER_ROM)) -D'NEXTOR_ROM="$(notdir $(DRIVER_ROM))"' --raw=$(ROM_FROM) --lst=$(ROM_FROM:.rom=.lst) --exp=$(ROM_FROM:.rom=.exp) src/rom/rom.asm || { rm -f $(ROM_FROM); exit 1; }
+	@tools/check-rom.sh $(ROM_FROM) $(DRIVER_ROM) || { rm -f $(ROM_FROM); exit 1; }
 	@echo "rom-from: $(ROM_FROM)"
 
 # One rule per utility, with the one-page check.
