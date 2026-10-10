@@ -46,16 +46,27 @@ instead. This way takes no arguments; `mem=` is `M6.COM`'s.
 
 The third way needs no Nextor at all: m6 in the cartridge. `make fetch &&
 make rom` builds `build/m6-sunriseide.rom`, a 128K ROM for a Sunrise IDE
-compatible cartridge (a Carnivore2, an MSX-Pico+) with the Sunrise IDE
-driver of the Nextor kernel ROM it fetches taken into it whole — the ROM
-is built on your machine from that file and is not distributed. Flash
-it in place of the Nextor kernel and put `BIN/` and `ETC/RC` on the card:
-no system file, no `AUTOEXEC.BAT`. The root is the card's first FAT
-volume. There is no key: the cartridge boots m6, and a boot that fails
-before the kernel has the machine prints its code and leaves you in
-BASIC without a disk. With another Nextor kernel in the machine the
-later slot wins; to boot m6 past an internal one, hold that kernel's own
-disable key while the machine starts (`C` for slot 3-2, the OCM's).
+compatible cartridge (a Carnivore2) with the Sunrise IDE driver of the
+Nextor kernel ROM it fetches taken into it whole — the ROM is built on
+your machine from that file and is not distributed. Flash it in place of
+the Nextor kernel and put `BIN/` and `ETC/RC` on the card: no system
+file, no `AUTOEXEC.BAT`. The root is the card's first FAT volume. There
+is no key: the cartridge boots m6, and a boot that fails before the
+kernel has the machine prints its code and leaves you in BASIC without a
+disk. With another Nextor kernel in the machine the later slot wins; to
+boot m6 past an internal one, hold that kernel's own disable key while
+the machine starts (`C` for slot 3-2, the OCM's).
+
+The same ROM is built for the SD Mapper, the ASCII16 cartridge an
+MSX-Pico+ presents: `make rom-from DRIVER_ROM=<file>` takes the Nextor
+kernel ROM built for that cartridge — the one its firmware embeds, or the
+one it ships with — and writes `build/m6-<name>.rom` with that ROM's bank
+switch and its driver taken whole. In an MSX-Pico+ the file replaces the
+Nextor ROM in the firmware's system-ROM image and is flashed with it; the
+card needs no system file, as above. A real FBLabs SD Mapper V2 takes the
+same build from its own kernel ROM; it has not been tried on hardware.
+Either way the ROM is built from a kernel ROM you already have, on your
+machine, and is not distributed.
 
 An MSX-DOS 2 program on the card runs with `dos name.com`, or by its name
 alone when it ends in `.com`, and hands the machine back when it ends:
