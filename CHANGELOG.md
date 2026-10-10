@@ -32,7 +32,10 @@ to install.
   driver of the Nextor kernel ROM taken into it; flashed in place of that
   kernel, it boots m6 with no system file on the card, the card's first FAT
   volume as the root. Built locally from the Nextor ROM `make fetch`
-  downloads; not distributed.
+  downloads; not distributed. `make rom-from DRIVER_ROM=<file>` builds the
+  same ROM for an SD Mapper cartridge — the MSX-Pico+'s among them — from
+  that cartridge's own Nextor kernel ROM, bank switch and driver taken from
+  it whole.
 - Memory. The kernel finds every memory mapper in the machine and allocates 16K
   segments of the one it runs in, never handing out a segment that does not
   exist or was already in use when it started. A `mem=<K>` argument caps the
