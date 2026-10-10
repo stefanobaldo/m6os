@@ -2,17 +2,20 @@
 ; Copyright (c) 2026 Stefano Baldo
 ; SPDX-License-Identifier: BSD-3-Clause
 ;
-; The kernel ROM for the Sunrise IDE: m6 in the cartridge, booting with no
-; system file on the card. 128K, eight banks of 16K switched by the
-; Sunrise mapper through CHGBNK at 7FD0h, which every bank carries — copied
-; at build time from the driver's bank, never written here. Bank 0 is an
+; The kernel ROM: m6 in the cartridge, booting with no system file on the
+; card. 128K, eight banks of 16K switched by the cartridge's mapper
+; through CHGBNK at 7FD0h, which every bank carries — copied at build time
+; from the driver's bank, never written here, so one source serves every
+; cartridge type: the build names the Nextor kernel ROM built for that
+; cartridge (NEXTOR_ROM, the Sunrise IDE's by default) and takes from it
+; the bank switch and the driver bank. Bank 0 is an
 ; MSX cartridge whose page 0 (4000h-40FFh) is what a Nextor 2 driver sees
 ; of the kernel it was written for — GSLOT1, RDBANK, CALBNK, GWORK, K_SIZE
 ; and CUR_BANK at their addresses, CALBNK's body byte for byte — followed
 ; by the boot routine and the resident image. Banks 1 and 2 carry the
 ; switched and the boot images; banks 3 to 6 are empty; bank 7 is the
-; Sunrise IDE driver: bank 7 of the Nextor kernel ROM built for that
-; interface, whole. Every bank begins with the cartridge header and the
+; driver: bank 7 of the Nextor kernel ROM built for that cartridge,
+; whole. Every bank begins with the cartridge header and the
 ; INIT trampoline, because the mapper register has no reset state the ROM
 ; may count on; the driver bank's own INIT, Nextor's, lands at ROM_NXINIT
 ; in bank 0, where a jump waits for it.
@@ -26,10 +29,10 @@
 ; and takes the machine over as M6.COM does. Nothing of Nextor runs, and
 ; the kernel does not know it booted from a ROM.
 ;
-; The build passes the ROM pool on the include path, where incbin finds
-; the Nextor kernel ROM; tools/check-rom.sh then compares the bytes this
-; file must reproduce with the driver bank's and fails the build when
-; they differ.
+; The build passes the Nextor kernel ROM's directory on the include path,
+; where incbin finds it, and its name as NEXTOR_ROM when it is not the
+; default; tools/check-rom.sh then compares the bytes this file must
+; reproduce with the driver bank's and fails the build when they differ.
         include "nextor/nextor.inc"
         include "kernel/kernel.inc"
         include "build/kernel.exp"      ; K_IMAGE_ROOF: the roof the wall
@@ -39,7 +42,9 @@
         ; Each bank is its own ORG 4000h; the output is sequential and the
         ; assembler's note that ORG went backwards says nothing here.
         OPT     -Wno-fileorg
+        IFNDEF  NEXTOR_ROM
         DEFINE  NEXTOR_ROM "Nextor-2.1.4.SunriseIDE.ROM"
+        ENDIF
 ROM_BANK        equ 4000h       ; a bank
 ROM_TRAMP       equ 4010h       ; the INIT trampoline, after the header
 ROM_HEAD        equ 4018h       ; where a bank's payload begins
