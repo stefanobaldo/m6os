@@ -55,7 +55,10 @@ export M6_TZ_OFFSET
 # COMMAND2.COM beside it, for a test that has the loader load Nextor — its
 # AUTOEXEC.BAT comes from the test's files/; `rom`, the kernel ROM
 # build/m6-sunriseide.rom in the cartridge instead of Nextor's, with no
-# system file on the disk at all.
+# system file on the disk at all; `rom ascii16`, the ASCII16 test ROM
+# build/m6-ascii16-test.rom as a plain ASCII16 cartridge with no disk
+# behind it — no image is built or attached, and the test reads the
+# kernel stopping for want of a volume.
 product=""
 if [ -f "tests/$name/product" ]; then
     product=$(cat "tests/$name/product")
@@ -63,7 +66,8 @@ if [ -f "tests/$name/product" ]; then
         "") product=m6.com; com="build/m6.com"; upper=M6 ;;
         "nextor.sys"|"nextor.sys chain") com="build/nextor.sys"; upper=NEXTOR ;;
         "rom") com="build/m6-sunriseide.rom"; upper=M6 ;;
-        *) echo "run-test: $name: the product marker says '$product'; empty, nextor.sys, nextor.sys chain or rom" >&2; exit 2 ;;
+        "rom ascii16") com="build/m6-ascii16-test.rom"; upper=M6 ;;
+        *) echo "run-test: $name: the product marker says '$product'; empty, nextor.sys, nextor.sys chain, rom or rom ascii16" >&2; exit 2 ;;
     esac
 else
     com="build/$name.com"
@@ -204,13 +208,16 @@ if [ -f "tests/$name/disk" ]; then
     master=$(sed -n 1p "tests/$name/disk")
     slave=$(sed -n 2p "tests/$name/disk")
 fi
-# The cartridge: the Nextor kernel ROM, or the kernel ROM m6 builds, which
+# The cartridge: the Nextor kernel ROM, or a kernel ROM m6 builds, which
 # the extension finds in the ROM pool beside the Nextor one — copied there
 # now, so the emulator sees this build's.
 ext=m6-sunriseide-nextor
 if [ "$product" = rom ]; then
     cp "$com" tools/openmsx/systemroms/m6-sunriseide.rom
     ext=m6-sunriseide-m6
+elif [ "$product" = "rom ascii16" ]; then
+    cp "$com" tools/openmsx/systemroms/m6-ascii16-test.rom
+    ext=m6-ascii16-m6
 fi
 [ -n "$slave" ] && ext=$ext-2
 # The argument lines, read with their line numbers so an empty line counts.
@@ -235,7 +242,7 @@ for machine in $machines; do
                 cp "$com" "$staging/NEXTOR.SYS"
                 cp .tools/nextor/NEXTOR.SYS "$staging/MSXDOS2.SYS"
                 cp .tools/nextor/COMMAND2.COM "$staging/" ;;
-            "rom")
+            "rom"|"rom ascii16")
                 ;;                      # nothing of a system's on the disk
             *)
                 cp .tools/nextor/NEXTOR.SYS .tools/nextor/COMMAND2.COM "$staging/"
@@ -269,9 +276,15 @@ for machine in $machines; do
         # in through the hdb command, which runs before the machine boots.
         slave_cmd="set renderer none"
         [ -n "$slave" ] && slave_cmd="hdb $M6_SLAVE_IMAGE"
-        M6_STEP=create openmsx_run -script tools/mkdisk.tcl
-        M6_STEP=import openmsx_run -ext "$ext" -hda "$M6_IMAGE" -command "$slave_cmd" \
-            -script tools/mkdisk.tcl
+        # The ASCII16 test ROM's cartridge has no disk: nothing is built or
+        # attached, and the test reads the kernel stopping for want of one.
+        disk=1
+        [ "$product" = "rom ascii16" ] && disk=""
+        if [ -n "$disk" ]; then
+            M6_STEP=create openmsx_run -script tools/mkdisk.tcl
+            M6_STEP=import openmsx_run -ext "$ext" -hda "$M6_IMAGE" -command "$slave_cmd" \
+                -script tools/mkdisk.tcl
+        fi
         # A test that ships mbr-ext-lba wants its extended container
         # addressed by LBA, type 0Fh, the way a partitioner writes one that
         # begins past the CHS limit. The image builder writes 05h, the CHS
@@ -318,9 +331,15 @@ for machine in $machines; do
             openmsx_run -script "tests/$name/patch.tcl"
         fi
 
-        M6_TEST="$name" M6_TEST_DIR="$ROOT/tests/$name" \
-            openmsx_run -ext "$ext" -ext debugdevice -hda "$M6_IMAGE" -command "$slave_cmd" \
-                -script tools/harness.tcl
+        if [ -n "$disk" ]; then
+            M6_TEST="$name" M6_TEST_DIR="$ROOT/tests/$name" \
+                openmsx_run -ext "$ext" -ext debugdevice -hda "$M6_IMAGE" -command "$slave_cmd" \
+                    -script tools/harness.tcl
+        else
+            M6_TEST="$name" M6_TEST_DIR="$ROOT/tests/$name" \
+                openmsx_run -ext "$ext" -ext debugdevice -command "$slave_cmd" \
+                    -script tools/harness.tcl
+        fi
 
         # A test that ships check.sh reads its images from outside the
         # machine, with the emulator gone: mtools listing the names the
