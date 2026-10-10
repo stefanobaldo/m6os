@@ -360,14 +360,14 @@ rm_start:
         ld      a,(rm_ram)
         bit     7,a
         jr      z,.prim
-        ld      a,(0FFFFh)              ; the RAM slot's subslot register:
-        cpl                             ; pages 2 and 3 show RAM, pages 0
-        and     0F0h                    ; and 1 get the same subslots
-        ld      b,a
-        rrca
-        rrca
-        rrca
-        rrca
+        ld      a,(rm_ram)              ; the RAM slot's subslot register
+        rrca                            ; (page 3 shows that slot): page
+        rrca                            ; 0's field only, page 1 still
+        and     3                       ; shows the ROM, which may be
+        ld      b,a                     ; behind the same register
+        ld      a,(0FFFFh)
+        cpl
+        and     0FCh
         or      b
         ld      (0FFFFh),a
         ld      a,(rm_ram)
@@ -403,7 +403,17 @@ rm_start:
         ld      a,(rm_rec+KR_SEG64K+1)
         out     (0FDh),a
         ld      a,(rm_ram)
-        and     3
+        bit     7,a
+        jr      z,.prim1
+        and     0Ch                     ; page 1's subslot field
+        ld      b,a
+        ld      a,(0FFFFh)
+        cpl
+        and     0F3h
+        or      b
+        ld      (0FFFFh),a
+        ld      a,(rm_ram)
+.prim1: and     3
         rlca
         rlca
         ld      c,a
