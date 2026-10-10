@@ -71,8 +71,12 @@ rom_init0:
         ld      (hl),0C9h
         ret
 
-; rom_runc — the hook.
+; rom_runc — the hook. It unhooks itself first: the BIOS calls H.RUNC
+; again on every RUN, NEW and CLEAR, and a boot that failed back to BASIC
+; must not start over under a program.
 rom_runc:
+        ld      a,0C9h
+        ld      (RM_HRUNC),a
         ld      hl,(B_JIFFY)            ; the boot's clock, before anything
         ld      (RM_TMP_JIFFY),hl
         ld      (RM_TMP_SP),sp
@@ -159,8 +163,12 @@ rom_segtab:
 ; rom_fail — A = the code: the line, then back to the BIOS through the
 ; hook's return. Bank 0 in page 1 and the BIOS in page 0, from either side
 ; of the relocation; page 2 shows one of the segments the boot chose, as
-; good as the one it had.
+; good as the one it had, and the routine's first bytes there are cleared:
+; BASIC's program text starts at 8000h, and an empty one is three zeros.
 rom_fail:
+        ld      hl,0
+        ld      (RM_BOOT),hl
+        ld      (RM_BOOT+1),hl
         push    af
         ld      hl,s_fail
         call    rom_puts
