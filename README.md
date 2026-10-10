@@ -66,7 +66,11 @@ Nextor ROM in the firmware's system-ROM image and is flashed with it; the
 card needs no system file, as above. A real FBLabs SD Mapper V2 takes the
 same build from its own kernel ROM; it has not been tried on hardware.
 Either way the ROM is built from a kernel ROM you already have, on your
-machine, and is not distributed.
+machine, and is not distributed. `make rom` also writes
+`build/m6-ascii16-test.rom`, built from Nextor's standalone ASCII16
+kernel for the tests: it has no storage driver and boots no further than
+a kernel with no volume, so it is not the ROM to flash. An input named
+like either ROM `make rom` writes is refused; rename it.
 
 An MSX-DOS 2 program on the card runs with `dos name.com`, or by its name
 alone when it ends in `.com`, and hands the machine back when it ends:
