@@ -1,0 +1,25 @@
+<?xml version="1.0" ?>
+<!DOCTYPE msxconfig SYSTEM 'msxconfig2.dtd'>
+<msxconfig>
+  <info>
+    <name>ASCII16 cartridge with the m6 kernel ROM</name>
+    <manufacturer>m6</manufacturer>
+    <code/>
+    <release_year>2026</release_year>
+    <description>A plain ASCII16 ROM cartridge, page 1 only, carrying the m6 kernel ROM built from Nextor's standalone ASCII16 kernel (build/m6-ascii16-test.rom, copied into the ROM pool by the harness; no checksum, the ROM changes with every build). The bank register at 6000h is the SD Mapper's; there is no storage behind it, so the kernel comes up and stops for want of a volume.</description>
+    <type>Flash cartridge</type>
+  </info>
+  <devices>
+    <primary slot="any">
+      <secondary slot="any">
+        <ROM id="m6 kernel ROM (ASCII16)">
+          <mem base="0x4000" size="0x4000"/>
+          <rom>
+            <filename>../systemroms/m6-ascii16-test.rom</filename>
+          </rom>
+          <mappertype>ASCII16</mappertype>
+        </ROM>
+      </secondary>
+    </primary>
+  </devices>
+</msxconfig>
