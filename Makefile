@@ -59,15 +59,24 @@ PAGE_MAX  := 16102
 # Nextor kernel ROM as NEXTOR.SYS in place of Nextor's own.
 M6COM     := build/m6.com
 NEXTORSYS := build/nextor.sys
-# The kernel ROM for the Sunrise IDE, src/rom/rom.asm: m6 in the cartridge,
-# with the driver bank of the Nextor kernel ROM built for that interface
-# taken whole. The Nextor ROM is the one tools/fetch-nextor.sh puts in the
-# ROM pool, so the target is built by `all` only when it is there and by
-# `check` always; tools/check-rom.sh compares the bytes the ROM must
-# reproduce with the driver bank's.
-ROM        := build/m6-sunriseide.rom
-ROM_POOL   := tools/openmsx/systemroms
-NEXTOR_ROM := $(ROM_POOL)/Nextor-2.1.4.SunriseIDE.ROM
+# The kernel ROM, src/rom/rom.asm: m6 in the cartridge, with the bank
+# switch and the driver bank of the Nextor kernel ROM built for that
+# cartridge taken whole — one source, the kernel ROM as its parameter.
+# Two are built from the ROMs tools/fetch-nextor.sh puts in the ROM pool,
+# each by `all` only when its input is there and by `check` always, and
+# each checked by tools/check-rom.sh against its input: the Sunrise IDE
+# ROM, a product, and the ASCII16 one from Nextor's standalone kernel,
+# whose driver has no hardware behind it — a test fixture, the bytes m6
+# writes into an SD Mapper ROM, booted in CI as far as a kernel with no
+# volume. `rom-from DRIVER_ROM=<file>` builds from any eight-bank Nextor
+# kernel ROM, which is how the SD Mapper's own ROM is made from the kernel
+# ROM its owner has.
+ROM          := build/m6-sunriseide.rom
+ROM16        := build/m6-ascii16-test.rom
+ROM_POOL     := tools/openmsx/systemroms
+NEXTOR_ROM   := $(ROM_POOL)/Nextor-2.1.4.SunriseIDE.ROM
+NEXTOR_ROM16 := $(ROM_POOL)/Nextor-2.1.4.StandaloneASCII16.ROM
+ROM_FROM      = build/m6-$(basename $(notdir $(DRIVER_ROM))).rom
 SRC_FILES := $(wildcard src/*.inc src/*/*.asm src/*/*.inc)
 # sjasmplus rejects an include path that does not exist, so -Isrc is passed
 # only once there is a src/ to point at.
@@ -77,11 +86,11 @@ INCLUDES  := -Itests $(if $(wildcard src),-Isrc)
 # take that half-built file as up to date on the next run and never say so.
 .DELETE_ON_ERROR:
 
-.PHONY: all rom check check-sjasmplus check-openmsx check-tools fetch sizes clean distclean
+.PHONY: all rom rom-from check check-sjasmplus check-openmsx check-tools fetch sizes clean distclean
 
-all: check-sjasmplus $(KERNEL) $(KSEG) $(KBOOT) $(LEG) $(M6COM) $(NEXTORSYS) $(if $(wildcard $(NEXTOR_ROM)),$(ROM)) $(BIN_BINS) $(TEST_BINS) $(PROG_BINS) sizes
+all: check-sjasmplus $(KERNEL) $(KSEG) $(KBOOT) $(LEG) $(M6COM) $(NEXTORSYS) $(if $(wildcard $(NEXTOR_ROM)),$(ROM)) $(if $(wildcard $(NEXTOR_ROM16)),$(ROM16)) $(BIN_BINS) $(TEST_BINS) $(PROG_BINS) sizes
 
-rom: $(ROM)
+rom: $(ROM) $(ROM16)
 
 build:
 	mkdir -p build
@@ -135,16 +144,28 @@ $(M6COM): src/loader/m6.asm $(SRC_FILES) src/version.inc $(KERNEL) $(KSEG) $(KBO
 $(NEXTORSYS): src/loader/nextor.asm $(SRC_FILES) src/version.inc $(KERNEL) $(KSEG) $(KBOOT) | build
 	$(SJASMPLUS) --nologo --msg=war $(INCLUDES) --raw=$@ --lst=build/nextor.lst $<
 
-# The ROM: assembled with the ROM pool on the include path, which is where
-# incbin finds the Nextor kernel ROM, then checked against it. A ROM that
-# fails the check is removed with the build's error. Asked for without the
-# Nextor ROM in the pool, the build says what to run instead of failing
-# on a missing prerequisite.
-$(NEXTOR_ROM):
-	@echo "$(NEXTOR_ROM) is not there: run make fetch (tools/fetch-nextor.sh) first" >&2; exit 1
+# The ROMs: assembled with the input's directory on the include path, which
+# is where incbin finds the Nextor kernel ROM, then checked against it. A
+# ROM that fails the check is removed with the build's error. Asked for
+# without its input in the pool, the build says what to run instead of
+# failing on a missing prerequisite.
+$(NEXTOR_ROM) $(NEXTOR_ROM16):
+	@echo "$@ is not there: run make fetch (tools/fetch-nextor.sh) first" >&2; exit 1
 $(ROM): src/rom/rom.asm $(SRC_FILES) src/version.inc $(KERNEL) $(KSEG) $(KBOOT) $(NEXTOR_ROM) tools/check-rom.sh | build
 	$(SJASMPLUS) --nologo --msg=war $(INCLUDES) -I$(ROM_POOL) --raw=$@ --lst=build/rom.lst --exp=build/rom.exp $<
 	@tools/check-rom.sh $@ $(NEXTOR_ROM)
+$(ROM16): src/rom/rom.asm $(SRC_FILES) src/version.inc $(KERNEL) $(KSEG) $(KBOOT) $(NEXTOR_ROM16) tools/check-rom.sh | build
+	$(SJASMPLUS) --nologo --msg=war $(INCLUDES) -I$(ROM_POOL) -D'NEXTOR_ROM="$(notdir $(NEXTOR_ROM16))"' --raw=$@ --lst=build/rom16.lst --exp=build/rom16.exp $<
+	@tools/check-rom.sh $@ $(NEXTOR_ROM16)
+# Any other cartridge: the kernel ROM given by path, the output named after
+# it, in build/ beside the other two; nothing of the input is kept.
+rom-from: $(KERNEL) $(KSEG) $(KBOOT) tools/check-rom.sh | build
+	@[ -n "$(DRIVER_ROM)" ] || { echo "usage: make rom-from DRIVER_ROM=<eight-bank Nextor kernel ROM>" >&2; exit 2; }
+	@[ -f "$(DRIVER_ROM)" ] || { echo "$(DRIVER_ROM): no such file" >&2; exit 2; }
+	@case "$(DRIVER_ROM)" in *" "*) echo "$(DRIVER_ROM): the path must not contain a space (the assembler takes the name as a definition)" >&2; exit 2 ;; esac
+	$(SJASMPLUS) --nologo --msg=war $(INCLUDES) -I$(dir $(DRIVER_ROM)) -D'NEXTOR_ROM="$(notdir $(DRIVER_ROM))"' --raw=$(ROM_FROM) --lst=$(ROM_FROM:.rom=.lst) --exp=$(ROM_FROM:.rom=.exp) src/rom/rom.asm
+	@tools/check-rom.sh $(ROM_FROM) $(DRIVER_ROM)
+	@echo "rom-from: $(ROM_FROM)"
 
 # One rule per utility, with the one-page check.
 define bin_rule
@@ -163,9 +184,10 @@ $(foreach b,$(patsubst src/bin/%.asm,%,$(BIN_SRCS)),$(eval $(call bin_rule,$(b))
 # against its 4K. Then "ROOM kernel <bytes>": what
 # the resident leaves below the address it must end under, read from the
 # labels the image exports; and, when the ROM was built, "ROOM rom-bankN
-# <bytes>" for its three filled banks, what each leaves before CHGBNK.
-sizes: $(KERNEL) $(KSEG) $(KBOOT) $(LEG) $(M6COM) $(NEXTORSYS) $(if $(wildcard $(NEXTOR_ROM)),$(ROM)) $(BIN_BINS) $(TEST_BINS) $(PROG_BINS)
-	@for f in $(KERNEL) $(KSEG) $(KBOOT) $(LEG) $(LEGB) $(M6COM) $(NEXTORSYS) $(wildcard $(ROM)) $(BIN_BINS) $(TEST_BINS) $(PROG_BINS); do \
+# <bytes>" for its three filled banks, what each leaves before CHGBNK —
+# the same for every input, so read from the Sunrise build alone.
+sizes: $(KERNEL) $(KSEG) $(KBOOT) $(LEG) $(M6COM) $(NEXTORSYS) $(if $(wildcard $(NEXTOR_ROM)),$(ROM)) $(if $(wildcard $(NEXTOR_ROM16)),$(ROM16)) $(BIN_BINS) $(TEST_BINS) $(PROG_BINS)
+	@for f in $(KERNEL) $(KSEG) $(KBOOT) $(LEG) $(LEGB) $(M6COM) $(NEXTORSYS) $(wildcard $(ROM) $(ROM16)) $(BIN_BINS) $(TEST_BINS) $(PROG_BINS); do \
 	    printf 'SIZE %s %s\n' "$$(basename $$f)" "$$(wc -c < $$f | tr -d ' ')"; \
 	done
 	@roof=$$(sed -n 's/^K_IMAGE_ROOF: EQU 0x0*\([0-9A-Fa-f]*\)$$/\1/p' build/kernel.exp); \
@@ -201,7 +223,7 @@ fetch:
 # The one command: tools, build, every test in name order, stop at the first
 # failure, summary.
 check: fetch
-	@$(MAKE) --no-print-directory all $(ROM) check-tools
+	@$(MAKE) --no-print-directory all $(ROM) $(ROM16) check-tools
 	@tools/check-version.sh
 	@tools/check-headers.sh
 	@tools/check-leg.sh

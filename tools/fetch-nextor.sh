@@ -5,8 +5,11 @@
 #
 # The pinned Nextor files from github.com/Konamiman/Nextor releases: the
 # 2.1.4 Sunrise IDE kernel ROM into the ROM pool (the extension XML selects it
-# by sha1), and NEXTOR.SYS (last published on v2.1.3) and COMMAND2.COM (from
-# tools.zip on v2.1.0) into .tools/nextor/ for the disk image.
+# by sha1), the 2.1.4 standalone ASCII16 kernel ROM beside it (the input of
+# the kernel ROM CI boots as a plain ASCII16 cartridge: the same bank switch
+# as the SD Mapper's, a driver with no hardware behind it), and NEXTOR.SYS
+# (last published on v2.1.3) and COMMAND2.COM (from tools.zip on v2.1.0)
+# into .tools/nextor/ for the disk image.
 . "$(dirname "$0")/lib.sh"
 
 BASE="https://github.com/Konamiman/Nextor/releases/download"
@@ -15,6 +18,8 @@ DIR="$TOOLS/nextor"
 
 fetch "$BASE/v2.1.4/Nextor-2.1.4.SunriseIDE.ROM" sha256 \
       4eafcd3a4918da7da98559b2b598d430521d35857f1bf0d2ba6619f8e71c05b2 "$POOL/Nextor-2.1.4.SunriseIDE.ROM"
+fetch "$BASE/v2.1.4/Nextor-2.1.4.StandaloneASCII16.ROM" sha256 \
+      f47e532fa015e59030c1711df87859f4a2f812defd41e11f7ab0536aa3310478 "$POOL/Nextor-2.1.4.StandaloneASCII16.ROM"
 fetch "$BASE/v2.1.3/NEXTOR.SYS" sha256 \
       3db8c8094bd5d3df4197b2f6606d4e28fb5a2462086f72ce8b6664d12a94bde7 "$DIR/NEXTOR.SYS"
 fetch "$BASE/v2.1.0/tools.zip" sha256 \
@@ -23,4 +28,4 @@ if [ ! -f "$DIR/COMMAND2.COM" ]; then
     unzip -o -q -j "$DIR/tools.zip" COMMAND2.COM -d "$DIR"
 fi
 verify sha256 1bb7860631cd6257fefdbd996640bd345d7eab931758e7dc2725cdb02072067c "$DIR/COMMAND2.COM"
-echo "fetch: Nextor 2.1.4 kernel ROM, NEXTOR.SYS 2.1.3 and COMMAND2.COM 2.1.0 ready" >&2
+echo "fetch: Nextor 2.1.4 kernel ROMs (Sunrise IDE, standalone ASCII16), NEXTOR.SYS 2.1.3 and COMMAND2.COM 2.1.0 ready" >&2
