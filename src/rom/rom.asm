@@ -18,7 +18,10 @@
 ; whole, or — when the build names M6_DRIVER, a block written to m6's own
 ; contract (docs/drivers.md) — that block at DRV_BASE behind the same
 ; header and bank bytes, in a ROM whose resident has no Nextor adapter
-; (KERNEL_BIN names it). Every bank begins with the cartridge header and the
+; (KERNEL_BIN names it). A build that names M6_TEST puts a kernel-side
+; test block in bank 2 after the boot image, which the boot copies to
+; 0100h of page 0 and names in the record: the driver-contract test's
+; vehicle. Every bank begins with the cartridge header and the
 ; INIT trampoline, because the mapper register has no reset state the ROM
 ; may count on; the driver bank's own INIT, Nextor's, lands at ROM_NXINIT
 ; in bank 0, where a jump waits for it.
@@ -217,6 +220,17 @@ rom_kboot:
         incbin  "build/kboot.bin"
 rom_kboot_end:
         ASSERT  rom_kboot_end-rom_kboot <= KB_MAX
+    IFDEF M6_TEST
+        ; A kernel-side test block, assembled for 0100h of page 0, where
+        ; the boot copies it and names it in the record: it runs as
+        ; process 0 where it lies, as a mode-1 test's block does.
+rom_test:
+        DISP    0100h
+        include M6_TEST
+        ENT
+rom_test_end:
+        ASSERT  rom_test_end-rom_test <= KB_BASE-0100h
+    ENDIF
 ROM_B2_FREE     equ NX_CHGBNK-$
         EXPORT  ROM_B2_FREE
         rom_tail

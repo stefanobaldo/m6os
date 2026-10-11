@@ -58,7 +58,9 @@ export M6_TZ_OFFSET
 # system file on the disk at all; `rom ascii16`, the ASCII16 test ROM
 # build/m6-ascii16-test.rom as a plain ASCII16 cartridge with no disk
 # behind it — no image is built or attached, and the test reads the
-# kernel stopping for want of a volume.
+# kernel stopping for want of a volume; `rom ascii16 <name>`, the same
+# with build/<name>.rom, a ROM the test builds for itself, in the
+# cartridge.
 product=""
 if [ -f "tests/$name/product" ]; then
     product=$(cat "tests/$name/product")
@@ -67,7 +69,8 @@ if [ -f "tests/$name/product" ]; then
         "nextor.sys"|"nextor.sys chain") com="build/nextor.sys"; upper=NEXTOR ;;
         "rom") com="build/m6-sunriseide.rom"; upper=M6 ;;
         "rom ascii16") com="build/m6-ascii16-test.rom"; upper=M6 ;;
-        *) echo "run-test: $name: the product marker says '$product'; empty, nextor.sys, nextor.sys chain, rom or rom ascii16" >&2; exit 2 ;;
+        "rom ascii16 "*) com="build/${product#rom ascii16 }.rom"; upper=M6; product="rom ascii16" ;;
+        *) echo "run-test: $name: the product marker says '$product'; empty, nextor.sys, nextor.sys chain, rom, rom ascii16 or rom ascii16 <name>" >&2; exit 2 ;;
     esac
 else
     com="build/$name.com"

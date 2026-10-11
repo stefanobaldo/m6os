@@ -83,6 +83,14 @@ ROM_POOL     := tools/openmsx/systemroms
 NEXTOR_ROM   := $(ROM_POOL)/Nextor-2.1.4.SunriseIDE.ROM
 NEXTOR_ROM16 := $(ROM_POOL)/Nextor-2.1.4.StandaloneASCII16.ROM
 ROM_FROM      = build/m6-$(basename $(notdir $(DRIVER_ROM))).rom
+# The driver-contract test's ROM: the kernel ROM built from the Standalone
+# ASCII16 kernel, with the pattern block in its driver bank (M6_DRIVER),
+# the test itself in bank 2 after the boot image (M6_TEST) and the
+# resident without the adapter, booted by tools/run-test.sh as an ASCII16
+# cartridge with no disk. The block carries the first sectors of a FAT12
+# volume that tests/drvrom/mkvol.py writes around the reader program.
+DRVROM     := build/drvrom.rom
+DRVROM_VOL := build/drvrom.vol
 SRC_FILES := $(wildcard src/*.inc src/*/*.asm src/*/*.inc)
 # sjasmplus rejects an include path that does not exist, so -Isrc is passed
 # only once there is a src/ to point at.
@@ -94,7 +102,7 @@ INCLUDES  := -Itests $(if $(wildcard src),-Isrc)
 
 .PHONY: all rom rom-from check check-sjasmplus check-openmsx check-tools fetch sizes clean distclean
 
-all: check-sjasmplus $(KERNEL) $(KERNEL_NA) $(KSEG) $(KBOOT) $(LEG) $(M6COM) $(NEXTORSYS) $(if $(wildcard $(NEXTOR_ROM)),$(ROM)) $(if $(wildcard $(NEXTOR_ROM16)),$(ROM16)) $(BIN_BINS) $(TEST_BINS) $(PROG_BINS) sizes
+all: check-sjasmplus $(KERNEL) $(KERNEL_NA) $(KSEG) $(KBOOT) $(LEG) $(M6COM) $(NEXTORSYS) $(if $(wildcard $(NEXTOR_ROM)),$(ROM)) $(if $(wildcard $(NEXTOR_ROM16)),$(ROM16) $(DRVROM)) $(BIN_BINS) $(TEST_BINS) $(PROG_BINS) sizes
 
 rom: $(ROM) $(ROM16)
 
@@ -165,6 +173,13 @@ $(ROM): src/rom/rom.asm $(SRC_FILES) src/version.inc $(KERNEL) $(KSEG) $(KBOOT) 
 $(ROM16): src/rom/rom.asm $(SRC_FILES) src/version.inc $(KERNEL) $(KSEG) $(KBOOT) $(NEXTOR_ROM16) tools/check-rom.sh | build
 	$(SJASMPLUS) --nologo --msg=war $(INCLUDES) -I$(ROM_POOL) -D'NEXTOR_ROM="$(notdir $(NEXTOR_ROM16))"' --raw=$@ --lst=build/rom16.lst --exp=build/rom16.exp $<
 	@tools/check-rom.sh $@ $(NEXTOR_ROM16)
+# The driver-contract test's ROM and the volume its driver carries
+# (DRVROM, above).
+$(DRVROM_VOL): tests/drvrom/mkvol.py tests/drvrom/layout.inc build/drvrom.progs/reader | build
+	python3 -I tests/drvrom/mkvol.py $@ build/drvrom.progs/reader
+$(DRVROM): src/rom/rom.asm $(SRC_FILES) src/version.inc $(KERNEL_NA) $(KSEG) $(KBOOT) $(NEXTOR_ROM16) tools/check-rom.sh tests/drvrom/pattern.asm tests/drvrom/block.asm tests/drvrom/layout.inc tests/m6util.asm $(DRVROM_VOL) | build
+	$(SJASMPLUS) --nologo --msg=war $(INCLUDES) -I$(ROM_POOL) -D'NEXTOR_ROM="$(notdir $(NEXTOR_ROM16))"' -D'M6_DRIVER="tests/drvrom/pattern.asm"' -D'M6_TEST="tests/drvrom/block.asm"' -D'KERNEL_BIN="$(KERNEL_NA)"' --raw=$@ --lst=build/drvrom.lst --exp=build/drvrom.exp $<
+	@tools/check-rom.sh $@ $(NEXTOR_ROM16) block
 # Any other cartridge: the kernel ROM given by path, the output named after
 # it, in build/ beside the other two, never over one of them; nothing of
 # the input is kept. The target is phony, so .DELETE_ON_ERROR does not
@@ -211,6 +226,11 @@ sizes: $(KERNEL) $(KERNEL_NA) $(KSEG) $(KBOOT) $(LEG) $(M6COM) $(NEXTORSYS) $(if
 	    v=$$(sed -n "s/^ROM_B$${b}_FREE: EQU 0x0*\([0-9A-Fa-f]*\)$$/\1/p" build/rom.exp); \
 	    printf 'ROOM rom-bank%s %d\n' "$$b" $$(( 0x$${v:-0} )); \
 	done; fi
+	@if [ -f build/drvrom.exp ]; then \
+	    printf 'SIZE drvrom.rom %s\n' "$$(wc -c < $(DRVROM) | tr -d ' ')"; \
+	    v=$$(sed -n "s/^ROM_B7_FREE: EQU 0x0*\([0-9A-Fa-f]*\)$$/\1/p" build/drvrom.exp); \
+	    printf 'ROOM drvrom-bank7 %d\n' $$(( 0x$${v:-0} )); \
+	fi
 	@for l in LEG_ROOM LEGB_ROOM; do \
 	    v=$$(sed -n "s/^$$l: EQU 0x0*\([0-9A-Fa-f]*\)$$/\1/p" build/leg.exp); \
 	    printf 'ROOM %s %d\n' "$$(echo $$l | sed 's/_ROOM//' | tr A-Z a-z)" $$(( 0x$${v:-0} )); \
@@ -237,7 +257,7 @@ fetch:
 # The one command: tools, build, every test in name order, stop at the first
 # failure, summary.
 check: fetch
-	@$(MAKE) --no-print-directory all $(ROM) $(ROM16) check-tools
+	@$(MAKE) --no-print-directory all $(ROM) $(ROM16) $(DRVROM) check-tools
 	@tools/check-version.sh
 	@tools/check-headers.sh
 	@tools/check-leg.sh
