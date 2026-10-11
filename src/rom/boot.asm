@@ -231,7 +231,7 @@ rm_start:
         ld      a,(RM_TMP_SLOT)
         ld      (rm_slot),a
         ld      (rm_rec+KR_KSLOTS),a
-        ld      (rm_rec+KR_DRVS),a      ; the driver's slot
+        ld      (rm_rec+KR_DRVS+KD_SLOT),a ; the driver's slot
         ld      a,(RM_TMP_RAM)
         ld      (rm_ram),a
         ld      (rm_rec+KR_MAPSLOT),a
@@ -257,7 +257,7 @@ rm_start:
         ldir
         ld      a,(NX_K_SIZE)           ; the driver's bank, from the ROM
         ld      (rm_drvbank),a
-        ld      (rm_rec+KR_DRVS+1),a
+        ld      (rm_rec+KR_DRVS+KD_BANK),a ; KD_KIND stays KD_NEXTOR
         ld      a,1
         ld      (rm_rec+KR_NDRV),a
         ld      hl,4000h                ; the switched image: page 1's

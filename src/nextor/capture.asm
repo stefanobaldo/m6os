@@ -147,9 +147,11 @@ nx_capture:
         pop     ix
         jr      nz,.drvnext
         ld      a,(ix+KR_NDRV)
-        cp      4
+        cp      KD_N
         jr      nc,.drvfull
+        ld      e,a
         add     a,a
+        add     a,e                     ; * KD_SIZE
         add     a,KR_DRVS
         ld      e,a
         ld      d,0
@@ -157,9 +159,11 @@ nx_capture:
         pop     hl
         add     hl,de
         ld      a,(KT_SCRATCH+0)
-        ld      (hl),a                  ; the slot
+        ld      (hl),a                  ; KD_SLOT
         inc     hl
-        ld      (hl),b                  ; the bank
+        ld      (hl),b                  ; KD_BANK
+        inc     hl
+        ld      (hl),KD_NEXTOR          ; KD_KIND
 .drvfull:
         inc     (ix+KR_NDRV)
 .drvnext:

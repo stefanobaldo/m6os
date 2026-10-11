@@ -97,7 +97,7 @@ K_API2          equ K_BASE+2048 ; API2_N entries of JP, 3 bytes each: what
                                 ;     beyond K_API, which is full; the same
                                 ;     rules — the order is fixed and only
                                 ;     grows. The image's code starts after it
-API2_N          equ 12
+API2_N          equ 13
 NOFILE          equ 8
 FD_NONE         equ 0FFh
 FD_CON          equ 0FEh        ; the console: write
@@ -131,7 +131,8 @@ API_CON_NEWLINE equ 2
 API_CON_HEX8    equ 3           ; A
 API_CON_HEX16   equ 4           ; HL
 API_CON_DEC16   equ 5           ; HL, no leading zeros
-API_NX_RW       equ 6           ; IX -> descriptor, Cy, B, HL, DE -> sector
+API_NX_RW       equ 6           ; E_NOSYS: the Nextor path is the block
+                                ; layer's own (blk_drv_call, API_BLK_DEV_RW)
 API_K_ENASLT    equ 7           ; A = slot, HL = address; DI on return
 API_MEM_ALLOC   equ 8           ; B = owner -> A = segment; CF if none
 API_MEM_FREE    equ 9           ; A = segment, B = owner; CF if refused
@@ -148,15 +149,17 @@ API_READ        equ 15          ; A = fd (0), HL = buffer, BC = length ->
 ; and the storage gate — kwin_enter, k_stgate_enter — by the switched part
 ; of the kernel, or by a test that enters them itself. The ones whose body
 ; is in the switched part are direct jumps into it.
-API_BLK_RW      equ 16          ; A = volume, CF = write, DE:HL = sector,
-                                ; B = segment, C = 512-byte slot 0-31;
-                                ; CF with the errno in A
-API_BLK_DEV_RW  equ 17          ; A = driver, B = device, C = LUN, DE:HL =
-                                ; sector -> the storage segment, BUF_SCRATCH
+API_BLK_RW      equ 16          ; A = volume | (count - 1) << 3, CF =
+                                ; write, DE:HL = sector, B = segment, C =
+                                ; 256-byte slot 0-62; CF with the errno in A
+API_BLK_DEV_RW  equ 17          ; A = device, IXH = driver, IXL = count, B =
+                                ; segment, C = slot, DE:HL = sector, CF =
+                                ; write: no bounds; CF with the errno in A
 API_K_COPY      equ 18          ; IXH/IXL = source/destination segment, HL/DE
                                 ; = their offsets, BC = length
-API_BLK_QUERY   equ 19          ; A = driver, B = device, C = LUN, D = BQ_*
-                                ; -> ST_INFO of the storage segment
+API_BLK_QUERY   equ 19          ; A = driver, B = device, D = BQ_*, E = a
+                                ; number or LUN, HL = a buffer of the
+                                ; storage segment as page 2 sees it
 API_BGET        equ 20          ; A = volume, DE:HL = sector -> HL = buffer
 API_BWRITE      equ 21          ; HL = buffer
 API_BDROP       equ 22          ; A = volume, DE:HL = sector
@@ -198,6 +201,9 @@ API2_SIG_STUB   equ 9           ; the current process dies of its signal
 API2_CON_CURSOR equ 10          ; -> L = the console's row, H = its column
 API2_DOS_TAIL   equ 11          ; dosenter's crossing: the pages back, the
                                 ; hinge's second stub; never returns
+API2_DRV_TGTSEG equ 12          ; -> A = the target segment of the transfer
+                                ; in progress (blk.asm), for a driver that
+                                ; hands the device the segment itself
 
 ; The syscalls (sys.asm, proc.asm, kseg.asm) and their table indices. A
 ; process calls K_SYS+3*n. Arguments in A, HL, DE, BC as each syscall says;
@@ -705,20 +711,30 @@ KR_VDPREG       equ 61          ; 10: VDP registers 0-9 as the previous
                                 ;     font through R#4
 KR_KBDTYPE      equ 71          ; the ROM's keyboard type byte (002Ch),
                                 ; report only
-KR_NDRV         equ 72          ; Nextor drivers found, 0-4; a fifth is
-                                ; counted and not stored
-KR_DRVS         equ 73          ; 4 x (slot, bank): the device-based Nextor
-                                ; drivers with a valid header, in _GDRVR
-                                ; order; the block layer's driver index
-                                ; 0-3 is the position here
-KR_BOOT_SRC     equ 81          ; 2: where the boot image is: in page 1 of
-                                ;    the loader's memory, or KB_BASE when
-                                ;    it is already in place; 0 = none
-KR_BOOT_LEN     equ 83          ; 2: its length, 1 to KB_MAX
-KR_JIFFY        equ 85          ; 2: JIFFY as the loader found it on entry,
+KR_NDRV         equ 72          ; drivers found, 0-4; a fifth Nextor one
+                                ; is counted and not stored
+KR_DRVS         equ 73          ; KD_N x KD_SIZE: the drivers, in _GDRVR
+                                ; order under Nextor, the ROM's own in mode
+                                ; 3 — slot, bank, kind (KD_*); the block
+                                ; layer's driver index 0-3 is the position
+                                ; here
+KR_BOOT_SRC     equ 85          ; 2: where the boot image is: in page 1
+                                ;    or 2 of the loader's memory (KT_BOOT),
+                                ;    or KB_BASE when it is already in
+                                ;    place; 0 = none
+KR_BOOT_LEN     equ 87          ; 2: its length, 1 to KB_MAX
+KR_JIFFY        equ 89          ; 2: JIFFY as the loader found it on entry,
                                 ;    60 Hz ticks since power-on: the boot
                                 ;    time is this plus K_TICKS
-KREC_SIZE       equ 87
+KREC_SIZE       equ 91
+KD_SLOT         equ 0           ; a KR_DRVS row: the cartridge's slot id
+KD_BANK         equ 1           ; the driver's bank in its kernel ROM
+KD_KIND         equ 2           ; KD_NEXTOR or KD_M6
+KD_SIZE         equ 3
+KD_N            equ 4           ; rows the record holds
+KD_NEXTOR       equ 0           ; a Nextor 2 driver bank, the adapter's
+KD_M6           equ 1           ; a bank of m6's kernel ROM with a block
+                                ; at DRV_BASE
 
 ; Memory (mem.asm). Owners in the segment table; the mapper table's layout.
 MEM_FREE        equ 0           ; owner: nobody
@@ -732,29 +748,95 @@ MM_FLAGS        equ 3           ; MMF_*
 MM_SIZE         equ 4
 MMF_PRIMARY     equ 1           ; the mapper page 3 lives in
 
-; The block layer (blk.asm, ks_blk.asm). Sectors are 512 bytes; a sector
-; number is 32 bits and travels in DE:HL, DE high; a transfer target is a
-; segment and a 256-byte slot in it, 0-62 (BLK_SLOTS): the sector lands at
-; slot * 256 and must not cross the page, so that a whole sector goes from
-; the driver into a program's page at any 256-byte boundary — P0_PROG
-; included — with no copy.
-BLK_PER_CALL    equ 1           ; sectors per driver call: one keeps the
-                                ; interrupt-disabled region inside a frame
+; The block layer (blk.asm, kboot.asm, ks_blk.asm). Sectors are 512 bytes;
+; a sector number is 32 bits and travels in DE:HL, DE high; a transfer
+; target is a segment and a 256-byte slot in it, 0-62 (BLK_SLOTS): the
+; sector lands at slot * 256; a call moves 1 to 32 sectors and never
+; crosses the page, so that whole sectors go from the driver into a
+; program's page at any 256-byte boundary — P0_PROG included — with no
+; copy.
 BLK_SLOTS       equ 63          ; slots a segment has: 0-62
-VOL_N           equ 8           ; volumes the table holds
+BLK_MAXN        equ 32          ; sectors a call moves at most
+VOL_N           equ 8           ; volumes the table holds; the count rides
+                                ; above the volume in blk_rw's A, so 8
 VOL_SIZE        equ 12
 V_DRV           equ 0           ; driver index 0-3; FFh = the row is free
-V_DEV           equ 1           ; device 1-7
-V_LUN           equ 2           ; LUN 1-7
+V_DEV           equ 1           ; device 1-N of the driver
+V_SPARE         equ 2           ; 0; was the LUN, which the adapter now
+                                ; folds into the device number
 V_FLAGS         equ 3           ; VF_*, as LUN_INFO gives them
 V_FIRST         equ 4           ; 4: first device sector
 V_COUNT         equ 8           ; 4: sectors
 VF_REMOVABLE    equ 1
 VF_RO           equ 2
 VOL_NONE        equ 0FFh        ; blk_root when no volume is the boot one
-BQ_DEVINFO      equ 0           ; blk_query: DEV_INFO basic, 2 bytes
-BQ_LUNINFO      equ 1           ; LUN_INFO, 12 bytes
-BQ_DRVNAME      equ 2           ; DRV_NAME, 32 bytes
+; The queries (blk_query's D, and the operation blk_drv_call dispatches):
+; the contract's four entries, then Nextor's own three, which the
+; enumeration asks a Nextor bank through the adapter.
+BO_RW           equ 0           ; the transfer, blk_rw's and blk_dev_rw's
+BQ_INIT         equ 1           ; -> A = the driver's devices, 1-N
+BQ_INFO         equ 2           ; B = device, HL = a DI_SIZE buffer
+BQ_STATUS       equ 3           ; B = device -> A = DS_*
+BQ_QUERY        equ 4           ; B = device, E = DQ_*, HL = its block
+BQ_DEVINFO      equ 5           ; B = Nextor's device, HL: DEV_INFO basic, 2
+BQ_LUNINFO      equ 6           ; B = Nextor's device, E = LUN, HL: LUN_INFO
+BQ_DRVNAME      equ 7           ; HL: DRV_NAME, 32 bytes
+
+; The driver contract (docs/drivers.md): a block at DRV_BASE of a bank of
+; m6's kernel ROM, run from page 1 of its cartridge's slot with the bank
+; selected, on the kernel's stack, interrupts enabled, IX -> its DRV_RAM
+; bytes of page 3, which the ROM's boot takes between the hinge and
+; F380h — where a Nextor driver's work area goes — and names in KR_WALL.
+DRV_BASE        equ 4100h       ; the block's address: after the bank's
+                                ; header and INIT trampoline, where a
+                                ; Nextor driver bank carries its signature
+DRV_MAX         equ 7FD0h-DRV_BASE ; the most a block may be: to CHGBNK
+DRV_SIGN        equ 0           ; 5: "M6DRV"
+DRV_VER         equ 5           ; DRV_VER_1
+DRV_FLAGS       equ 6           ; DF_*
+DRV_INIT        equ 7           ; jp: -> A = devices 1-N; CF = failed
+DRV_INFO        equ 10          ; jp: A = device, HL = DI_SIZE buffer in
+                                ;     page 2; CF = E_NXIO
+DRV_STATUS      equ 13          ; jp: A = device -> A = DS_*; CF = E_NXIO
+DRV_RW          equ 16          ; jp: A = device, CF = write, B = count
+                                ;     1-32, C = slot, DE:HL = sector -> A =
+                                ;     errno, B = the driver's code
+DRV_QUERY       equ 19          ; jp: A = device, B = DQ_*, HL = its block
+DRV_RES1        equ 22          ; jp: reserved, answers CF and E_NOSYS
+DRV_RES2        equ 25          ; jp: reserved, the same
+DRV_RAM         equ 28          ; 2: bytes of page 3 the block wants
+DRV_RELOC       equ 30          ; 2: reserved, 0
+DRV_NAME        equ 32          ; 16: the block's name, space padded
+DRV_HDR         equ 48
+DRV_VER_1       equ 1
+DRV_RAM_MAX     equ 0F380h-(K_HINGE+K_HINGE_LEN) ; the pool: 576 bytes
+DF_TURBO        equ 1           ; the block can take a Turbo target
+; What info fills, DI_SIZE bytes.
+DI_FLAGS        equ 0           ; DIF_*: LUN_INFO's bits, and bit 7
+DI_CAPS         equ 1           ; DIC_*
+DI_COUNT        equ 2           ; 4: sectors; 0 unknown or no medium
+DI_TSLOT        equ 6           ; the mapper slot a Turbo device writes
+DI_NAME         equ 8           ; 32: the name the listing prints
+DI_IDENT        equ 40          ; 16: slot, device, LUN (1 = none), 0, then
+                                ;     the driver's own
+DI_SIZE         equ 64
+DIF_REMOVABLE   equ 1
+DIF_RO          equ 2
+DIF_FLOPPY      equ 4
+DIF_NOAUTO      equ 8           ; do not mount automatically
+DIF_NOMEDIUM    equ 80h
+DIC_TURBO       equ 1
+DIC_FATACC      equ 2           ; the FAT accelerator's queries answer
+DS_NOTAVAIL     equ 0           ; status: as DEV_STATUS says them
+DS_SAME         equ 1
+DS_CHANGED      equ 2
+DS_UNKNOWN      equ 3
+DQ_FATCOUNT     equ 1           ; query: the FAT accelerator's four
+DQ_FATNEXT      equ 2
+DQ_FATWALK      equ 3
+DQ_FATFREE      equ 4
+DQ_MODE         equ 10h         ; the transfer mode (Standard, Turbo)
+DQ_PRIVATE      equ 80h         ; from here the driver's own
 
 ; The storage segment: the boot segment of page 2 (KR_SEG64K+2), the
 ; kernel's, addressed as (segment, offset) — the switched part sees it at
@@ -788,7 +870,8 @@ SG              equ 4000h               ; the storage segment, from here
 SG_INFO         equ SG+ST_INFO
 SG_HDR          equ SG+ST_HDR
 SG_BUF          equ SG+ST_BUF
-SG_SCRATCH      equ SG_BUF+BUF_SCRATCH*512 ; where blk_dev_rw reads to
+ST_SCRATCH      equ ST_BUF+BUF_SCRATCH*512 ; the enumeration's buffer
+SG_SCRATCH      equ SG+ST_SCRATCH       ; where blk_dev_rw reads to
 SLOT_BUF0       equ ST_BUF/256          ; the slot of buffer 0; a buffer is
                                         ; two slots
 SG_MNT          equ SG+ST_MNT
@@ -826,11 +909,11 @@ SV_CAND         equ ST_VARS+20  ; 4: the candidate's first sector
 SV_CCOUNT       equ ST_VARS+24  ; 4: its sectors
 SV_CTYPE        equ ST_VARS+28  ; its type byte
 SV_FOUND        equ ST_VARS+29  ; candidates found on this LUN
-SV_DRV          equ ST_VARS+30  ; the driver, device and LUN being walked
+SV_DRV          equ ST_VARS+30  ; the driver and the device being walked
 SV_DEV          equ ST_VARS+31
-SV_LUN          equ ST_VARS+32
+SV_KIND         equ ST_VARS+32  ; the driver's KD_KIND
 SV_NDEV         equ ST_VARS+33  ; volumes found on this device
-SV_NLUN         equ ST_VARS+34  ; LUNs the device has
+SV_NDEVS        equ ST_VARS+34  ; devices the driver has
 SV_LINK         equ ST_VARS+35  ; 4: the next EBR, relative to SV_EXT
 SV_LTYPE        equ ST_VARS+39  ; the link entry's type
 SV_PKIND        equ ST_VARS+40  ; PK_*: how the candidate is labelled
@@ -848,6 +931,11 @@ SV_FKEY         equ ST_VARS+106 ; 2: bc_find: the sector's high word
 SV_LAST         equ ST_VARS+108 ; 2: the header of bc_find's last hit
 SV_DOSARG       equ ST_VARS+110 ; 2: dosenter: the segment and the pid,
                                 ;    kept across the body's copy
+SV_IDENT        equ ST_VARS+112 ; 3: the device's identity: slot, device,
+                                ;    LUN, for the root match
+SV_NXDEV        equ ST_VARS+115 ; a Nextor bank: the device DEV_INFO was
+SV_NXLUNS       equ ST_VARS+116 ;    asked for, and its LUNs; 0 = none yet
+SV_NXLUN        equ ST_VARS+117 ;    the LUN being walked
 PK_PRIMARY      equ 0
 PK_LOGICAL      equ 1
 PK_SUPER        equ 2
@@ -1148,6 +1236,13 @@ LEG_BODY        equ 8000h+ST_BUF+(BUF_N-LEG_LEND)*512 ; its variables; page
 LEG_TPA         equ LEG_BDOS-P0_PROG ; the largest .COM
 LEG_EXIT        equ 0FFh        ; in C' at a crossing: k_dos_exit, A = code
 
+; The legacy adapter: the half of blk_drv_call that serves a Nextor 2
+; driver bank (blk.asm, blk_nx). On unless a build says M6_NOADAPTER, as
+; the one for a kernel ROM whose driver bank carries a block does.
+    IFNDEF M6_NOADAPTER
+        DEFINE  M6_ADAPTER
+    ENDIF
+
 ; Page 0. Every page 0 the kernel runs with carries these two things and
 ; nothing else is required of it: the interrupt entry, and the secondary
 ; slot switching stub, which must execute outside page 3 because writing
@@ -1218,3 +1313,10 @@ KT_CHAIN        equ 8800h       ; 128: NEXTOR.SYS's stub that loads Nextor
                                 ; over the loader (loader/nextor.asm)
 KT_LSTACK       equ 9000h       ; the loader's stack top (page 2: the DOS
                                 ; stack sits under DOSHIM and is overwritten)
+KT_BOOT         equ 9000h       ; where a test carries the boot image:
+                                ; page 2 above its stack, KB_MAX bytes,
+                                ; copied to KB_BASE by the kernel before
+                                ; anything else uses the storage segment
+                                ; there — so that it costs the test's
+                                ; block in page 1 nothing. The product's
+                                ; loaders keep it in page 1

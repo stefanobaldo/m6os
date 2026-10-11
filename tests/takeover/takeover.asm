@@ -918,12 +918,18 @@ t_entry:
         ld      de,t_secnum
         ld      bc,4
         ldir
-        ld      ix,K_REC+KR_DRV
+        call    t_drv_ix                ; ix, a: the driver and the device
+        ld      hl,(t_secnum)
+        ld      de,(t_secnum+2)
+        ld      b,a
+        ld      a,(K_REC+KR_SEG64K+2)   ; the segment page 2 shows
+        ld      c,a
+        ld      a,b
+        ld      b,c
+        ld      c,(KT_BUF_C-8000h)/256
         scf                             ; write
-        ld      b,1
-        ld      hl,KT_BUF_C
-        ld      de,t_secnum
-        k_call  API_NX_RW
+        k_call  API_BLK_DEV_RW
+        call    t_page2
         or      a
         jp      nz,t_fail
         call    t_rw_read               ; t_secnum is still the target
@@ -1160,16 +1166,66 @@ t_rtc_watch:
         ld      (t_rtc_n),a
         ret
 
-; t_rw_read — one sector, t_secnum, into KT_BUF_B through the driver.
-; Z if ok, else NZ with A = the driver's error code.
+; t_rw_read — one sector, t_secnum, into KT_BUF_B through the driver:
+; the block layer's device path, the boot device of the record's driver
+; as the adapter numbers it. Z if ok, else NZ with A = the errno.
 t_rw_read:
-        ld      ix,K_REC+KR_DRV
+        call    t_drv_ix                ; ix, a: the driver and the device
+        ld      hl,(t_secnum)
+        ld      de,(t_secnum+2)
+        ld      b,a
+        ld      a,(K_REC+KR_SEG64K+2)   ; the segment page 2 shows
+        ld      c,a
+        ld      a,b
+        ld      b,c
+        ld      c,(KT_BUF_B-8000h)/256
+        or      a                       ; read
+        k_call  API_BLK_DEV_RW
+        call    t_page2
         or      a
-        ld      b,1
-        ld      hl,KT_BUF_B
-        ld      de,t_secnum
-        k_call  API_NX_RW
-        or      a
+        ret
+
+; t_drv_ix — IXH = the index of the record's driver (the row whose slot
+; is the boot descriptor's), IXL = 1, A = the boot device as the adapter
+; numbers it: (device - 1) * 7 + LUN. Corrupts AF, BC, HL.
+t_drv_ix:
+        ld      hl,K_REC+KR_DRVS
+        ld      a,(K_REC+KR_DRV+NXD_SLOT)
+        ld      c,a
+        ld      b,0
+.row:   ld      a,(hl)
+        cp      c
+        jr      z,.found
+        inc     hl
+        inc     hl
+        inc     hl
+        inc     b
+        ld      a,b
+        cp      KD_N
+        jr      c,.row
+        ld      b,0                     ; not there: the first row
+.found: ld      a,b
+        ld      ixh,a
+        ld      ixl,1
+        ld      a,(K_REC+KR_DRV+NXD_DEV)
+        dec     a
+        ld      b,a
+        add     a,a
+        add     a,a
+        add     a,a                     ; * 8
+        sub     b                       ; * 7
+        ld      b,a
+        ld      a,(K_REC+KR_DRV+NXD_LUN)
+        add     a,b
+        ret
+
+; t_page2 — the test's page 2 back: the block layer leaves the window
+; there. Preserves AF.
+t_page2:
+        push    af
+        ld      a,(K_MAP+2)
+        out     (0FEh),a
+        pop     af
         ret
 
 ; t_rw_none — what the loop calls instead of the driver in step 13.
@@ -1250,8 +1306,10 @@ kimage_end:
 ksimage:
         incbin  "build/kseg.bin"
 ksimage_end:
+        ASSERT  ksimage_end < 8000h
+
+        ds      KT_BOOT-$,0
 kbimage:
         incbin  "build/kboot.bin"
 kbimage_end:
-        ASSERT  kbimage_end < 8000h     ; the resident copies it from pages 0-1
-
+        ASSERT  kbimage_end-kbimage <= KB_MAX

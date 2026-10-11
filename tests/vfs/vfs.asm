@@ -239,10 +239,7 @@ kimage_end:
 ksimage:
         incbin  "build/kseg.bin"
 ksimage_end:
-kbimage:
-        incbin  "build/kboot.bin"
-kbimage_end:
-        ASSERT  kbimage_end < 8000h
+        ASSERT  ksimage_end < 8000h
 
 ; The second half, in page 1 of the loader's memory, which the kernel
 ; keeps as process 0's page 1 so the block runs where it lies. It runs once the kernel has
@@ -1330,3 +1327,8 @@ u_exectime_k_end:
 
 tblock_end:
         ASSERT  $ < 8000h
+        ds      KT_BOOT-$,0
+kbimage:
+        incbin  "build/kboot.bin"
+kbimage_end:
+        ASSERT  kbimage_end-kbimage <= KB_MAX
