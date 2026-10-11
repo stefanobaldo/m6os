@@ -319,11 +319,13 @@ sig_isr:
 ; the two tests k_isr makes for a switch. Interrupted in user space — PC
 ; and SP both below page 3: the stub goes into the interrupt's own frame
 ; (sig_fpc). Interrupted in the switched image — PC in page 2, SP on the
-; kernel stack in page 3: the syscall in flight is left to finish, and the
-; stub replaces the return address the process's call pushed, which k_usp
-; points at — provided that stack is in page 0, the process's own during
-; the gate; a stack in page 1 or 2 has the storage segment or the window
-; over it now and is left for a later tick. Interrupted in the resident
+; kernel stack in page 3 — or in a driver, PC in page 1 of the driver's
+; slot with the same stack (blk.asm): the syscall in flight is left to
+; finish, and the stub replaces the return address the process's call
+; pushed, which k_usp points at — provided that stack is in page 0, the
+; process's own during the gate and the call; a stack in page 1 or 2 has
+; the storage segment, the driver or the window over it now and is left
+; for a later tick. Interrupted in the resident
 ; with SP anywhere — a resident syscall body, spawn, the gate's stubs: the
 ; frame cannot be found, and the next tick tries again. Corrupts
 ; everything.

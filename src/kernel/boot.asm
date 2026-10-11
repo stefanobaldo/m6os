@@ -397,11 +397,13 @@ kwin_load:
 ; in the loader's page 0. Out: Z if done, or if it is already there
 ; (KR_BOOT_SRC = KB_BASE, which is how a ROM delivers it); NZ with A =
 ; 0F6h when the length is not 1 to KB_MAX, or when there is none or the
-; source is not in page 1. The length is checked first, in every case: a
-; record saying the image is in place with no length, or too much of one,
-; is as wrong as one pointing nowhere. The source must be in page 1 so
-; that it lies above the destination: a forward ldir then never overwrites
-; a byte it has not read. Corrupts AF, BC, DE, HL.
+; source is not in page 1 or 2. The length is checked first, in every
+; case: a record saying the image is in place with no length, or too much
+; of one, is as wrong as one pointing nowhere. The source must be above
+; the destination — page 1, or page 2, where a loader keeps it at KT_BOOT
+; so that it costs page 1 nothing and where nothing of the kernel's has
+; run yet — so that a forward ldir never overwrites a byte it has not
+; read. Corrupts AF, BC, DE, HL.
 kboot_load:
         ld      bc,(K_REC+KR_BOOT_LEN)
         ld      a,b
@@ -423,8 +425,10 @@ kboot_load:
         ld      a,h
         and     0C0h
         cp      40h
-        jr      nz,.bad                 ; not in page 1 (none: 0000h)
-        ldir
+        jr      z,.copy                 ; page 1
+        cp      80h
+        jr      nz,.bad                 ; not page 2 either (none: 0000h)
+.copy:  ldir
         xor     a                       ; Z
         ret
 .bad:   ld      a,0F6h

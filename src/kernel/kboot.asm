@@ -99,9 +99,10 @@ sched_init:
 ; ---------------------------------------------------------------------
 ; The enumeration
 
-; blk_init — every driver in the record, every device and LUN it has,
-; every partition of each: the volume table, the boot volume and the
-; listing. Corrupts everything.
+; blk_init — every driver in the record, every device it serves, every
+; partition of each: the volume table, the boot volume and the listing.
+; A driver is asked through the block layer alone (API_BLK_QUERY,
+; API_BLK_DEV_RW), whatever its kind. Corrupts everything.
 blk_init:
         xor     a
         ld      (K_BLK_NVOL),a
@@ -114,56 +115,54 @@ blk_init:
         ld      hl,s_nodriver
         k_call  API_CON_PUTS
         ret
-.some:  cp      5
+.some:  cp      KD_N+1
         jr      c,.count
-        ld      a,4
+        ld      a,KD_N
 .count: ld      (SG+SV_NDRV),a
         xor     a
         ld      (SG+SV_DRV),a
 .driver:
-        call    bi_name                 ; the driver's name into SV_NAME
+        ld      a,(SG+SV_DRV)
+        ld      e,a
+        add     a,a
+        add     a,e                     ; * KD_SIZE
+        add     a,KR_DRVS+KD_KIND
+        ld      l,a
+        ld      h,0
+        ld      de,K_REC
+        add     hl,de
+        ld      a,(hl)
+        ld      (SG+SV_KIND),a
+        xor     a
+        ld      (SG+SV_NXDEV),a         ; no DEV_INFO asked yet
+        ld      a,(SG+SV_DRV)
+        ld      d,BQ_INIT
+        k_call  API_BLK_QUERY
+        jr      c,.failed
+        or      a
+        jr      z,.nextdrv              ; no device
+        ld      (SG+SV_NDEVS),a
         ld      a,1
         ld      (SG+SV_DEV),a
 .device:
-        ld      a,(SG+SV_DEV)
-        ld      b,a
-        ld      c,0
-        ld      d,BQ_DEVINFO
-        ld      a,(SG+SV_DRV)
-        k_call  API_BLK_QUERY
-        jr      c,.nextdev              ; no such device
-        ld      a,(SG_INFO+0)           ; LUNs, 1-8; 1 when none
-        or      a
-        jr      nz,.luns
-        inc     a
-.luns:  cp      8
-        jr      c,.nlun
-        ld      a,7
-.nlun:  ld      (SG+SV_NLUN),a
-        xor     a
-        ld      (SG+SV_NDEV),a
-        ld      a,1
-        ld      (SG+SV_LUN),a
-.lun:   call    bi_lun
-        ld      a,(SG+SV_LUN)
-        inc     a
-        ld      (SG+SV_LUN),a
-        ld      hl,SG+SV_NLUN
-        cp      (hl)
-        jr      z,.lun
-        jr      c,.lun
-        ld      a,(SG+SV_NDEV)
-        or      a
-        jr      nz,.nextdev
-        call    bi_devlun               ; "  d.l"
-        ld      hl,s_novolumes
-        k_call  API_CON_PUTS
-.nextdev:
+        call    bi_device
         ld      a,(SG+SV_DEV)
         inc     a
         ld      (SG+SV_DEV),a
-        cp      8
+        ld      hl,SG+SV_NDEVS
+        cp      (hl)
+        jr      z,.device
         jr      c,.device
+        jr      .nextdrv
+.failed:
+        ld      hl,s_drvfail
+        k_call  API_CON_PUTS
+        ld      a,(SG+SV_DRV)
+        add     a,'0'
+        k_call  API_CON_PUTC
+        ld      hl,s_drvfail2
+        k_call  API_CON_PUTS
+.nextdrv:
         ld      a,(SG+SV_DRV)
         inc     a
         ld      (SG+SV_DRV),a
@@ -172,13 +171,167 @@ blk_init:
         jr      c,.driver
         ret
 
-; bi_name — the driver's DRV_NAME into SV_NAME, its length without the
+; bi_device — device SV_DEV of driver SV_DRV: its record into SG_INFO,
+; then its partitions, then the "no volumes" line when none; a device
+; that is none returns with nothing printed. Corrupts everything.
+bi_device:
+        call    bi_info
+        ret     c
+        ld      hl,SG_INFO+DI_IDENT
+        ld      de,SG+SV_IDENT
+        ld      bc,3
+        ldir
+        call    bi_name                 ; the name into SV_NAME
+        ld      a,(SG_INFO+DI_FLAGS)
+        bit     7,a
+        jr      nz,.novol               ; no medium
+        bit     3,a
+        jr      z,.automap
+        call    bi_dev
+        ld      hl,s_noautomap
+        k_call  API_CON_PUTS
+        ret
+.automap:
+        and     VF_REMOVABLE|VF_RO
+        ld      (SG+SV_LFLAGS),a
+        ld      hl,SG_INFO+DI_COUNT
+        ld      de,SG+SV_TOTAL
+        ld      bc,4
+        ldir
+        xor     a
+        ld      (SG+SV_NDEV),a
+        call    bi_walk
+        ld      a,(SG+SV_NDEV)
+        or      a
+        ret     nz
+.novol: call    bi_dev
+        ld      hl,s_novolumes
+        k_call  API_CON_PUTS
+        ret
+
+; bi_info — the DI_SIZE record of device SV_DEV of driver SV_DRV into
+; SG_INFO: a block's own (BQ_INFO); for a Nextor bank, built from
+; DEV_INFO — asked once per Nextor device and kept across its LUNs —
+; LUN_INFO and DRV_NAME, through the scratch buffer, the device number
+; being Nextor's device (n - 1) / 7 + 1 and LUN (n - 1) mod 7 + 1. CF
+; when the device is none. Corrupts everything.
+bi_info:
+        ld      a,(SG+SV_KIND)
+        or      a
+        jr      z,.nextor
+        ld      a,(SG+SV_DEV)
+        ld      b,a
+        ld      a,(SG+SV_DRV)
+        ld      d,BQ_INFO
+        ld      hl,8000h+ST_INFO
+        k_call  API_BLK_QUERY
+        ret
+.nextor:
+        ld      a,(SG+SV_DEV)
+        dec     a
+        ld      e,1
+.div:   cp      7
+        jr      c,.mod
+        sub     7
+        inc     e
+        jr      .div
+.mod:   inc     a
+        ld      (SG+SV_NXLUN),a         ; the LUN
+        ld      a,(SG+SV_NXDEV)
+        cp      e
+        jr      z,.known
+        ld      a,e
+        ld      (SG+SV_NXDEV),a         ; a new device: DEV_INFO
+        xor     a
+        ld      (SG+SV_NXLUNS),a        ; no LUNs until it answers
+        ld      b,e
+        ld      a,(SG+SV_DRV)
+        ld      d,BQ_DEVINFO
+        ld      hl,8000h+ST_SCRATCH
+        k_call  API_BLK_QUERY
+        ret     c                       ; no such device: nor its LUNs
+        ld      a,(SG_SCRATCH+0)        ; LUNs, 1-8; 1 when none
+        or      a
+        jr      nz,.luns
+        inc     a
+.luns:  cp      8
+        jr      c,.nluns
+        ld      a,7
+.nluns: ld      (SG+SV_NXLUNS),a
+.known: ld      a,(SG+SV_NXLUN)
+        ld      hl,SG+SV_NXLUNS
+        cp      (hl)
+        jr      z,.lun
+        jr      c,.lun
+        scf                             ; past the device's LUNs
+        ret
+.lun:   ld      e,a                     ; the LUN
+        ld      a,(SG+SV_NXDEV)
+        ld      b,a
+        ld      a,(SG+SV_DRV)
+        ld      d,BQ_LUNINFO
+        ld      hl,8000h+ST_SCRATCH
+        k_call  API_BLK_QUERY
+        push    af
+        ld      hl,SG_INFO              ; the record: zeroed, then filled
+        ld      (hl),0
+        ld      de,SG_INFO+1
+        ld      bc,DI_SIZE-1
+        ldir
+        pop     af
+        jr      c,.nomedium
+        ld      a,(SG_SCRATCH+0)        ; medium type: 0 = block device
+        or      a
+        jr      nz,.notdev
+        ld      hl,(SG_SCRATCH+1)       ; sector size
+        ld      de,512
+        or      a
+        sbc     hl,de
+        jr      nz,.notdev
+        ld      a,(SG_SCRATCH+7)        ; flags, as LUN_INFO gives them
+        ld      (SG_INFO+DI_FLAGS),a
+        ld      hl,SG_SCRATCH+3         ; total sectors
+        ld      de,SG_INFO+DI_COUNT
+        ld      bc,4
+        ldir
+        jr      .ident
+.nomedium:
+        ld      a,(SG+SV_NXLUN)
+        dec     a
+        jr      z,.first
+        scf                             ; a later LUN answering nothing:
+        ret                             ; no device
+.first: ld      a,DIF_NOMEDIUM          ; LUN 1 answering nothing: the
+        ld      (SG_INFO+DI_FLAGS),a    ; device's "no volumes" line
+.ident: ld      a,(SG+SV_DRV)           ; identity: slot, device, LUN, 0
+        ld      e,a
+        add     a,a
+        add     a,e
+        add     a,KR_DRVS+KD_SLOT
+        ld      l,a
+        ld      h,0
+        ld      de,K_REC
+        add     hl,de
+        ld      a,(hl)
+        ld      (SG_INFO+DI_IDENT),a
+        ld      a,(SG+SV_NXDEV)
+        ld      (SG_INFO+DI_IDENT+1),a
+        ld      a,(SG+SV_NXLUN)
+        ld      (SG_INFO+DI_IDENT+2),a
+        ld      a,(SG+SV_DRV)           ; the name, from the bank
+        ld      d,BQ_DRVNAME
+        ld      hl,8000h+ST_INFO+DI_NAME
+        k_call  API_BLK_QUERY
+        or      a                       ; CF clear
+        ret
+.notdev:
+        scf
+        ret
+
+; bi_name — the record's name into SV_NAME, its length without the
 ; trailing spaces into SV_NAMELEN.
 bi_name:
-        ld      a,(SG+SV_DRV)
-        ld      d,BQ_DRVNAME
-        k_call  API_BLK_QUERY
-        ld      hl,SG_INFO
+        ld      hl,SG_INFO+DI_NAME
         ld      de,SG+SV_NAME
         ld      bc,32
         ldir
@@ -193,43 +346,7 @@ bi_name:
         ld      (SG+SV_NAMELEN),a
         ret
 
-; bi_lun — one LUN of the current device: LUN_INFO, then its partitions.
-bi_lun:
-        ld      a,(SG+SV_DRV)
-        push    af
-        ld      a,(SG+SV_DEV)
-        ld      b,a
-        ld      a,(SG+SV_LUN)
-        ld      c,a
-        pop     af
-        ld      d,BQ_LUNINFO
-        k_call  API_BLK_QUERY
-        ret     c                       ; not there
-        ld      a,(SG_INFO+0)           ; medium type: 0 = block device
-        or      a
-        ret     nz
-        ld      hl,(SG_INFO+1)          ; sector size
-        ld      de,512
-        or      a
-        sbc     hl,de
-        ret     nz
-        ld      a,(SG_INFO+7)           ; flags
-        bit     3,a
-        jr      z,.automap
-        call    bi_devlun
-        ld      hl,s_noautomap
-        k_call  API_CON_PUTS
-        ret
-.automap:
-        and     VF_REMOVABLE|VF_RO
-        ld      (SG+SV_LFLAGS),a
-        ld      hl,SG_INFO+3            ; total sectors
-        ld      de,SG+SV_TOTAL
-        ld      bc,4
-        ldir
-        ; fall through
-
-; bi_walk — the partitions of the current LUN: sector 0, the four primary
+; bi_walk — the partitions of the current device: sector 0, the four primary
 ; entries in order (a type 05h one opens its chain), then sector 0 itself
 ; as a FAT volume when nothing was found.
 bi_walk:
@@ -239,7 +356,7 @@ bi_walk:
         ld      de,0
         call    bi_read
         jr      nc,.have0
-        call    bi_devlun
+        call    bi_dev
         ld      hl,s_unreadable
         k_call  API_CON_PUTS
         ret
@@ -343,7 +460,7 @@ bi_chain:
         ld      de,(SG+SV_EBR+2)
         call    bi_read
         jr      nc,.have
-        call    bi_devlun
+        call    bi_dev
         ld      hl,s_badchain
         k_call  API_CON_PUTS
         ret
@@ -369,7 +486,7 @@ bi_chain:
         ld      a,(SG+SV_NLOG)
         cp      9
         jr      c,.link
-        call    bi_devlun
+        call    bi_dev
         ld      hl,s_morelogical
         k_call  API_CON_PUTS
         ret
@@ -421,7 +538,7 @@ bi_chain:
 .badpop:
         pop     de
         pop     hl
-.bad:   call    bi_devlun
+.bad:   call    bi_dev
         ld      hl,s_badchain
         k_call  API_CON_PUTS
         ret
@@ -501,14 +618,14 @@ bi_candidate:
         ld      de,(SG+SV_CAND+2)
         call    bi_read
         jr      nc,.boot
-        call    bi_devlun
+        call    bi_dev
         call    bi_plabel
         ld      hl,s_unreadable
         k_call  API_CON_PUTS
         ret
 .boot:  call    bi_bpb
         jr      z,bi_row
-        call    bi_devlun
+        call    bi_dev
         call    bi_plabel
         ld      hl,s_badboot
         k_call  API_CON_PUTS
@@ -542,8 +659,7 @@ bi_row:
         ld      (ix+V_DRV),a
         ld      a,(SG+SV_DEV)
         ld      (ix+V_DEV),a
-        ld      a,(SG+SV_LUN)
-        ld      (ix+V_LUN),a
+        ld      (ix+V_SPARE),0
         ld      a,(SG+SV_LFLAGS)
         ld      (ix+V_FLAGS),a
         push    ix
@@ -577,25 +693,17 @@ bi_row:
         cp      VOL_NONE
         jr      nz,.notroot             ; the first is the root already
         jr      .root
-.recdrv: ld     a,(SG+SV_DRV)
-        add     a,a
-        add     a,KR_DRVS
-        ld      e,a
-        ld      d,0
-        ld      hl,K_REC
-        add     hl,de
+.recdrv: ld     hl,SG+SV_IDENT          ; the identity: slot, device, LUN
         ld      a,(K_REC+KR_DRV+NXD_SLOT)
         cp      (hl)
         jr      nz,.notroot
         inc     hl
-        ld      a,(K_REC+KR_DRV+NXD_BANK)
+        ld      a,(K_REC+KR_DRV+NXD_DEV)
         cp      (hl)
         jr      nz,.notroot
-        ld      a,(K_REC+KR_DRV+NXD_DEV)
-        cp      (ix+V_DEV)
-        jr      nz,.notroot
+        inc     hl
         ld      a,(K_REC+KR_DRV+NXD_LUN)
-        cp      (ix+V_LUN)
+        cp      (hl)
         jr      nz,.notroot
         ld      hl,K_REC+KR_FIRST
         push    ix
@@ -638,7 +746,7 @@ bi_row:
         jr      .name
 .named: ld      hl,s_two
         k_call  API_CON_PUTS
-        call    bi_devlun_bare
+        call    bi_dev_bare
         ld      a,' '
         k_call  API_CON_PUTC
         call    bi_plabel_bare
@@ -799,14 +907,17 @@ bi_mount:
 .type:  ld      (ix+M_FLAGS),a
         ret
 
-; bi_read — DE:HL = a device sector of the current LUN into SG_SCRATCH.
-; CF on error. Corrupts everything.
+; bi_read — DE:HL = a device sector of the current device into
+; SG_SCRATCH. CF on error. Corrupts everything.
 bi_read:
-        ld      a,(SG+SV_DEV)
-        ld      b,a
-        ld      a,(SG+SV_LUN)
-        ld      c,a
         ld      a,(SG+SV_DRV)
+        ld      ixh,a
+        ld      ixl,1
+        ld      a,(K_REC+KR_SEG64K+2)   ; the storage segment,
+        ld      b,a
+        ld      c,ST_SCRATCH/256        ; its scratch buffer
+        ld      a,(SG+SV_DEV)
+        or      a                       ; read
         k_call  API_BLK_DEV_RW
         ret
 
@@ -862,20 +973,29 @@ bi_bpb:
 .no:    or      1                       ; NZ
         ret
 
-; bi_devlun — "  d.l" of the current device and LUN; bi_devlun_bare the
-; same without the indent. Corrupts AF, HL.
-bi_devlun:
+; bi_dev — "  d.l" of the current device as Nextor numbers it, under
+; a Nextor bank, or "  N" under a block; bi_dev_bare the same without the
+; indent. Corrupts AF, HL.
+bi_dev:
         ld      hl,s_two
         k_call  API_CON_PUTS
-bi_devlun_bare:
-        ld      a,(SG+SV_DEV)
+bi_dev_bare:
+        ld      a,(SG+SV_KIND)
+        or      a
+        jr      nz,.block
+        ld      a,(SG+SV_NXDEV)
         add     a,'0'
         k_call  API_CON_PUTC
         ld      a,'.'
         k_call  API_CON_PUTC
-        ld      a,(SG+SV_LUN)
+        ld      a,(SG+SV_NXLUN)
         add     a,'0'
         k_call  API_CON_PUTC
+        ret
+.block: ld      a,(SG+SV_DEV)
+        ld      l,a
+        ld      h,0
+        k_call  API_CON_DEC16
         ret
 
 ; bi_plabel — " pN", " eN" or " --" for the candidate; bi_plabel_bare
@@ -943,6 +1063,8 @@ bi_dec32:
         ret
 
 s_nodriver:   db "no storage driver",10,0
+s_drvfail:    db "driver ",0
+s_drvfail2:   db ": init failed",10,0
 s_novolumes:  db ": no volumes",10,0
 s_noautomap:  db ": not for automatic mounting, skipped",10,0
 s_unreadable: db ": unreadable, skipped",10,0

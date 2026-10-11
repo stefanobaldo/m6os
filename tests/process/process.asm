@@ -270,9 +270,6 @@ kimage_end:
 ksimage:
         incbin  "build/kseg.bin"
 ksimage_end:
-kbimage:
-        incbin  "build/kboot.bin"
-kbimage_end:
 
 
 ; The second half, in page 1 of the loader's memory, which the kernel
@@ -905,3 +902,8 @@ u_sw_end  equ u_sw+(u_sw_k_end-u_sw_k)
 tblock_end:
 
         ASSERT  $ < 8000h
+        ds      KT_BOOT-$,0
+kbimage:
+        incbin  "build/kboot.bin"
+kbimage_end:
+        ASSERT  kbimage_end-kbimage <= KB_MAX

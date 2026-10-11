@@ -22,6 +22,16 @@
 ; there. Process 0 is never marked: it gives the CPU up in wait and yield
 ; only. The BIOS's own handler — hooks, keyboard scan every third tick —
 ; never runs again.
+;
+; The invariant a driver call relies on (blk.asm, docs/drivers.md): a
+; driver runs on the kernel's stack, in page 3, with interrupts enabled;
+; an interrupt that finds SP in page 3 counts the tick, scans the
+; keyboard, queues ^C and the owed signal, marks the switch owed and
+; returns — it switches neither page 1 nor 2 and never switches process.
+; What the handler touches with a call open: page 3, the VDP's status
+; port, the PPI's ports B and C, and, for a signal, the process's own
+; page 0 where the syscall's return address lies (sig_cur), as it does
+; for a call in the switched image.
 
 ; k_isr — acknowledge the VDP, count, and switch when it is time.
 ; Preserves everything the interrupted code will see.

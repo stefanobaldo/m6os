@@ -888,8 +888,10 @@ kimage_end:
 ksimage:
         incbin  "build/kseg.bin"
 ksimage_end:
+        ASSERT  ksimage_end < 8000h
+
+        ds      KT_BOOT-$,0
 kbimage:
         incbin  "build/kboot.bin"
 kbimage_end:
-        ASSERT  kbimage_end < 8000h     ; the resident copies it from pages 0-1
-
+        ASSERT  kbimage_end-kbimage <= KB_MAX

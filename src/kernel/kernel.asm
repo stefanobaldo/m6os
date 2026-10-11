@@ -45,7 +45,7 @@ k_api:
         jp      con_hex8                ; API_CON_HEX8
         jp      con_hex16               ; API_CON_HEX16
         jp      con_dec16               ; API_CON_DEC16
-        jp      nx_rw                   ; API_NX_RW
+        jp      sys_enosys              ; API_NX_RW: the block layer's now
         jp      k_enaslt                ; API_K_ENASLT
         jp      mem_alloc               ; API_MEM_ALLOC
         jp      mem_free                ; API_MEM_FREE
@@ -165,6 +165,7 @@ k_api2:
         jp      sig_stub                ; API2_SIG_STUB
         jp      con_cursor              ; API2_CON_CURSOR
         jp      dos_tail                ; API2_DOS_TAIL
+        jp      blk_tgtseg              ; API2_DRV_TGTSEG
         ASSERT  k_ticks == K_TICKS
         ASSERT  k_probe == K_PROBE
         ASSERT  k_probe_slot == K_PROBE_SLOT
@@ -195,19 +196,12 @@ k_api2:
         ASSERT  k_api2 == K_API2
         ASSERT  $ == K_API2+3*API2_N
 
-; The driver module's two external needs, supplied by this image: its own
-; slot switch, and the RAM slot for page 1 as captured.
-nx_enaslt       equ k_enaslt
-nx_ramslot1     equ K_REC+KR_RAMAD+1
-        define  NX_RW_ONLY              ; nx_find needs the BDOS; not here
-
         include "kernel/slot.asm"
         include "kernel/sslot.asm"
         include "kernel/irq.asm"
         include "kernel/vdp_t2.asm"
         include "kernel/con.asm"
         include "kernel/kbd.asm"
-        include "nextor/abi2.asm"
         include "kernel/mem.asm"
         include "kernel/kwin.asm"
         include "kernel/blk.asm"
