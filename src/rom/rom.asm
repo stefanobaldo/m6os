@@ -14,8 +14,11 @@
 ; and CUR_BANK at their addresses, CALBNK's body byte for byte — followed
 ; by the boot routine and the resident image. Banks 1 and 2 carry the
 ; switched and the boot images; banks 3 to 6 are empty; bank 7 is the
-; driver: bank 7 of the Nextor kernel ROM built for that cartridge,
-; whole. Every bank begins with the cartridge header and the
+; driver bank: bank 7 of the Nextor kernel ROM built for that cartridge,
+; whole, or — when the build names M6_DRIVER, a block written to m6's own
+; contract (docs/drivers.md) — that block at DRV_BASE behind the same
+; header and bank bytes, in a ROM whose resident has no Nextor adapter
+; (KERNEL_BIN names it). Every bank begins with the cartridge header and the
 ; INIT trampoline, because the mapper register has no reset state the ROM
 ; may count on; the driver bank's own INIT, Nextor's, lands at ROM_NXINIT
 ; in bank 0, where a jump waits for it.
@@ -44,6 +47,9 @@
         OPT     -Wno-fileorg
         IFNDEF  NEXTOR_ROM
         DEFINE  NEXTOR_ROM "Nextor-2.1.4.SunriseIDE.ROM"
+        ENDIF
+        IFNDEF  KERNEL_BIN
+        DEFINE  KERNEL_BIN "build/kernel.bin"
         ENDIF
 ROM_BANK        equ 4000h       ; a bank
 ROM_TRAMP       equ 4010h       ; the INIT trampoline, after the header
@@ -189,7 +195,7 @@ rom_gwork:
         ds      ROM_NXINIT-$,0FFh
         jp      rom_init0               ; the driver bank's INIT lands here
 rom_resident:
-        incbin  "build/kernel.bin"
+        incbin  KERNEL_BIN
 rom_resident_end:
 ROM_B0_FREE     equ NX_CHGBNK-$
         EXPORT  ROM_B0_FREE
@@ -222,6 +228,23 @@ ROM_B2_FREE     equ NX_CHGBNK-$
         EDUP
 
 ; ---------------------------------------------------------------- bank 7
+    IFDEF M6_DRIVER
+        ; A block of m6's own: the bank's header, its number where a
+        ; Nextor bank keeps K_SIZE and CUR_BANK, the block at DRV_BASE.
+        rom_head
+        ds      NX_K_SIZE-$,0
+        db      ROM_DRVBANK
+        db      ROM_DRVBANK
+        ASSERT  $ = DRV_BASE
+rom_drv:
+        include M6_DRIVER
+rom_drv_end:
+        ASSERT  rom_drv_end-rom_drv <= DRV_MAX
+ROM_B7_FREE     equ NX_CHGBNK-$
+        EXPORT  ROM_B7_FREE
+        rom_tail
+    ELSE
         ORG     4000h
         incbin  NEXTOR_ROM, ROM_DRVBANK*ROM_BANK, ROM_BANK
         ASSERT  $ = 8000h
+    ENDIF

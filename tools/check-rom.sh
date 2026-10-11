@@ -3,12 +3,14 @@
 # Copyright (c) 2026 Stefano Baldo
 # SPDX-License-Identifier: BSD-3-Clause
 #
-# tools/check-rom.sh <m6 rom> <nextor rom>: the bytes the kernel ROM must
-# reproduce from the Nextor kernel ROM it takes its driver from, compared
-# with the driver bank's after every build. The driver bank is bank 7 of
-# both files, and it calls into bank 0 at fixed addresses written by hand
-# in src/rom/rom.asm; a byte wrong there shows only as a corrupt sector
-# read, so the assembler's word is not taken for it.
+# tools/check-rom.sh <m6 rom> <nextor rom> [block]: the bytes the kernel
+# ROM must reproduce from the Nextor kernel ROM it takes its bank switch
+# from, compared with that ROM's driver bank after every build. The
+# driver bank is bank 7 of both files, and it calls into bank 0 at fixed
+# addresses written by hand in src/rom/rom.asm; a byte wrong there shows
+# only as a corrupt sector read, so the assembler's word is not taken for
+# it. With `block`, bank 7 of the m6 ROM is a driver block of m6's own
+# and is not compared with the input's.
 #
 #   1. 40DBh-40E1h of bank 0 equal the driver bank's: the part of CALBNK
 #      that runs in the bank called.
@@ -21,8 +23,9 @@
 #      with a jump of its own: the BIOS may scan the cartridge with any
 #      bank visible.
 set -eu
-rom=${1:?usage: tools/check-rom.sh <m6 rom> <nextor rom>}
-nextor=${2:?usage: tools/check-rom.sh <m6 rom> <nextor rom>}
+rom=${1:?usage: tools/check-rom.sh <m6 rom> <nextor rom> [block]}
+nextor=${2:?usage: tools/check-rom.sh <m6 rom> <nextor rom> [block]}
+block=${3:-}
 BANK=16384
 
 size() { wc -c < "$1" | tr -d ' '; }
@@ -57,10 +60,14 @@ while [ "$b" -lt 8 ]; do
 done
 rm -f "$rom.a" "$rom.b"
 [ "$(byte "$rom" $((0xFE)))" = 7 ] || fail "bank 0's K_SIZE (40FEh) is not 7"
-slice "$rom" $drv $BANK > "$rom.a"
-slice "$nextor" $drv $BANK > "$rom.b"
-cmp -s "$rom.a" "$rom.b" || { rm -f "$rom.a" "$rom.b"; fail "bank 7 is not the Nextor ROM's bank 7"; }
-rm -f "$rom.a" "$rom.b"
+if [ "$block" = block ]; then
+    [ "$(slice "$rom" $((drv + 0x100)) 5)" = "M6DRV" ] || fail "bank 7 holds no driver block at 4100h"
+else
+    slice "$rom" $drv $BANK > "$rom.a"
+    slice "$nextor" $drv $BANK > "$rom.b"
+    cmp -s "$rom.a" "$rom.b" || { rm -f "$rom.a" "$rom.b"; fail "bank 7 is not the Nextor ROM's bank 7"; }
+    rm -f "$rom.a" "$rom.b"
+fi
 
 # 5. The driver bank's INIT: xor a / call 7FD0h / jp <target> at 40F6h.
 [ "$(byte "$nextor" $((drv + 0xF6)))" = 175 ] && [ "$(byte "$nextor" $((drv + 0xFA)))" = 195 ] ||
@@ -73,4 +80,8 @@ target=$((hi * 256 + lo))
 [ "$(byte "$rom" $((target - 0x4000)))" = 195 ] ||
     fail "bank 0 holds no jump at $(printf %04X "$target"), where the driver bank's INIT lands"
 
-echo "check-rom: $rom reproduces the driver bank's CALBNK, CHGBNK and INIT target"
+if [ "$block" = block ]; then
+    echo "check-rom: $rom reproduces the kernel ROM's CALBNK, CHGBNK and INIT target, with a driver block in bank 7"
+else
+    echo "check-rom: $rom reproduces the driver bank's CALBNK, CHGBNK and INIT target"
+fi

@@ -17,11 +17,15 @@
 ; page 3's, which the kernel takes as the primary mapper — and which
 ; segment page 3 shows, chooses three more for pages 0 to 2, and copies
 ; the routine below to page 2 and runs it from there, where switching the
-; bank in page 1 costs nothing. That routine initialises the driver
-; (DRV_INIT twice, as Nextor does: the work area's size, then the
-; hardware), fills the takeover record — the BIOS half of the capture, the
-; RAM slot, the segments, the current H.TIMI and FCALL, this slot's driver
-; in bank K_SIZE — copies the switched image to page 1's segment, the boot
+; bank in page 1 costs nothing. That routine reads what the driver bank
+; is — a Nextor driver, initialised as Nextor does (DRV_INIT twice: the
+; work area's size, then the hardware), or a block of m6's own, which
+; declares its page-3 share in its header and is initialised by the
+; kernel's boot image later — takes the driver's share of page 3 from
+; under F380h, fills the takeover record — the BIOS half of the capture,
+; the RAM slot, the segments, the current H.TIMI and FCALL, this slot's
+; driver in bank K_SIZE and its kind — copies the switched image to page
+; 1's segment, the boot
 ; image to KB_BASE in page 0's and the resident to C000h, gives page 1 to
 ; RAM and takes the machine over with ld_takeover (loader/takeover.asm,
 ; the image already in place).
@@ -30,7 +34,9 @@
 ; hook: the BIOS goes on to BASIC with no disk system. The codes:
 ;   F3  the resident and its record do not fit under the wall
 ;   F4  no mapper segment answers in page 3's slot
-;   F5  the driver wants more work area than RM_WORK_MAX
+;   F5  the driver wants more of page 3 than there is: RM_WORK_MAX for a
+;       Nextor driver's work area, DRV_RAM_MAX for a block's variables
+;   F6  bank 7 holds a driver block of a version this kernel does not know
 ; From the first copy on there is no machine to return to; a failure
 ; after it is the kernel's, as in every boot mode.
 
@@ -55,6 +61,7 @@ RM_TMP_SEG      equ K_BASE+22   ; 4: the segments for pages 0 to 3
 RMC_FIT         equ 0F3h
 RMC_NOSEG       equ 0F4h
 RMC_WORK        equ 0F5h
+RMC_DRVVER      equ 0F6h
 
 ; rom_init0 — INIT, in bank 0: hook H.RUNC. Corrupts AF, HL.
 rom_init0:
@@ -268,10 +275,43 @@ rm_start:
         ld      (rm_rec+KR_BOOT_SRC),hl
         ld      hl,rom_kboot_end-rom_kboot
         ld      (rm_rec+KR_BOOT_LEN),hl
-        ; The driver's first call: the work area's size, and whether it
-        ; wants the timer hook, which m6 does not serve.
+        ; What the driver bank is: a block of m6's own says so at
+        ; DRV_BASE; anything else is a Nextor driver.
         ld      a,(rm_drvbank)
         call    NX_CHGBNK
+        ld      hl,DRV_BASE+DRV_SIGN
+        ld      de,s_m6drv
+        ld      b,5
+.sign:  ld      a,(de)
+        cp      (hl)
+        jr      nz,.nextor
+        inc     hl
+        inc     de
+        djnz    .sign
+        ; A block: its version, then its share of page 3 from its
+        ; header; no DRV_INIT, no SLTWRK: the kernel's boot image
+        ; initialises it.
+        ld      a,(DRV_BASE+DRV_VER)
+        ld      bc,(DRV_BASE+DRV_RAM)
+        push    af
+        xor     a
+        call    NX_CHGBNK
+        pop     af
+        cp      DRV_VER_1
+        ld      a,RMC_DRVVER
+        jp      nz,rom_fail
+        ld      a,KD_M6
+        ld      (rm_rec+KR_DRVS+KD_KIND),a
+        ld      hl,DRV_RAM_MAX
+        or      a
+        sbc     hl,bc
+        ld      a,RMC_WORK
+        jp      c,rom_fail
+        call    rm_wall_set
+        jr      .inited
+.nextor:
+        ; The driver's first call: the work area's size, and whether it
+        ; wants the timer hook, which m6 does not serve.
         xor     a
         ld      bc,0                    ; no drive letters, no flags
         ld      hl,RM_WORK_MAX
@@ -291,47 +331,30 @@ rm_start:
         sbc     hl,bc
         ld      a,RMC_WORK
         jp      c,rom_fail
-        ld      hl,RM_RAMLOW
-        or      a
-        sbc     hl,bc                   ; the wall: RAMLOW less the area
-        ld      (rm_wall),hl
-        ld      (rm_rec+KR_WALL),hl
-        ld      de,(rom_resident+K_END-K_BASE)  ; the image's end
-        or      a
-        sbc     hl,de
-        ld      a,RMC_FIT
-        jp      c,rom_fail
-        jp      z,rom_fail
-        ; The work area, when there is one: cleared, and its address in
-        ; this slot's SLTWRK entry, where GWORK leads the driver.
+        call    rm_wall_set
+        ; The work area, when there is one: its address in this slot's
+        ; SLTWRK entry, where GWORK leads the driver.
         ld      a,b
         or      c
-        jr      z,.nowork
-        ld      hl,(rm_wall)
-        ld      (hl),0
-        ld      d,h
-        ld      e,l
-        inc     de
-        dec     bc
-        ld      a,b
-        or      c
-        jr      z,.cleared
-        ldir
-.cleared:
+        jr      z,.inited
         ld      a,(rm_slot)
         call    rom_gwork
         ld      hl,(rm_wall)
         ld      (ix+0),l
         ld      (ix+1),h
-.nowork:
-        ; The screen, the banner, then the driver's second call: the
+.inited:
+        ; The screen, the banner, then a Nextor driver's second call: the
         ; hardware, and its own lines. A driver may put the screen back to
         ; the RTC's settings (the Sunrise driver's MYSETSCR does when they
         ; differ); then 80 columns again, and the banner again, and its
-        ; lines are lost on such a machine, as they are in every mode.
+        ; lines are lost on such a machine, as they are in every mode. A
+        ; block prints nothing and is not called here.
         call    ld_screen80
         ld      hl,s_banner
         call    rom_puts
+        ld      a,(rm_rec+KR_DRVS+KD_KIND)
+        or      a
+        jr      nz,.cols
         ld      a,(rm_drvbank)
         call    NX_CHGBNK
         ld      a,1
@@ -433,6 +456,40 @@ rm_start:
 .halt:  di                              ; which was checked above
         halt
         jr      .halt
+
+; rm_wall_set — BC = the bytes of page 3 the driver takes: the wall is
+; RAMLOW less them, into rm_wall and the record; refused (RMC_FIT) when
+; the resident does not end below it; the bytes cleared. Preserves BC.
+rm_wall_set:
+        ld      hl,RM_RAMLOW
+        or      a
+        sbc     hl,bc
+        ld      (rm_wall),hl
+        ld      (rm_rec+KR_WALL),hl
+        ld      de,(rom_resident+K_END-K_BASE)  ; the image's end
+        or      a
+        sbc     hl,de
+        ld      a,RMC_FIT
+        jp      c,rom_fail
+        jp      z,rom_fail
+        ld      a,b
+        or      c
+        ret     z
+        push    bc
+        ld      hl,(rm_wall)
+        ld      (hl),0
+        ld      d,h
+        ld      e,l
+        inc     de
+        dec     bc
+        ld      a,b
+        or      c
+        jr      z,.one
+        ldir
+.one:   pop     bc
+        ret
+
+s_m6drv:    db  "M6DRV"
 
 ld_image        equ K_BASE              ; the resident, already in place
 ld_rec          equ rm_rec

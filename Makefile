@@ -36,6 +36,10 @@ TEST_BINS := $(foreach t,$(filter-out $(PRODUCT_TESTS),$(TESTS)),build/$(t).com)
 PROG_SRCS := $(wildcard tests/*/progs/*.asm)
 PROG_BINS := $(foreach p,$(PROG_SRCS),build/$(word 2,$(subst /, ,$(p))).progs/$(basename $(notdir $(p))))
 KERNEL    := build/kernel.bin
+# The same resident without the Nextor adapter (M6_NOADAPTER): what a
+# kernel ROM carrying a driver block of m6's own is built with; built by
+# `all` so that its size is read every day.
+KERNEL_NA := build/kernel-noadapter.bin
 KSEG      := build/kseg.bin
 # The boot image, src/kernel/kboot.asm: what runs once at boot, carried by
 # every loader beside the other two and run from the loader's page 0.
@@ -70,7 +74,9 @@ NEXTORSYS := build/nextor.sys
 # writes into an SD Mapper ROM, booted in CI as far as a kernel with no
 # volume. `rom-from DRIVER_ROM=<file>` builds from any eight-bank Nextor
 # kernel ROM, which is how the SD Mapper's own ROM is made from the kernel
-# ROM its owner has.
+# ROM its owner has; with `DRIVER=<block.asm>` besides, bank 7 is that
+# driver block instead of the input's driver bank, and the resident has
+# no adapter.
 ROM          := build/m6-sunriseide.rom
 ROM16        := build/m6-ascii16-test.rom
 ROM_POOL     := tools/openmsx/systemroms
@@ -88,7 +94,7 @@ INCLUDES  := -Itests $(if $(wildcard src),-Isrc)
 
 .PHONY: all rom rom-from check check-sjasmplus check-openmsx check-tools fetch sizes clean distclean
 
-all: check-sjasmplus $(KERNEL) $(KSEG) $(KBOOT) $(LEG) $(M6COM) $(NEXTORSYS) $(if $(wildcard $(NEXTOR_ROM)),$(ROM)) $(if $(wildcard $(NEXTOR_ROM16)),$(ROM16)) $(BIN_BINS) $(TEST_BINS) $(PROG_BINS) sizes
+all: check-sjasmplus $(KERNEL) $(KERNEL_NA) $(KSEG) $(KBOOT) $(LEG) $(M6COM) $(NEXTORSYS) $(if $(wildcard $(NEXTOR_ROM)),$(ROM)) $(if $(wildcard $(NEXTOR_ROM16)),$(ROM16)) $(BIN_BINS) $(TEST_BINS) $(PROG_BINS) sizes
 
 rom: $(ROM) $(ROM16)
 
@@ -99,6 +105,8 @@ build:
 # the address above it (build/kernel.exp, included by such a program).
 $(KERNEL): src/kernel/kernel.asm tests/m6test.inc $(SRC_FILES) | build
 	$(SJASMPLUS) --nologo --msg=war $(INCLUDES) --raw=$@ --lst=build/kernel.lst --exp=build/kernel.exp $<
+$(KERNEL_NA): src/kernel/kernel.asm tests/m6test.inc $(SRC_FILES) | build
+	$(SJASMPLUS) --nologo --msg=war $(INCLUDES) -DM6_NOADAPTER --raw=$@ --lst=build/kernel-noadapter.lst --exp=build/kernel-noadapter.exp $<
 
 # The switched part of the kernel, src/kernel/kseg.asm, at its own address:
 # a loader carries it and the resident copies it into a segment at boot.
@@ -161,13 +169,14 @@ $(ROM16): src/rom/rom.asm $(SRC_FILES) src/version.inc $(KERNEL) $(KSEG) $(KBOOT
 # it, in build/ beside the other two, never over one of them; nothing of
 # the input is kept. The target is phony, so .DELETE_ON_ERROR does not
 # reach the output: a failed step removes it itself.
-rom-from: $(KERNEL) $(KSEG) $(KBOOT) tools/check-rom.sh | build
-	@[ -n "$(DRIVER_ROM)" ] || { echo "usage: make rom-from DRIVER_ROM=<eight-bank Nextor kernel ROM>" >&2; exit 2; }
-	@case "$(DRIVER_ROM)" in *" "*) echo "$(DRIVER_ROM): the path must not contain a space (the assembler takes the name as a definition)" >&2; exit 2 ;; esac
+rom-from: $(KERNEL) $(KERNEL_NA) $(KSEG) $(KBOOT) tools/check-rom.sh | build
+	@[ -n "$(DRIVER_ROM)" ] || { echo "usage: make rom-from DRIVER_ROM=<eight-bank Nextor kernel ROM> [DRIVER=<driver block .asm>]" >&2; exit 2; }
+	@case "$(DRIVER_ROM)$(DRIVER)" in *" "*) echo "$(DRIVER_ROM) $(DRIVER): a path must not contain a space (the assembler takes the name as a definition)" >&2; exit 2 ;; esac
 	@[ -f "$(DRIVER_ROM)" ] || { echo "$(DRIVER_ROM): no such file" >&2; exit 2; }
+	@[ -z "$(DRIVER)" ] || [ -f "$(DRIVER)" ] || { echo "$(DRIVER): no such file" >&2; exit 2; }
 	@case "$(ROM_FROM)" in $(ROM)|$(ROM16)) echo "$(DRIVER_ROM): would be built as $(ROM_FROM), which make rom owns; rename the input" >&2; exit 2 ;; esac
-	$(SJASMPLUS) --nologo --msg=war $(INCLUDES) -I$(dir $(DRIVER_ROM)) -D'NEXTOR_ROM="$(notdir $(DRIVER_ROM))"' --raw=$(ROM_FROM) --lst=$(ROM_FROM:.rom=.lst) --exp=$(ROM_FROM:.rom=.exp) src/rom/rom.asm || { rm -f $(ROM_FROM); exit 1; }
-	@tools/check-rom.sh $(ROM_FROM) $(DRIVER_ROM) || { rm -f $(ROM_FROM); exit 1; }
+	$(SJASMPLUS) --nologo --msg=war $(INCLUDES) -I$(dir $(DRIVER_ROM)) -D'NEXTOR_ROM="$(notdir $(DRIVER_ROM))"' $(if $(DRIVER),-D'M6_DRIVER="$(DRIVER)"' -D'KERNEL_BIN="$(KERNEL_NA)"') --raw=$(ROM_FROM) --lst=$(ROM_FROM:.rom=.lst) --exp=$(ROM_FROM:.rom=.exp) src/rom/rom.asm || { rm -f $(ROM_FROM); exit 1; }
+	@tools/check-rom.sh $(ROM_FROM) $(DRIVER_ROM) $(if $(DRIVER),block) || { rm -f $(ROM_FROM); exit 1; }
 	@echo "rom-from: $(ROM_FROM)"
 
 # One rule per utility, with the one-page check.
@@ -189,13 +198,15 @@ $(foreach b,$(patsubst src/bin/%.asm,%,$(BIN_SRCS)),$(eval $(call bin_rule,$(b))
 # labels the image exports; and, when the ROM was built, "ROOM rom-bankN
 # <bytes>" for its three filled banks, what each leaves before CHGBNK —
 # the same for every input, so read from the Sunrise build alone.
-sizes: $(KERNEL) $(KSEG) $(KBOOT) $(LEG) $(M6COM) $(NEXTORSYS) $(if $(wildcard $(NEXTOR_ROM)),$(ROM)) $(if $(wildcard $(NEXTOR_ROM16)),$(ROM16)) $(BIN_BINS) $(TEST_BINS) $(PROG_BINS)
-	@for f in $(KERNEL) $(KSEG) $(KBOOT) $(LEG) $(LEGB) $(M6COM) $(NEXTORSYS) $(wildcard $(ROM) $(ROM16)) $(BIN_BINS) $(TEST_BINS) $(PROG_BINS); do \
+sizes: $(KERNEL) $(KERNEL_NA) $(KSEG) $(KBOOT) $(LEG) $(M6COM) $(NEXTORSYS) $(if $(wildcard $(NEXTOR_ROM)),$(ROM)) $(if $(wildcard $(NEXTOR_ROM16)),$(ROM16)) $(BIN_BINS) $(TEST_BINS) $(PROG_BINS)
+	@for f in $(KERNEL) $(KERNEL_NA) $(KSEG) $(KBOOT) $(LEG) $(LEGB) $(M6COM) $(NEXTORSYS) $(wildcard $(ROM) $(ROM16)) $(BIN_BINS) $(TEST_BINS) $(PROG_BINS); do \
 	    printf 'SIZE %s %s\n' "$$(basename $$f)" "$$(wc -c < $$f | tr -d ' ')"; \
 	done
-	@roof=$$(sed -n 's/^K_IMAGE_ROOF: EQU 0x0*\([0-9A-Fa-f]*\)$$/\1/p' build/kernel.exp); \
-	end=$$(sed -n 's/^K_IMAGE_END: EQU 0x0*\([0-9A-Fa-f]*\)$$/\1/p' build/kernel.exp); \
-	printf 'ROOM kernel %d\n' $$(( 0x$$roof - 0x$$end ))
+	@for k in kernel kernel-noadapter; do \
+	    roof=$$(sed -n 's/^K_IMAGE_ROOF: EQU 0x0*\([0-9A-Fa-f]*\)$$/\1/p' build/$$k.exp); \
+	    end=$$(sed -n 's/^K_IMAGE_END: EQU 0x0*\([0-9A-Fa-f]*\)$$/\1/p' build/$$k.exp); \
+	    printf 'ROOM %s %d\n' "$$k" $$(( 0x$$roof - 0x$$end )); \
+	done
 	@if [ -f build/rom.exp ]; then for b in 0 1 2; do \
 	    v=$$(sed -n "s/^ROM_B$${b}_FREE: EQU 0x0*\([0-9A-Fa-f]*\)$$/\1/p" build/rom.exp); \
 	    printf 'ROOM rom-bank%s %d\n' "$$b" $$(( 0x$${v:-0} )); \
