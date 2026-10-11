@@ -424,6 +424,14 @@ rm_start:
         ld      de,KB_BASE
         ld      bc,rom_kboot_end-rom_kboot
         ldir
+    IFDEF M6_TEST
+        ld      hl,rom_test             ; the test block, to 0100h of the
+        ld      de,0100h                ; same segment; the record names it
+        ld      bc,rom_test_end-rom_test
+        ldir
+        ld      hl,0100h
+        ld      (rm_rec+KR_TEST),hl
+    ENDIF
         xor     a
         call    NX_CHGBNK
         ld      hl,rom_resident
