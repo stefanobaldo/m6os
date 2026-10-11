@@ -5,14 +5,19 @@ volumes it finds, how it names them, and what it does not do yet.
 
 ## Drivers and devices
 
-m6 uses the storage drivers the machine already has: the device-based
+m6 uses two kinds of storage driver. The first is the device-based
 driver of every Nextor 2 cartridge, called directly at its fixed entry
 points with the Nextor kernel out of memory. The program that starts m6
-records every such driver it finds — up to four, in the order Nextor lists
-them — and the kernel asks each one, at boot, which devices it has (1 to 7)
-and which logical units each device has (1 to 7), keeping the units that
-are block devices with 512-byte sectors. A unit whose driver flags it as
-not to be mounted automatically is skipped with one line.
+records every such driver it finds — up to four, in the order Nextor
+lists them — and the kernel asks each one, at boot, which devices it has
+(1 to 7) and which logical units each device has (1 to 7), keeping the
+units that are block devices with 512-byte sectors. The second is a
+driver written for m6 itself, which a kernel ROM can carry in its driver
+bank in place of the Nextor one; it names its own devices, numbered from
+1, with no units. [`drivers.md`](drivers.md) describes both and the
+contract the second is written to. Either way, a unit or device whose
+driver flags it as not to be mounted automatically is skipped with one
+line.
 
 ## Volumes
 
@@ -60,7 +65,8 @@ Each volume prints one line as it is found:
 /mnt/c  Sunrise IDE  2.1 --  01     2048 KB
 ```
 
-The letter; the driver's name as the driver gives it; device and unit;
+The letter; the driver's name as the driver gives it; device and unit
+for a Nextor driver, the device alone for a driver written for m6;
 the partition — `p1` to `p4` a primary entry, `e1` to `e9` a logical one
 in the chain, `--` a unit that is one volume; the partition type byte
 (`00` for a superfloppy); the size in KB, the sector count halved; and
@@ -72,9 +78,11 @@ one line saying so; a device that did not answer prints nothing.
 Everything above the driver addresses a sector by volume, and a sector at
 or past the volume's end is refused before the driver is called: nothing
 in the kernel can reach the partition table or a neighbouring partition
-through a volume. One sector moves per driver call, so the time a driver
-keeps interrupts disabled stays inside one 60 Hz frame and the tick is
-delayed, never lost. The kernel keeps a cache of 22 sectors, written
+through a volume. A Nextor driver moves one sector per call, with
+interrupts disabled for that sector and enabled between two, so the tick
+is delayed, never lost. A driver written for m6 moves up to 32 sectors per
+call with interrupts enabled throughout; the kernel asks for one sector at
+a time today. The kernel keeps a cache of 22 sectors, written
 through: a write reaches the disk before the call that made it returns,
 so there is nothing to flush and a card pulled after a call has everything
 the call wrote. Whole, aligned sectors go from the driver straight into a

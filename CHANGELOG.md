@@ -36,6 +36,14 @@ to install.
   same ROM for an SD Mapper cartridge — the MSX-Pico+'s among them — from
   that cartridge's own Nextor kernel ROM, bank switch and driver taken from
   it whole.
+- Storage drivers written for m6. A kernel ROM can carry, in place of the
+  cartridge's Nextor driver, a driver written to m6's own contract
+  (`docs/drivers.md`): it is called with interrupts enabled, so the clock
+  and the keyboard keep running during a transfer, and moves up to 32
+  sectors per call. `make rom-from DRIVER_ROM=<file> DRIVER=<file>` builds
+  such a ROM. Nextor 2 drivers are served as before, through the same path,
+  in every boot mode; `make sizes` reports the resident kernel with and
+  without the part that serves them.
 - Memory. The kernel finds every memory mapper in the machine and allocates 16K
   segments of the one it runs in, never handing out a segment that does not
   exist or was already in use when it started. A `mem=<K>` argument caps the
