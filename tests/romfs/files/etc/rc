@@ -1,0 +1,7 @@
+# The kernel ROM's disk workload: files copied, joined, sorted and
+# counted through the utilities, and the line the harness waits for.
+cat big > big2
+cat big big2 > big3
+sort text | uniq > u
+wc -c big3 > n
+echo rc done
