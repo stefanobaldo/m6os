@@ -55,12 +55,14 @@ export M6_TZ_OFFSET
 # COMMAND2.COM beside it, for a test that has the loader load Nextor — its
 # AUTOEXEC.BAT comes from the test's files/; `rom`, the kernel ROM
 # build/m6-sunriseide.rom in the cartridge instead of Nextor's, with no
-# system file on the disk at all; `rom ascii16`, the ASCII16 test ROM
-# build/m6-ascii16-test.rom as a plain ASCII16 cartridge with no disk
-# behind it — no image is built or attached, and the test reads the
-# kernel stopping for want of a volume; `rom ascii16 <name>`, the same
-# with build/<name>.rom, a ROM the test builds for itself, in the
-# cartridge.
+# system file on the disk at all; `rom legacy`, the same with
+# build/m6-sunriseide-legacy.rom, the Sunrise ROM with the Nextor driver
+# bank and the adapter; `rom <name>`, the same with build/<name>.rom, a
+# ROM the test builds for itself, in the Sunrise cartridge with its
+# disk; `rom ascii16`, the ASCII16 test ROM build/m6-ascii16-test.rom as
+# a plain ASCII16 cartridge with no disk behind it — no image is built or
+# attached, and the test reads the kernel stopping for want of a volume;
+# `rom ascii16 <name>`, the same with build/<name>.rom in the cartridge.
 product=""
 if [ -f "tests/$name/product" ]; then
     product=$(cat "tests/$name/product")
@@ -68,9 +70,11 @@ if [ -f "tests/$name/product" ]; then
         "") product=m6.com; com="build/m6.com"; upper=M6 ;;
         "nextor.sys"|"nextor.sys chain") com="build/nextor.sys"; upper=NEXTOR ;;
         "rom") com="build/m6-sunriseide.rom"; upper=M6 ;;
+        "rom legacy") com="build/m6-sunriseide-legacy.rom"; upper=M6; product=rom ;;
         "rom ascii16") com="build/m6-ascii16-test.rom"; upper=M6 ;;
         "rom ascii16 "*) com="build/${product#rom ascii16 }.rom"; upper=M6; product="rom ascii16" ;;
-        *) echo "run-test: $name: the product marker says '$product'; empty, nextor.sys, nextor.sys chain, rom, rom ascii16 or rom ascii16 <name>" >&2; exit 2 ;;
+        "rom "*) com="build/${product#rom }.rom"; upper=M6; product=rom ;;
+        *) echo "run-test: $name: the product marker says '$product'; empty, nextor.sys, nextor.sys chain, rom, rom legacy, rom <name>, rom ascii16 or rom ascii16 <name>" >&2; exit 2 ;;
     esac
 else
     com="build/$name.com"
