@@ -163,7 +163,7 @@ build/bin/dos: $(LEG) $(LEGB)
 # A pattern rule cannot say tests/%/%.asm (only the first % is the stem), so
 # one explicit rule is generated per test.
 define test_rule
-build/$(1).com: tests/$(1)/$(1).asm $$(wildcard tests/$(1)/block.asm) tests/m6test.inc $$(SRC_FILES) $$(KERNEL) $$(KSEG) $$(KBOOT) | build
+build/$(1).com: tests/$(1)/$(1).asm $$(wildcard tests/$(1)/block.asm) tests/m6test.inc tests/m6prog.inc tests/m6util.asm $$(SRC_FILES) $$(KERNEL) $$(KSEG) $$(KBOOT) | build
 	$$(SJASMPLUS) --nologo --msg=war $$(INCLUDES) --raw=$$@ --lst=build/$(1).lst $$<
 endef
 $(foreach t,$(TESTS),$(eval $(call test_rule,$(t))))
