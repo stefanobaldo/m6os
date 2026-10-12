@@ -81,7 +81,7 @@ in the kernel can reach the partition table or a neighbouring partition
 through a volume. A Nextor driver moves one sector per call, with
 interrupts disabled for that sector and enabled between two, so the tick
 is delayed, never lost. A driver written for m6 moves up to 32 sectors per
-call with interrupts enabled throughout; the kernel asks for one sector at
+call with interrupts enabled; the kernel asks for one sector at
 a time today. The kernel keeps a cache of 22 sectors, written
 through: a write reaches the disk before the call that made it returns,
 so there is nothing to flush and a card pulled after a call has everything
