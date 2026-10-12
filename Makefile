@@ -98,6 +98,13 @@ ROM_FROM      = build/m6-$(basename $(notdir $(DRIVER_ROM)))$(if $(DRIVER),-$(ba
 # volume that tests/drvrom/mkvol.py writes around the reader program.
 DRVROM     := build/drvrom.rom
 DRVROM_VOL := build/drvrom.vol
+# The Sunrise IDE driver test's ROMs: the Sunrise kernel ROM with the
+# driver and the test block (M6_TEST) in bank 2, booted by
+# tools/run-test.sh in the Sunrise cartridge with a master and a slave;
+# and the same test block on the ROM with the Nextor driver bank and the
+# adapter, the comparison.
+M6IDE_ROM  := build/m6ide.rom
+M6IDE_LROM := build/m6ide-legacy.rom
 SRC_FILES := $(wildcard src/*.inc src/*/*.asm src/*/*.inc)
 # sjasmplus rejects an include path that does not exist, so -Isrc is passed
 # only once there is a src/ to point at.
@@ -109,7 +116,7 @@ INCLUDES  := -Itests $(if $(wildcard src),-Isrc)
 
 .PHONY: all rom rom-from check check-sjasmplus check-openmsx check-tools fetch sizes clean distclean
 
-all: check-sjasmplus $(KERNEL) $(KERNEL_NA) $(KSEG) $(KBOOT) $(LEG) $(M6COM) $(NEXTORSYS) $(if $(wildcard $(NEXTOR_ROM)),$(ROM) $(ROM_LEGACY)) $(if $(wildcard $(NEXTOR_ROM16)),$(ROM16) $(DRVROM)) $(BIN_BINS) $(TEST_BINS) $(PROG_BINS) sizes
+all: check-sjasmplus $(KERNEL) $(KERNEL_NA) $(KSEG) $(KBOOT) $(LEG) $(M6COM) $(NEXTORSYS) $(if $(wildcard $(NEXTOR_ROM)),$(ROM) $(ROM_LEGACY) $(M6IDE_ROM) $(M6IDE_LROM)) $(if $(wildcard $(NEXTOR_ROM16)),$(ROM16) $(DRVROM)) $(BIN_BINS) $(TEST_BINS) $(PROG_BINS) sizes
 
 rom: $(ROM) $(ROM_LEGACY) $(ROM16)
 
@@ -190,6 +197,13 @@ $(DRVROM_VOL): tests/drvrom/mkvol.py tests/drvrom/layout.inc build/drvrom.progs/
 $(DRVROM): src/rom/rom.asm $(SRC_FILES) src/version.inc $(KERNEL_NA) $(KSEG) $(KBOOT) $(NEXTOR_ROM16) tools/check-rom.sh tests/drvrom/pattern.asm tests/drvrom/block.asm tests/drvrom/layout.inc tests/m6util.asm $(DRVROM_VOL) | build
 	$(SJASMPLUS) --nologo --msg=war $(INCLUDES) -I$(ROM_POOL) -D'NEXTOR_ROM="$(notdir $(NEXTOR_ROM16))"' -D'M6_DRIVER="tests/drvrom/pattern.asm"' -D'M6_TEST="tests/drvrom/block.asm"' -D'KERNEL_BIN="$(KERNEL_NA)"' -D'KERNEL_EXP="$(KERNEL_NA:.bin=.exp)"' --raw=$@ --lst=build/drvrom.lst --exp=build/drvrom.exp $<
 	@tools/check-rom.sh $@ $(NEXTOR_ROM16) block
+# The Sunrise IDE driver test's ROMs (M6IDE_ROM, M6IDE_LROM, above).
+$(M6IDE_ROM): src/rom/rom.asm $(SRC_FILES) src/version.inc $(KERNEL_NA) $(KSEG) $(KBOOT) $(NEXTOR_ROM) tools/check-rom.sh tests/m6ide/block.asm tests/m6util.asm | build
+	$(SJASMPLUS) --nologo --msg=war $(INCLUDES) -I$(ROM_POOL) -D'M6_DRIVER="$(M6IDE)"' -D'M6_TEST="tests/m6ide/block.asm"' -D'KERNEL_BIN="$(KERNEL_NA)"' -D'KERNEL_EXP="$(KERNEL_NA:.bin=.exp)"' --raw=$@ --lst=build/m6ide.lst --exp=build/m6ide.exp $<
+	@tools/check-rom.sh $@ $(NEXTOR_ROM) block
+$(M6IDE_LROM): src/rom/rom.asm $(SRC_FILES) src/version.inc $(KERNEL) $(KSEG) $(KBOOT) $(NEXTOR_ROM) tools/check-rom.sh tests/m6ide-legacy/block.asm tests/m6ide/block.asm tests/m6util.asm | build
+	$(SJASMPLUS) --nologo --msg=war $(INCLUDES) -I$(ROM_POOL) -D'M6_TEST="tests/m6ide-legacy/block.asm"' --raw=$@ --lst=build/m6ide-legacy.lst --exp=build/m6ide-legacy.exp $<
+	@tools/check-rom.sh $@ $(NEXTOR_ROM)
 # Any other cartridge: the kernel ROM given by path, the output named after
 # it, in build/ beside the other two, never over one of them; nothing of
 # the input is kept. The target is phony, so .DELETE_ON_ERROR does not
@@ -269,7 +283,7 @@ fetch:
 # The one command: tools, build, every test in name order, stop at the first
 # failure, summary.
 check: fetch
-	@$(MAKE) --no-print-directory all $(ROM) $(ROM_LEGACY) $(ROM16) $(DRVROM) check-tools
+	@$(MAKE) --no-print-directory all $(ROM) $(ROM_LEGACY) $(ROM16) $(DRVROM) $(M6IDE_ROM) $(M6IDE_LROM) check-tools
 	@tools/check-version.sh
 	@tools/check-headers.sh
 	@tools/check-leg.sh
