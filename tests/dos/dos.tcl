@@ -13,6 +13,10 @@
 set show_screen 1
 set problems {}
 set machine [machine_info config_name]
+# The 128K machines — the base one and its two slot variants — against
+# the 4 MB one: what decides whether a second live process leaves a
+# segment for a program.
+set small [string match m6-msx2-128k* $machine]
 
 proc problem {what} {
     lappend ::problems $what
@@ -144,7 +148,7 @@ proc check_rc {} {
     expect_screen "mapper ok seg" "the mapper program did not end in mapper ok seg"
     expect_screen "dos: nofile.com: ENOENT" "the shell's .com fallback did not reach dos for a missing file"
     set hellos [count_rows "hello from dos"]
-    if {$::machine eq "m6-msx2-128k"} {
+    if {$::small} {
         expect_screen "dos: /dos/hello.com: ENOMEM" "the launch beside a live sleep was not refused with ENOMEM on the 128K machine"
         if {$hellos != 2} { problem "hello from dos printed $hellos times, not 2, on the 128K machine" }
     } else {
