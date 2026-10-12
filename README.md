@@ -61,16 +61,21 @@ disk. With another Nextor kernel in the machine the later slot wins; to
 boot m6 past an internal one, hold that kernel's own disable key while
 the machine starts (`C` for slot 3-2, the OCM's).
 
-The same ROM is built for the SD Mapper, the ASCII16 cartridge an
-MSX-Pico+ presents: `make rom-from DRIVER_ROM=<file>` takes the Nextor
-kernel ROM built for that cartridge — the one its firmware embeds, or the
-one it ships with — and writes `build/m6-<name>.rom` with that ROM's bank
-switch and its driver taken whole. In an MSX-Pico+ the file replaces the
-Nextor ROM in the firmware's system-ROM image and is flashed with it; the
-card needs no system file, as above. A real FBLabs SD Mapper V2 takes the
-same build from its own kernel ROM; it has not been tried on hardware.
-Either way the ROM is built from a kernel ROM you already have, on your
-machine, and is not distributed. `make rom` also writes
+`make rom` also builds `build/m6-sdmapper-legacy.rom` for the FBLabs SD
+Mapper V2, from that cartridge's own kernel ROM — Nextor with the SDXC
+driver, which `make fetch` downloads from FBLabs's release — with the
+driver taken whole, the way the Sunrise legacy ROM is built; flashed in
+place of the cartridge's kernel it boots m6 with that driver, both card
+slots served. It has been run in an emulated SD Mapper V2 and not yet on
+the cartridge itself. The same ROM is built for any other ASCII16
+cartridge an SD Mapper driver serves — the MSX-Pico+ among them: `make
+rom-from DRIVER_ROM=<file>` takes the Nextor kernel ROM built for that
+cartridge — the one its firmware embeds, or the one it ships with — and
+writes `build/m6-<name>.rom` with that ROM's bank switch and its driver
+taken whole. In an MSX-Pico+ the file replaces the Nextor ROM in the
+firmware's system-ROM image and is flashed with it; the card needs no
+system file, as above. Either way the ROM is built from a kernel ROM you
+already have, on your machine, and is not distributed. `make rom` also writes
 `build/m6-ascii16-test.rom`, built from Nextor's standalone ASCII16
 kernel for the tests: it has no storage driver and boots no further than
 a kernel with no volume, so it is not the ROM to flash. An input named

@@ -252,4 +252,8 @@ code.
 cartridge's Nextor driver bank and the adapter instead, the way every
 kernel ROM was built before this driver existed; it boots the same
 card at the Nextor driver's speed, one sector per call with interrupts
-disabled for each.
+disabled for each. `build/m6-sdmapper-legacy.rom` is the kernel ROM
+built the same way for the FBLabs SD Mapper V2, from that cartridge's
+own kernel ROM (Nextor with the SDXC driver, which `make fetch`
+downloads): the driver bank taken whole, called through the adapter,
+both SD slots served.
