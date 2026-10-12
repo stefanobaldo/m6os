@@ -145,7 +145,10 @@ pt_rw:
         ld      (ix+PT_WR),a
         pop     af
         dec     a
-        jr      nz,pt_nxio
+        jr      z,.dev
+        ld      (ix+PT_OPEN),0          ; no transfer: none left open
+        jr      pt_nxio
+.dev:
         ; A spin armed: as many ticks pass inside every call, the
         ; interrupts on, before a byte moves.
         ld      a,(ix+PT_SPIN)
