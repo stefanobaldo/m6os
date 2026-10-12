@@ -35,8 +35,10 @@ make rom-from DRIVER_ROM=<the cartridge's Nextor kernel ROM> DRIVER=<block.asm>
 builds such a ROM, `build/m6-<ROM>-<block>.rom`, and prints the room
 left in its driver bank. The source is assembled for `4100h` with
 `src/kernel/kernel.inc` already included, so it names everything below
-by its symbol. The ROM's resident kernel is built without the legacy
-adapter.
+by its symbol. It is assembled inside the ROM's own source, so its labels
+share the ROM's: prefix them with the driver's name, as the test driver's
+`pt_` does, or wrap the block in a `MODULE`. The ROM's resident kernel is
+built without the legacy adapter.
 
 ## The block header
 
