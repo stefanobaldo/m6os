@@ -293,7 +293,7 @@ to install.
   is refused with `EFAULT`.
 - An MSX-DOS program started from the kernel ROM wedged the machine at
   once: `dos` took the RAM slot of the program's pages from the
-  `RAMAD0`–`RAMAD3` variables, which only an MSX-DOS kernel fills, and
-  booted from the cartridge nothing had. It now takes the slot from what
+  `RAMAD0`–`RAMAD3` variables, which only an MSX-DOS kernel fills; booted
+  from the cartridge, nothing had filled them. It now takes the slot from what
   the kernel recorded at boot, in every boot mode, and leaves those
   variables filled for the program, as MSX-DOS does.
