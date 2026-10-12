@@ -1038,7 +1038,61 @@ t_entry:
         ld      hl,t_callc
         k_call  API_CON_PUTS
 
-; --- step 14: verdict -------------------------------------------------
+; --- step 14: eight sectors in one call, against the same eight one by one --
+; The adapter turns a count into one DEV_RW per sector, advancing the slot
+; and the sector between two: the only caller that asks a Nextor bank for
+; more than one is this step. Page 2 above the boot image's place is free
+; once the kernel has copied it.
+        ld      a,14
+        ld      (t_step),a
+        ld      hl,t_k14
+        k_call  API_CON_PUTS
+        call    t_sec_first
+        call    t_drv_ix
+        ld      ixl,T_MULTI_N
+        ld      hl,(t_secnum)
+        ld      de,(t_secnum+2)
+        ld      b,a
+        ld      a,(K_REC+KR_SEG64K+2)   ; the segment page 2 shows
+        ld      c,a
+        ld      a,b
+        ld      b,c
+        ld      c,(T_MULTI-8000h)/256
+        or      a                       ; read
+        k_call  API_BLK_DEV_RW
+        call    t_page2
+        or      a
+        jp      nz,t_fail
+        ld      hl,T_MULTI
+        ld      (t_mptr),hl
+        ld      a,T_MULTI_N
+        ld      (t_mleft),a
+.one:   call    t_rw_read               ; t_secnum alone, into KT_BUF_B
+        jp      nz,t_fail
+        ld      hl,(t_mptr)
+        ld      de,KT_BUF_B
+        call    k_cmp512
+        jp      nz,t_fail_cmp
+        ld      hl,(t_mptr)
+        inc     h
+        inc     h
+        ld      (t_mptr),hl
+        ld      hl,(t_secnum)
+        inc     hl
+        ld      (t_secnum),hl
+        ld      a,h
+        or      l
+        jr      nz,.next
+        ld      hl,(t_secnum+2)
+        inc     hl
+        ld      (t_secnum+2),hl
+.next:  ld      hl,t_mleft
+        dec     (hl)
+        jr      nz,.one
+        ld      hl,t_ok
+        k_call  API_CON_PUTS
+
+; --- step 15: verdict -------------------------------------------------
         ld      hl,t_pass
         k_call  API_CON_PUTS
         m6_verdict M6_PASS
@@ -1252,6 +1306,8 @@ t_fill_p2:
 
         include "m6util.asm"
 
+T_MULTI         equ 0A000h      ; step 14's eight sectors, in page 2
+T_MULTI_N       equ 8
 T_TICK_TOL      equ 4           ; ticks the count over n RTC seconds may
                                 ; differ from 60 n by: 59.92 Hz over ~8 s is
                                 ; under one, plus one at each end
@@ -1271,6 +1327,7 @@ t_rtc:      db  "   rtc: ",0
 t_rtcb:     db  " s = ",0
 t_tickok:   db  " ticks: tick ok",10,0
 t_k13:      db  "13 without the call: ",0
+t_k14:      db  "14 eight sectors in one call: ",0
 t_call:     db  "   call = ",0
 t_callb:    db  " ticks/600 = ",0
 t_callc:    db  " ms at 60 Hz",10,0
@@ -1291,6 +1348,8 @@ t_rtc_first: dw 0
 t_rtc_last: dw  0
 t_loop_fn:  dw  0
 t_secnum:   ds  4
+t_mptr:     dw  0
+t_mleft:    db  0
 tblock_end:
         ASSERT  tblock_end < KB_BASE    ; the block, in page 0, below the
                                         ; boot image's place
