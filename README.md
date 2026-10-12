@@ -46,9 +46,13 @@ instead. This way takes no arguments; `mem=` is `M6.COM`'s.
 
 The third way needs no Nextor at all: m6 in the cartridge. `make fetch &&
 make rom` builds `build/m6-sunriseide.rom`, a 128K ROM for a Sunrise IDE
-compatible cartridge (a Carnivore2) with the Sunrise IDE driver of the
-Nextor kernel ROM it fetches taken into it whole — the ROM is built on
-your machine from that file and is not distributed. Flash it in place of
+compatible cartridge (a Carnivore2) with m6's own driver for that
+interface — master and slave both served, interrupts enabled during
+transfers, up to 32 sectors per call — and the bank switch of the Nextor
+kernel ROM it fetches; the ROM is built on your machine from that file
+and is not distributed. `build/m6-sunriseide-legacy.rom`, built beside
+it, carries that Nextor kernel ROM's own driver instead, the way every
+kernel ROM was built before. Flash the ROM in place of
 the Nextor kernel and put `BIN/` and `ETC/RC` on the card: no system
 file, no `AUTOEXEC.BAT`. The root is the card's first FAT volume. There
 is no key: the cartridge boots m6, and a boot that fails before the

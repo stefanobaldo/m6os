@@ -15,9 +15,11 @@ like. There are two kinds of driver:
   keyboard keeps answering while a transfer is in progress. A driver
   block exists only in a kernel ROM: a machine booted through M6.COM or
   NEXTOR.SYS has Nextor's ROM in the cartridge, and its driver is always
-  the Nextor one.
+  the Nextor one. m6 ships one such block, `m6ide`, for the Sunrise IDE
+  (below).
 
-The rest of this document is the contract a driver block is written to.
+The rest of this document is the contract a driver block is written to,
+then the driver m6 ships.
 
 ## Where a block lives
 
@@ -33,12 +35,18 @@ make rom-from DRIVER_ROM=<the cartridge's Nextor kernel ROM> DRIVER=<block.asm>
 ```
 
 builds such a ROM, `build/m6-<ROM>-<block>.rom`, and prints the room
-left in its driver bank. The source is assembled for `4100h` with
+left in its driver bank; `make rom` builds the Sunrise IDE ROM this way
+with `src/drivers/m6ide.asm`. The source is assembled for `4100h` with
 `src/kernel/kernel.inc` already included, so it names everything below
 by its symbol. It is assembled inside the ROM's own source, so its labels
-share the ROM's: prefix them with the driver's name, as the test driver's
-`pt_` does, or wrap the block in a `MODULE`. The ROM's resident kernel is
+share the ROM's: prefix them with the driver's name, as `m6ide`'s `si_`
+does, or wrap the block in a `MODULE`. The ROM's resident kernel is
 built without the legacy adapter.
+
+A cartridge whose registers appear in page 1 in place of part of the ROM
+while they are enabled — the Sunrise IDE's at `7C00h`–`7EFFh` — bounds
+the block below them: its code is unreadable there while a transfer
+runs. Such a block ends with an assertion on its own end address.
 
 ## The block header
 
@@ -215,3 +223,33 @@ CTRL+C. It never switches page 1 or page 2 and never hands the CPU to
 another process while a driver call is in progress. A switch that comes
 due is paid when the system call returns, and a signal is delivered at
 that return, after the transfer has finished.
+
+## The Sunrise IDE driver
+
+`src/drivers/m6ide.asm` is the block `build/m6-sunriseide.rom` carries,
+written from the ATA specification for the Sunrise IDE interface and
+the cartridges compatible with it (a Carnivore2). It serves the master
+as device 1 and the slave as device 2, each an ATA device addressed by
+LBA: an ATAPI device, or a device without LBA, is treated as absent.
+
+At boot it selects each position and waits for it to be ready, with a
+soft reset of the bus only when neither position answers; a position
+that answers is asked to `IDENTIFY`, and its model becomes the device's
+name in the boot listing, its serial number part of the device's
+identity, its sector count the device's size. A controller with no
+device at all is listed once, as `Sunrise IDE` with no volumes.
+
+A call of up to 32 sectors is one `READ SECTORS` or `WRITE SECTORS`
+command; the driver waits for each sector with interrupts enabled and
+moves it with an unrolled `LDI`, the fastest copy the Z80 has. Nothing
+in the block disables interrupts. Every wait on the device is bounded
+by the kernel's tick — two seconds on a command, five after a reset —
+and a device that fails a transfer returns `E_IO` with the device's
+error register, or its status when it timed out, as the block's own
+code.
+
+`build/m6-sunriseide-legacy.rom` is the same kernel ROM with the
+cartridge's Nextor driver bank and the adapter instead, the way every
+kernel ROM was built before this driver existed; it boots the same
+card at the Nextor driver's speed, one sector per call with interrupts
+disabled for each.

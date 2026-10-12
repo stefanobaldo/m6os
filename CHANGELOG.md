@@ -44,6 +44,14 @@ to install.
   such a ROM. Nextor 2 drivers are served as before, through the same path,
   in every boot mode; `make sizes` reports the resident kernel with and
   without the part that serves them.
+- The Sunrise IDE driver, m6's own. The kernel ROM for a Sunrise IDE
+  compatible cartridge (`build/m6-sunriseide.rom`) carries a driver written
+  to that contract instead of the cartridge's Nextor one: the master and
+  the slave are both served, interrupts stay enabled while a sector moves,
+  and up to 32 sectors move per call — a 64 KB read costs a third less than
+  through the Nextor driver on the emulator. The boot listing names each
+  disk by the model it reports. The ROM with the Nextor driver remains as
+  `build/m6-sunriseide-legacy.rom`.
 - Memory. The kernel finds every memory mapper in the machine and allocates 16K
   segments of the one it runs in, never handing out a segment that does not
   exist or was already in use when it started. A `mem=<K>` argument caps the
