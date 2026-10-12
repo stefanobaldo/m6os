@@ -64,7 +64,12 @@ own system file beside it as `MSXDOS2.SYS` when it says `nextor.sys chain`,
 and the kernel ROM in the cartridge with nothing of a system's on the disk
 when it says `rom`;
 its `<name>.tcl` gives the verdict from the screen and from the files the run
-left on the image. `make check` also runs
+left on the image. A test directory holding a `rom` marker — the machines
+that form runs on, one per line — runs a second time from the kernel ROM
+with m6's own driver, with the same files, disk and checks: a test with a
+`block.asm` of its own gets a ROM carrying it, a `product` test boots the
+product ROM; the run's images carry `.rom` in their names, and the
+`<name>.tcl` reads which form it is in from `M6_FORM`. `make check` also runs
 `tools/check-version.sh`, which requires the version in `src/version.inc`
 and the headings of `CHANGELOG.md` to agree, and `tools/check-headers.sh`,
 which requires every source file to open with the copyright and license
