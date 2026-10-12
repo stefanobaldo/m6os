@@ -63,6 +63,7 @@ blk_rw:
         ld      c,a                     ; 2 * count
         ld      a,(blk_tgt)             ; the slot
         add     a,c
+        jp      c,.inval                ; a slot past 255 - 2 * count
         cp      65
         jp      nc,.inval               ; slot + 2 * count > 64
         ld      a,(K_BLK_NVOL)
