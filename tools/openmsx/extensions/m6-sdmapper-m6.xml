@@ -1,0 +1,28 @@
+<?xml version="1.0" ?>
+<!DOCTYPE msxconfig SYSTEM 'msxconfig2.dtd'>
+<msxconfig>
+  <info>
+    <name>FBLabs SD Mapper V2 with the m6 kernel ROM</name>
+    <manufacturer>FBLabs</manufacturer>
+    <code/>
+    <release_year>2020</release_year>
+    <description>The SD Mapper V2 cartridge with the m6 kernel ROM (build/m6-sdmapper.rom or build/m6-sdmapper-legacy.rom, copied into the ROM pool by the harness; no checksum, the ROM changes with every build) and one card, the image given with -hda, an SDHC card; the second slot is empty.</description>
+    <type>external hard disk</type>
+  </info>
+  <devices>
+    <primary slot="any">
+      <secondary slot="any">
+        <SDMapperV2 id="SD Mapper V2">
+          <mem base="0x4000" size="0x8000"/>
+          <rom>
+            <filename>../systemroms/m6-sdmapper.rom</filename>
+          </rom>
+          <sdcard1>
+            <filename>sd_card1.dsk</filename>
+            <size>2</size>
+          </sdcard1>
+        </SDMapperV2>
+      </secondary>
+    </primary>
+  </devices>
+</msxconfig>

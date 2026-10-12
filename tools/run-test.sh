@@ -75,7 +75,13 @@ export M6_TZ_OFFSET
 # disk; `rom ascii16`, the ASCII16 test ROM build/m6-ascii16-test.rom as
 # a plain ASCII16 cartridge with no disk behind it — no image is built or
 # attached, and the test reads the kernel stopping for want of a volume;
-# `rom ascii16 <name>`, the same with build/<name>.rom in the cartridge.
+# `rom ascii16 <name>`, the same with build/<name>.rom in the cartridge;
+# `rom sdmapper`, the kernel ROM build/m6-sdmapper.rom in the emulated
+# FBLabs SD Mapper V2 with the disk's images as its cards, no system file
+# on them; `rom sdmapper legacy`, the same with
+# build/m6-sdmapper-legacy.rom, the ROM with that cartridge's own Nextor
+# driver bank and the adapter; `rom sdmapper <name>`, the same with
+# build/<name>.rom, a ROM the test builds for itself.
 # set_form <form>: the product, the file booted (com), the name it takes
 # on the disk (upper), and the tag the run's files carry, for one form.
 set_form() {
@@ -104,8 +110,11 @@ set_form() {
             "rom legacy") com="build/m6-sunriseide-legacy.rom"; upper=M6; product=rom ;;
             "rom ascii16") com="build/m6-ascii16-test.rom"; upper=M6 ;;
             "rom ascii16 "*) com="build/${product#rom ascii16 }.rom"; upper=M6; product="rom ascii16"; own=1 ;;
+            "rom sdmapper") com="build/m6-sdmapper.rom"; upper=M6 ;;
+            "rom sdmapper legacy") com="build/m6-sdmapper-legacy.rom"; upper=M6; product="rom sdmapper" ;;
+            "rom sdmapper "*) com="build/${product#rom sdmapper }.rom"; upper=M6; product="rom sdmapper"; own=1 ;;
             "rom "*) com="build/${product#rom }.rom"; upper=M6; product=rom; own=1 ;;
-            *) echo "run-test: $name: the product marker says '$product'; empty, nextor.sys, nextor.sys chain, rom, rom legacy, rom <name>, rom ascii16 or rom ascii16 <name>" >&2; exit 2 ;;
+            *) echo "run-test: $name: the product marker says '$product'; empty, nextor.sys, nextor.sys chain, rom, rom legacy, rom <name>, rom ascii16, rom ascii16 <name>, rom sdmapper, rom sdmapper legacy or rom sdmapper <name>" >&2; exit 2 ;;
         esac
         bin=1
         [ -n "$own" ] && bin=""
@@ -125,6 +134,9 @@ set_form() {
     elif [ "$product" = "rom ascii16" ]; then
         cp "$com" tools/openmsx/systemroms/m6-ascii16-test.rom
         ext=m6-ascii16-m6
+    elif [ "$product" = "rom sdmapper" ]; then
+        cp "$com" tools/openmsx/systemroms/m6-sdmapper.rom
+        ext=m6-sdmapper-m6
     fi
     [ -n "$slave" ] && ext=$ext-2
     export M6_FORM=$form
@@ -297,7 +309,7 @@ for machine in $form_machines; do
                 cp "$com" "$staging/NEXTOR.SYS"
                 cp .tools/nextor/NEXTOR.SYS "$staging/MSXDOS2.SYS"
                 cp .tools/nextor/COMMAND2.COM "$staging/" ;;
-            "rom"|"rom ascii16")
+            "rom"|"rom ascii16"|"rom sdmapper")
                 ;;                      # nothing of a system's on the disk
             *)
                 cp .tools/nextor/NEXTOR.SYS .tools/nextor/COMMAND2.COM "$staging/"
@@ -327,8 +339,9 @@ for machine in $form_machines; do
         export M6_EXPORT="$ROOT/build/$tag.$machine.$run.export"
         export M6_MASTER="$master" M6_SLAVE="$slave"
         export M6_SLAVE_IMAGE="$ROOT/build/$tag.$machine.$run.slave.dsk"
-        # openMSX's command line takes -hda alone; the slave's image goes
-        # in through the hdb command, which runs before the machine boots.
+        # openMSX's command line takes -hda alone; the slave's image — the
+        # SD Mapper's second card — goes in through the hdb command, which
+        # runs before the machine boots.
         slave_cmd="set renderer none"
         [ -n "$slave" ] && slave_cmd="hdb $M6_SLAVE_IMAGE"
         # The ASCII16 test ROM's cartridge has no disk: nothing is built or
