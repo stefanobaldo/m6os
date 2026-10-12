@@ -11,10 +11,12 @@
 # either way their versions are checked. See CONTRIBUTING.md.
 
 SJASMPLUS_VERSION := 1.24.0
-OPENMSX_VERSION   := 21.0
+OPENMSX_VERSION   := 21.0-m6.1
 
 SJASMPLUS := $(if $(wildcard .tools/sjasmplus/bin/sjasmplus),.tools/sjasmplus/bin/sjasmplus,sjasmplus)
-OPENMSX   := $(if $(wildcard .tools/openmsx/bin/openmsx),.tools/openmsx/bin/openmsx,openmsx)
+# On macOS the fetched build is an application bundle (tools/fetch-openmsx.sh).
+OPENMSX_APP := .tools/openmsx/openMSX.app/Contents/MacOS/openmsx
+OPENMSX   := $(if $(wildcard .tools/openmsx/bin/openmsx),.tools/openmsx/bin/openmsx,$(if $(wildcard $(OPENMSX_APP)),$(OPENMSX_APP),openmsx))
 
 # Every tests/<name>/<name>.asm builds to build/<name>.com. A test may include
 # modules from src/ (the build passes -Isrc); every src/ file is a prerequisite
@@ -286,7 +288,7 @@ check-sjasmplus:
 	    echo "sjasmplus $(SJASMPLUS_VERSION) required, found '$$v' via $(SJASMPLUS); run tools/fetch-sjasmplus.sh" >&2; exit 1; }
 
 check-openmsx:
-	@v=$$($(OPENMSX) --version 2>/dev/null | sed -n '1s/^openMSX \([0-9][0-9.]*\).*/\1/p'); \
+	@v=$$($(OPENMSX) --version 2>/dev/null | sed -n '1s/^openMSX \([0-9][0-9.a-z-]*\).*/\1/p'); \
 	[ "$$v" = "$(OPENMSX_VERSION)" ] || { \
 	    echo "openMSX $(OPENMSX_VERSION) required, found '$$v' via $(OPENMSX); run tools/fetch-openmsx.sh" >&2; exit 1; }
 

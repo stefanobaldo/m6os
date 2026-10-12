@@ -3,44 +3,76 @@
 # Copyright (c) 2026 Stefano Baldo
 # SPDX-License-Identifier: BSD-3-Clause
 #
-# openMSX 21.0. On x86_64 Linux the official portable build is fetched into
-# .tools/openmsx/ (bin/ and share/). Anywhere else there is no portable build
-# to fetch, so an openmsx on PATH is required and its version checked.
+# openMSX 21.0 with the FBLabs SD Mapper V2 cartridge, from the project's
+# fork of openMSX (github.com/stefanobaldo/m6os-openmsx, branch m6, release
+# m6-21.0.1; the device is offered upstream). On x86_64 Linux the release's
+# portable build is fetched into .tools/openmsx/ (bin/ and share/); on
+# macOS on Apple silicon its disk image is fetched and the application
+# bundle copied into .tools/openmsx/openMSX.app. Anywhere else the fork is
+# built from its tag and an openmsx on PATH is required; the version is
+# checked in every case.
 . "$(dirname "$0")/lib.sh"
 
-VERSION=21.0
-SHA256=53cc1e9dc3a97b0ff56d1a1572b3ffdbba4fcaee3eb78c4391b9b1443f92284a
-URL="https://github.com/openMSX/openMSX/releases/download/RELEASE_21_0/openmsx-$VERSION-linux-x86_64-bin.zip"
+VERSION=21.0-m6.1
+TAG=m6-21.0.1
+BASE="https://github.com/stefanobaldo/m6os-openmsx/releases/download/$TAG"
+LINUX_SHA256=9c3616c38cc0c488f1683a26d2ff753324514ea6167996d75a4e8173d021a135
+MAC_SHA256=a51471c85721834fd829a2a792addc27cfdef5bf0e2486b3f879033e4a147c9c
 BIN="$TOOLS/openmsx/bin/openmsx"
+APP="$TOOLS/openmsx/openMSX.app"
 
 # version_of <openmsx binary>: the first line of --version is "openMSX <version>".
 version_of() {
-    "$1" --version 2>/dev/null | sed -n '1s/^openMSX \([0-9][0-9.]*\).*/\1/p'
+    "$1" --version 2>/dev/null | sed -n '1s/^openMSX \([0-9][0-9.a-z-]*\).*/\1/p'
 }
 
-if [ "$(uname -s)" = Linux ] && [ "$(uname -m)" = x86_64 ]; then
+os=$(uname -s)
+arch=$(uname -m)
+if [ "$os" = Linux ] && [ "$arch" = x86_64 ]; then
     if [ -x "$BIN" ] && [ "$(version_of "$BIN")" = "$VERSION" ]; then
         echo "fetch: openMSX $VERSION already in .tools/openmsx" >&2
         exit 0
     fi
-    fetch "$URL" sha256 "$SHA256" "$TOOLS/src/openmsx-$VERSION-linux-x86_64-bin.zip"
+    zip="openmsx-$VERSION-linux-x86_64-bin.zip"
+    fetch "$BASE/$zip" sha256 "$LINUX_SHA256" "$TOOLS/src/$zip"
     rm -rf "$TOOLS/openmsx"
     mkdir -p "$TOOLS/openmsx"
-    unzip -q "$TOOLS/src/openmsx-$VERSION-linux-x86_64-bin.zip" -d "$TOOLS/openmsx"
+    unzip -q "$TOOLS/src/$zip" -d "$TOOLS/openmsx"
     got=$(version_of "$BIN")
     if [ "$got" != "$VERSION" ]; then
         echo "fetch: unpacked openMSX reports '$got', expected $VERSION" >&2
         exit 2
     fi
     echo "fetch: openMSX $VERSION unpacked into .tools/openmsx" >&2
+elif [ "$os" = Darwin ] && [ "$arch" = arm64 ]; then
+    if [ -x "$APP/Contents/MacOS/openmsx" ] && [ "$(version_of "$APP/Contents/MacOS/openmsx")" = "$VERSION" ]; then
+        echo "fetch: openMSX $VERSION already in .tools/openmsx/openMSX.app" >&2
+        exit 0
+    fi
+    dmg="openmsx-$VERSION-mac-aarch64-bin.dmg"
+    fetch "$BASE/$dmg" sha256 "$MAC_SHA256" "$TOOLS/src/$dmg"
+    rm -rf "$TOOLS/openmsx"
+    mkdir -p "$TOOLS/openmsx"
+    mnt=$(mktemp -d "${TMPDIR:-/tmp}/openmsx-dmg.XXXXXX")
+    hdiutil attach -nobrowse -quiet -readonly -mountpoint "$mnt" "$TOOLS/src/$dmg"
+    cp -R "$mnt/openMSX.app" "$APP" || { hdiutil detach -quiet "$mnt"; rmdir "$mnt"; exit 2; }
+    hdiutil detach -quiet "$mnt"
+    rmdir "$mnt"
+    got=$(version_of "$APP/Contents/MacOS/openmsx")
+    if [ "$got" != "$VERSION" ]; then
+        echo "fetch: the application in the disk image reports '$got', expected $VERSION" >&2
+        exit 2
+    fi
+    echo "fetch: openMSX $VERSION copied into .tools/openmsx/openMSX.app" >&2
 else
     if ! command -v openmsx >/dev/null 2>&1; then
-        echo "fetch: no portable openMSX build for $(uname -s)/$(uname -m); install openMSX $VERSION and put openmsx on PATH" >&2
+        echo "fetch: no openMSX build to fetch for $os/$arch; build the fork's tag and put openmsx on PATH:" >&2
+        echo "  git clone --depth 1 --branch $TAG https://github.com/stefanobaldo/m6os-openmsx.git && cd m6os-openmsx && make staticbindist" >&2
         exit 2
     fi
     got=$(version_of openmsx)
     if [ "$got" != "$VERSION" ]; then
-        echo "fetch: openmsx on PATH is version '$got', expected $VERSION" >&2
+        echo "fetch: openmsx on PATH is version '$got', expected $VERSION (the fork's tag $TAG)" >&2
         exit 2
     fi
     echo "fetch: using openMSX $VERSION from PATH ($(command -v openmsx))" >&2
