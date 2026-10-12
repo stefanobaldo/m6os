@@ -75,14 +75,15 @@ NEXTORSYS := build/nextor.sys
 # volume. `rom-from DRIVER_ROM=<file>` builds from any eight-bank Nextor
 # kernel ROM, which is how the SD Mapper's own ROM is made from the kernel
 # ROM its owner has; with `DRIVER=<block.asm>` besides, bank 7 is that
-# driver block instead of the input's driver bank, and the resident has
-# no adapter.
+# driver block instead of the input's driver bank, the resident has no
+# adapter, the output's name carries the block's, and the bank's room is
+# printed.
 ROM          := build/m6-sunriseide.rom
 ROM16        := build/m6-ascii16-test.rom
 ROM_POOL     := tools/openmsx/systemroms
 NEXTOR_ROM   := $(ROM_POOL)/Nextor-2.1.4.SunriseIDE.ROM
 NEXTOR_ROM16 := $(ROM_POOL)/Nextor-2.1.4.StandaloneASCII16.ROM
-ROM_FROM      = build/m6-$(basename $(notdir $(DRIVER_ROM))).rom
+ROM_FROM      = build/m6-$(basename $(notdir $(DRIVER_ROM)))$(if $(DRIVER),-$(basename $(notdir $(DRIVER)))).rom
 # The driver-contract test's ROM: the kernel ROM built from the Standalone
 # ASCII16 kernel, with the pattern block in its driver bank (M6_DRIVER),
 # the test itself in bank 2 after the boot image (M6_TEST) and the
@@ -193,6 +194,7 @@ rom-from: $(KERNEL) $(KERNEL_NA) $(KSEG) $(KBOOT) tools/check-rom.sh | build
 	$(SJASMPLUS) --nologo --msg=war $(INCLUDES) -I$(dir $(DRIVER_ROM)) -D'NEXTOR_ROM="$(notdir $(DRIVER_ROM))"' $(if $(DRIVER),-D'M6_DRIVER="$(DRIVER)"' -D'KERNEL_BIN="$(KERNEL_NA)"' -D'KERNEL_EXP="$(KERNEL_NA:.bin=.exp)"') --raw=$(ROM_FROM) --lst=$(ROM_FROM:.rom=.lst) --exp=$(ROM_FROM:.rom=.exp) src/rom/rom.asm || { rm -f $(ROM_FROM); exit 1; }
 	@tools/check-rom.sh $(ROM_FROM) $(DRIVER_ROM) $(if $(DRIVER),block) || { rm -f $(ROM_FROM); exit 1; }
 	@echo "rom-from: $(ROM_FROM)"
+	@[ -z "$(DRIVER)" ] || { v=$$(sed -n "s/^ROM_B7_FREE: EQU 0x0*\([0-9A-Fa-f]*\)$$/\1/p" $(ROM_FROM:.rom=.exp)); printf 'ROOM rom-bank7 %d\n' $$(( 0x$${v:-0} )); }
 
 # One rule per utility, with the one-page check.
 define bin_rule
