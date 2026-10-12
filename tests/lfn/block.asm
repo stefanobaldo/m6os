@@ -1,0 +1,813 @@
+; m6 — a Unix-like operating system for the MSX
+; Copyright (c) 2026 Stefano Baldo
+; SPDX-License-Identifier: BSD-3-Clause
+;
+; lfn — the test block of tests/lfn: long file names, read and written.
+; Run in two forms: inside lfn.com, in page 1 after the kernel images,
+; where the loader's record names it; and from the kernel ROM, assembled
+; on its own for 0100h of page 0 (tests/romblock.asm, M6_ROM defined).
+; The host includes m6test.inc, m6prog.inc and the kernel's exports
+; before it.
+O_CW        equ O_CREAT|O_WRONLY
+
+t_entry:
+; --- step 8: the volumes ------------------------------------------------
+        ld      a,8
+        ld      (t_step),a
+        ld      hl,t_k8
+        k_call  API_CON_PUTS
+        ld      a,(K_BLK_NVOL)
+        call    k_dec8
+        k_call  API_CON_NEWLINE
+        ld      a,(K_BLK_NVOL)
+        cp      2
+        ld      a,0E0h                  ; /mnt/b is where the writes go
+        jp      c,t_fail
+        call    t_clean
+
+; --- step 9: /lfn as mtools wrote it, by the names the chains carry -------
+; Less ORPHAN.TXT, deleted under its chain by patch.tcl, and with
+; MyFile Two.txt by its alias MYFILE~1.TXT, its chain's checksum being wrong.
+        ld      a,9
+        ld      (t_step),a
+        ld      hl,t_k9
+        k_call  API_CON_PUTS
+        ld      hl,p_lfn
+        ld      de,names_lfn
+        ld      a,12
+        call    t_listdir
+        jp      c,t_fail
+        ld      hl,t_ok
+        k_call  API_CON_PUTS
+        call    t_clean
+
+; --- step 10: a file by its long name, its alias, and neither ----------------
+        ld      a,10
+        ld      (t_step),a
+        ld      hl,t_k10
+        k_call  API_CON_PUTS
+        ld      hl,p_alias              ; /lfn/mydocu~1.txt
+        ld      a,'d'
+        ld      c,0E1h
+        call    t_holds
+        ld      hl,p_longname           ; /lfn/MyDocument.txt
+        ld      a,'d'
+        ld      c,0E3h
+        call    t_holds
+        ld      hl,p_wrongcase          ; /lfn/mydocument.TXT
+        ld      a,'d'
+        ld      c,0E5h
+        call    t_holds
+        ld      hl,p_inner              ; /lfn/Long Directory Name/inner file.txt
+        ld      a,'x'
+        ld      c,0E7h
+        call    t_holds
+        ld      hl,p_profile            ; /lfn/.profile
+        ld      a,'f'
+        ld      c,0E9h
+        call    t_holds
+        ld      hl,p_longest            ; the 254-character name
+        ld      a,'g'
+        ld      c,0EBh
+        call    t_holds
+        ld      hl,p_my2alias           ; /lfn/myfile~1.txt: the alias works
+        ld      a,'i'
+        ld      c,0EDh
+        call    t_holds
+        ld      hl,p_ldir               ; /lfn/Long Directory Name: a directory
+        ld      de,t_rec
+        sys     SYS_STAT
+        jp      c,t_fail
+        ld      a,(t_rec+DE_ATTR)
+        and     DA_DIR
+        ld      a,0EFh
+        jp      z,t_fail
+        ld      hl,t_rec+DE_NAME
+        ld      de,s_ldirname
+        call    t_streq
+        ld      a,0F0h
+        jp      nz,t_fail
+        ; What is not there: the right length and the wrong text, the
+        ; wrong length, the orphaned chain's name, the broken chain's.
+        ld      hl,p_wrongtext          ; /lfn/MyDocument.txz
+        xor     a
+        sys     SYS_OPEN
+        ld      b,E_NOENT
+        ld      c,0F1h
+        call    t_expect
+        ld      hl,p_wronglen           ; /lfn/MyDocument.tx
+        xor     a
+        sys     SYS_OPEN
+        ld      b,E_NOENT
+        ld      c,0F3h
+        call    t_expect
+        ld      hl,p_orphan             ; /lfn/Orphan.txt
+        xor     a
+        sys     SYS_OPEN
+        ld      b,E_NOENT
+        ld      c,0F5h
+        call    t_expect
+        ld      hl,p_my2long            ; /lfn/MyFile Two.txt: its chain is broken
+        xor     a
+        sys     SYS_OPEN
+        ld      b,E_NOENT
+        ld      c,0F7h
+        call    t_expect
+        ld      hl,p_badchar            ; /lfn/a?b
+        xor     a
+        sys     SYS_OPEN
+        ld      b,E_NOENT
+        ld      c,0F9h
+        call    t_expect
+        ld      hl,t_ok
+        k_call  API_CON_PUTS
+        call    t_clean
+
+; --- step 11: the current directory's long name ---------------------------
+        ld      a,11
+        ld      (t_step),a
+        ld      hl,t_k11
+        k_call  API_CON_PUTS
+        ld      hl,t_buf                ; at /: the simplest answer
+        ld      bc,PATH_MAX
+        sys     SYS_GETCWD
+        jp      c,t_fail
+        k_call  API_CON_DEC16
+        ld      a,' '
+        k_call  API_CON_PUTC
+        ld      hl,t_buf
+        k_call  API_CON_PUTS
+        ld      a,' '
+        k_call  API_CON_PUTC
+        ld      hl,p_ldir
+        sys     SYS_CHDIR
+        jp      c,t_fail
+        ld      hl,t_buf
+        ld      bc,PATH_MAX
+        sys     SYS_GETCWD
+        jp      c,t_fail
+        k_call  API_CON_DEC16
+        ld      a,' '
+        k_call  API_CON_PUTC
+        ld      a,(t_buf)
+        k_call  API_CON_HEX8
+        ld      a,(t_buf+1)
+        k_call  API_CON_HEX8
+        ld      a,' '
+        k_call  API_CON_PUTC
+        ld      hl,t_buf
+        k_call  API_CON_PUTS
+        ld      hl,t_buf
+        ld      de,s_ldirpath           ; /LFN as mtools made it, the rest as
+        call    t_streq                 ; its chain reads
+        ld      a,0E1h
+        jp      nz,t_fail
+        ld      hl,p_root
+        sys     SYS_CHDIR
+        jp      c,t_fail
+        ld      hl,t_ok
+        k_call  API_CON_PUTS
+        call    t_clean
+
+; --- step 12: names made on /mnt/b --------------------------------------
+; By a program on the volume (progs/names.asm): its status is the check
+; that failed, 0 for none; then the directory as it lists.
+        ld      a,12
+        ld      (t_step),a
+        ld      hl,t_k12
+        k_call  API_CON_PUTS
+        ld      hl,p_names              ; /names
+        ld      de,0
+        ld      bc,t_fdinh
+        xor     a
+        sys     SYS_SPAWNV
+        jp      c,t_fail
+        k_call  API_WAIT
+        jp      c,t_fail
+        ld      a,l
+        or      a
+        jp      nz,t_fail_status
+        ld      hl,p_mntb
+        ld      de,names_b
+        ld      a,15
+        call    t_listdir
+        jp      c,t_fail
+        ld      hl,t_ok
+        k_call  API_CON_PUTS
+        call    t_clean
+
+; --- step 13: a directory whose chains cross a sector and a cluster --------
+        ld      a,13
+        ld      (t_step),a
+        ld      hl,t_k13
+        k_call  API_CON_PUTS
+        ld      hl,p_ldirb              ; /mnt/b/Long Dir
+        sys     SYS_MKDIR
+        jp      c,t_fail
+        ld      hl,p_ldirb
+        sys     SYS_CHDIR
+        jp      c,t_fail
+        ld      hl,t_buf
+        ld      bc,PATH_MAX
+        sys     SYS_GETCWD
+        jp      c,t_fail
+        ld      hl,t_buf
+        ld      de,p_ldirb
+        call    t_streq
+        ld      a,0E1h
+        jp      nz,t_fail
+        ; . and .. and thirteen short names fill the first sector but one
+        ; slot: a two-part name starts in it and ends in the next.
+        ld      hl,p_fpat
+        ld      a,13
+        call    t_makemany
+        jp      c,t_fail
+        ld      hl,p_xsec               ; crossing a sector.txt
+        ld      a,'c'
+        call    t_make
+        ld      hl,p_xsec
+        ld      a,'c'
+        ld      c,0E3h
+        call    t_holds
+        ; Sixty-two slots of the cluster's sixty-four taken: the next
+        ; two-part name ends in a cluster added.
+        ld      hl,p_gpat
+        ld      a,44
+        call    t_makemany
+        jp      c,t_fail
+        ld      hl,p_xclus              ; crossing a cluster.txt
+        ld      a,'k'
+        call    t_make
+        ld      hl,p_xclus
+        ld      a,'k'
+        ld      c,0E5h
+        call    t_holds
+        ld      hl,p_dot
+        call    t_count
+        jp      c,t_fail
+        ld      de,61                   ; ., .., 13 + 1 + 44 + 1
+        or      a
+        sbc     hl,de
+        ld      a,0E7h
+        jp      nz,t_fail
+        ld      hl,p_root
+        sys     SYS_CHDIR
+        jp      c,t_fail
+        ld      hl,t_ok
+        k_call  API_CON_PUTS
+        call    t_clean
+
+; --- step 14: names removed and renamed with their chains ------------------
+        ld      a,14
+        ld      (t_step),a
+        ld      hl,t_k14
+        k_call  API_CON_PUTS
+        ld      hl,p_space3             ; unlink: the chain goes with the entry
+        sys     SYS_UNLINK
+        jp      c,t_fail
+        ld      hl,p_space3
+        xor     a
+        sys     SYS_OPEN
+        ld      b,E_NOENT
+        ld      c,0E1h
+        call    t_expect
+        ld      hl,p_space4a            ; its alias, SPACE_~4, with it
+        xor     a
+        sys     SYS_OPEN
+        ld      b,E_NOENT
+        ld      c,0E3h
+        call    t_expect
+        ld      hl,p_hw                 ; a long name to a short one
+        ld      de,p_hwshort
+        sys     SYS_RENAME
+        jp      c,t_fail
+        ld      hl,p_hwshort
+        ld      a,'w'
+        ld      c,0E5h
+        call    t_holds
+        ld      hl,p_hw
+        xor     a
+        sys     SYS_OPEN
+        ld      b,E_NOENT
+        ld      c,0E7h
+        call    t_expect
+        ld      hl,p_hwalias
+        xor     a
+        sys     SYS_OPEN
+        ld      b,E_NOENT
+        ld      c,0E9h
+        call    t_expect
+        ld      hl,p_rd                 ; a short one to a long one
+        ld      de,p_rdlong
+        sys     SYS_RENAME
+        jp      c,t_fail
+        ld      hl,p_rdlong
+        ld      a,'r'
+        ld      c,0EBh
+        call    t_holds
+        ld      hl,p_rd
+        xor     a
+        sys     SYS_OPEN
+        ld      b,E_NOENT
+        ld      c,0EDh
+        call    t_expect
+        ld      hl,p_mixed              ; the case alone: Mixed.TXT to MIXED.txt
+        ld      de,p_mixed2
+        sys     SYS_RENAME
+        jp      c,t_fail
+        ld      hl,p_mixedlc
+        ld      a,'m'
+        ld      c,0EFh
+        call    t_holds
+        ld      hl,p_xyz                ; into the long-named directory
+        ld      de,p_xyzmoved
+        sys     SYS_RENAME
+        jp      c,t_fail
+        ld      hl,p_xyzmoved
+        ld      a,'x'
+        ld      c,0F1h
+        call    t_holds
+        ld      hl,p_empty              ; a long-named directory made and removed
+        sys     SYS_MKDIR
+        jp      c,t_fail
+        ld      hl,p_empty
+        sys     SYS_RMDIR
+        jp      c,t_fail
+        ld      hl,p_empty
+        xor     a
+        sys     SYS_OPEN
+        ld      b,E_NOENT
+        ld      c,0F3h
+        call    t_expect
+        ld      hl,p_ldirb              ; the directory renamed, its chain too
+        ld      de,p_ldirb2
+        sys     SYS_RENAME
+        jp      c,t_fail
+        ld      hl,p_ldirb2
+        sys     SYS_CHDIR
+        jp      c,t_fail
+        ld      hl,t_buf
+        ld      bc,PATH_MAX
+        sys     SYS_GETCWD
+        jp      c,t_fail
+        ld      hl,t_buf
+        ld      de,p_ldirb2
+        call    t_streq
+        ld      a,0F5h
+        jp      nz,t_fail
+        ld      hl,p_root
+        sys     SYS_CHDIR
+        jp      c,t_fail
+        ld      hl,p_mntb
+        ld      de,names_b2
+        ld      a,14
+        call    t_listdir
+        jp      c,t_fail
+        ld      hl,t_ok
+        k_call  API_CON_PUTS
+        call    t_clean
+        jp      t_verdict
+
+; t_make — HL = a path, A = a byte: the file created, the byte and a
+; newline written, closed. A failure is the test's.
+t_make: ld      (t_hold),a
+        ld      a,O_CW
+        sys     SYS_OPEN
+        jp      c,t_fail
+        ld      (t_fd),a
+        ld      a,(t_hold)
+        ld      (t_two),a
+        ld      hl,t_two
+        ld      bc,2
+        ld      a,(t_fd)
+        sys     SYS_WRITE
+        jp      c,t_fail
+        ld      a,(t_fd)
+        sys     SYS_CLOSE
+        jp      c,t_fail
+        ret
+
+; t_holds — HL = a path, A = the byte its file holds first, C = the check's
+; code: the file opened and read; a failure is C (the open or the read
+; failed), C+1 (a wrong length or byte).
+t_holds:
+        ld      (t_hold),a
+        ld      a,c
+        ld      (t_code),a
+        xor     a
+        sys     SYS_OPEN
+        jp      c,.failed
+        ld      (t_fd),a
+        ld      hl,t_buf
+        ld      bc,16
+        sys     SYS_READ
+        jp      c,.failed
+        ld      a,l
+        cp      2
+        jr      nz,.wrong
+        ld      a,(t_buf)
+        ld      hl,t_hold
+        cp      (hl)
+        jr      nz,.wrong
+        ld      a,(t_fd)
+        sys     SYS_CLOSE
+        jp      c,.failed
+        ret
+.wrong: ld      a,(t_code)
+        inc     a
+        jp      t_fail
+.failed:
+        ld      b,a
+        ld      a,(t_code)
+        ld      c,a
+        ld      a,b
+        jp      t_failc
+
+t_verdict:
+        ld      hl,t_pass
+        k_call  API_CON_PUTS
+        m6_verdict M6_PASS
+        jr      t_halt
+
+; t_fail — A = error code, (t_step) = the step.
+t_fail:
+        push    af
+        k_call  API_CON_NEWLINE
+        ld      hl,t_sfail
+        k_call  API_CON_PUTS
+        ld      a,(t_step)
+        call    k_dec8
+        ld      hl,t_scode
+        k_call  API_CON_PUTS
+        pop     af
+        k_call  API_CON_HEX8
+        k_call  API_CON_NEWLINE
+        m6_verdict M6_FAIL
+t_halt: ei
+        halt
+        jr      t_halt
+
+; t_failc — a syscall failed where it had to succeed: the errno, then the
+; check's code C.
+t_failc:
+        push    bc
+        k_call  API_CON_HEX8
+        ld      a,'/'
+        k_call  API_CON_PUTC
+        pop     bc
+        ld      a,c
+        jr      t_fail
+
+; t_fail_status — A = a child's exit status that was not 0.
+t_fail_status:
+        push    af
+        k_call  API_CON_NEWLINE
+        ld      hl,t_sfail
+        k_call  API_CON_PUTS
+        ld      a,(t_step)
+        call    k_dec8
+        ld      hl,t_status
+        k_call  API_CON_PUTS
+        pop     af
+        call    k_dec8
+        k_call  API_CON_NEWLINE
+        m6_verdict M6_FAIL
+        jp      t_halt
+
+; t_expect — after a syscall: CF must be set with A = B, else fail with
+; code C (C+1 when the call succeeded); the errno that came is printed
+; before the code. Preserves nothing.
+t_expect:
+        jr      c,.failed
+        inc     c
+        ld      a,c
+        jp      t_fail
+.failed:
+        cp      b
+        ret     z
+        jp      t_failc
+
+; t_clean — the step is over: no cache header may be dirty. Fails with
+; code FF and the header's index otherwise.
+t_clean:
+        ld      ix,8000h+ST_HDR
+        ld      b,BUF_N
+        ld      c,0
+.h:     ld      a,(ix+H_VOL)
+        cp      VOL_NONE
+        jr      z,.next
+        ld      a,(ix+H_FLAGS)
+        and     HF_DIRTY
+        jr      nz,.dirty
+.next:  ld      de,H_SIZE
+        add     ix,de
+        inc     c
+        djnz    .h
+        ret
+.dirty: ld      hl,t_dirty
+        k_call  API_CON_PUTS
+        ld      a,c
+        call    k_dec8
+        ld      a,0FFh
+        jp      t_fail
+
+; t_sizeis — HL = a path, DE = a size below 64K: Z when stat says so.
+t_listdir:
+        ld      (t_want),a
+        ld      (t_names),de
+        xor     a
+        sys     SYS_OPEN
+        ret     c
+        ld      (t_fd),a
+        ld      hl,t_seen
+        ld      b,16
+.clear: ld      (hl),0
+        inc     hl
+        djnz    .clear
+        xor     a
+        ld      (t_n),a
+.entry: ld      a,(t_fd)
+        ld      hl,t_rec
+        sys     SYS_READDIR
+        ret     c
+        ld      a,h
+        or      l
+        jr      z,.end
+        ld      hl,(t_names)
+        ld      c,0
+.name:  ld      a,(hl)
+        or      a
+        jr      z,.unknown
+        push    hl
+        push    bc
+        ld      de,t_rec+DE_NAME
+        ex      de,hl
+        call    t_streq
+        pop     bc
+        pop     hl
+        jr      z,.known
+.skip:  ld      a,(hl)
+        inc     hl
+        or      a
+        jr      nz,.skip
+        inc     c
+        jr      .name
+.known: ld      b,0
+        ld      hl,t_seen
+        add     hl,bc
+        ld      a,(hl)
+        or      a
+        jr      nz,.twice
+        inc     (hl)
+        ld      hl,t_n
+        inc     (hl)
+        jr      .entry
+.end:   ld      a,(t_fd)
+        sys     SYS_CLOSE
+        ret     c
+        ld      a,(t_n)
+        ld      hl,t_want
+        cp      (hl)
+        ld      a,0E6h
+        scf
+        ret     nz
+        or      a
+        ret
+.unknown:
+        ld      hl,t_rec+DE_NAME
+        k_call  API_CON_PUTS
+        ld      a,0E5h
+        scf
+        ret
+.twice: ld      hl,t_rec+DE_NAME
+        k_call  API_CON_PUTS
+        ld      a,0E7h
+        scf
+        ret
+
+; t_streq — the 0-terminated strings at HL and DE: Z if equal.
+t_streq:
+        ld      a,(de)
+        cp      (hl)
+        ret     nz
+        or      a
+        ret     z
+        inc     hl
+        inc     de
+        jr      t_streq
+
+; t_count — HL = a directory's path: HL = its live entries, . and ..
+; included. CF with the errno.
+t_count:
+        xor     a
+        sys     SYS_OPEN
+        ret     c
+        ld      (t_fd),a
+        ld      hl,0
+        ld      (t_off),hl
+.e:     ld      a,(t_fd)
+        ld      hl,t_rec
+        sys     SYS_READDIR
+        ret     c
+        ld      a,h
+        or      l
+        jr      z,.done
+        ld      hl,(t_off)
+        inc     hl
+        ld      (t_off),hl
+        jr      .e
+.done:  ld      a,(t_fd)
+        sys     SYS_CLOSE
+        ld      hl,(t_off)
+        or      a
+        ret
+
+; t_setnum — HL -> the three digits at the end of a path pattern
+; ("...x000"), A = a number: the digits are A's. Corrupts AF, BC, DE, HL.
+t_setnum:
+        ld      c,100
+        call    .d
+        ld      c,10
+        call    .d
+        add     a,'0'
+        ld      (hl),a
+        ret
+.d:     ld      b,'0'-1
+.s:     inc     b
+        sub     c
+        jr      nc,.s
+        add     a,c
+        ld      (hl),b
+        inc     hl
+        ret
+
+; t_makemany — HL = a path pattern ending in three digits, A = how many:
+; files 0..A-1 created and closed; t_n counts them. CF with the errno of
+; the create that failed.
+t_makemany:
+        ld      (t_pat),hl
+        ld      (t_want),a
+        xor     a
+        ld      (t_n),a
+.m:     ld      a,(t_n)
+        ld      hl,t_want
+        cp      (hl)
+        ret     nc                      ; CF clear: all made
+        ld      hl,(t_pat)
+        push    hl
+        ld      bc,0
+        xor     a
+        cpir                            ; hl -> past the terminator
+        dec     hl
+        dec     hl
+        dec     hl
+        dec     hl                      ; -> the three digits
+        ld      a,(t_n)
+        call    t_setnum
+        pop     hl
+        ld      a,O_CW
+        sys     SYS_OPEN
+        ret     c
+        sys     SYS_CLOSE
+        ld      hl,t_n
+        inc     (hl)
+        jr      .m
+
+; t_unlinkmany — HL = the pattern, A = how many: files 0..A-1 removed.
+t_unlinkmany:
+        ld      (t_pat),hl
+        ld      (t_want),a
+        xor     a
+        ld      (t_n),a
+.u:     ld      a,(t_n)
+        ld      hl,t_want
+        cp      (hl)
+        ret     nc
+        ld      hl,(t_pat)
+        push    hl
+        ld      bc,0
+        xor     a
+        cpir
+        dec     hl
+        dec     hl
+        dec     hl
+        dec     hl
+        ld      a,(t_n)
+        call    t_setnum
+        pop     hl
+        sys     SYS_UNLINK
+        ret     c
+        ld      hl,t_n
+        inc     (hl)
+        jr      .u
+
+        include "m6util.asm"
+
+
+t_k8:       db  "8 volumes ",0
+t_k9:       db  "9 /lfn listed:",0
+t_k10:      db  "10 names:",0
+t_k11:      db  "11 getcwd:",0
+t_k12:      db  "12 made:",0
+t_k13:      db  "13 crossing:",0
+t_k14:      db  "14 removed, renamed:",0
+t_ok:       db  " ok",10,0
+t_pass:     db  "PASS",10,0
+t_sfail:    db  "FAIL step ",0
+t_code:     db  0
+t_hold:     db  0
+t_scode:    db  " code ",0
+t_status:   db  " status ",0
+t_dirty:    db  " dirty header ",0
+
+p_root:     db  "/",0
+p_dot:      db  ".",0
+p_mntb:     db  "/mnt/b",0
+p_names:    db  "/names",0
+t_fdinh:    db  0FFh,0FFh,0FFh          ; spawnv: the caller's 0, 1, 2
+p_hw:       db  "/mnt/b/Hello World.txt",0
+p_hwalias:  db  "/mnt/b/hellow~1.txt",0
+p_rd:       db  "/mnt/b/readme.md",0
+p_mixed:    db  "/mnt/b/Mixed.TXT",0
+p_mixedlc:  db  "/mnt/b/mixed.txt",0
+p_xyz:      db  "/mnt/b/x.y.z",0
+p_ldirb:    db  "/mnt/b/Long Dir",0
+p_ldirb2:   db  "/mnt/b/Renamed Long Dir",0
+p_space3:   db  "/mnt/b/spacer 3.rom",0
+p_space4a:  db  "/mnt/b/spacer~4.rom",0
+p_hwshort:  db  "/mnt/b/hw.txt",0
+p_rdlong:   db  "/mnt/b/Read Me First.md",0
+p_mixed2:   db  "/mnt/b/MIXED.txt",0
+p_xyzmoved: db  "/mnt/b/Long Dir/x.y.z moved",0
+p_empty:    db  "/mnt/b/Empty Long Dir",0
+p_fpat:     db  "/mnt/b/Long Dir/f000",0
+p_gpat:     db  "/mnt/b/Long Dir/g000",0
+p_xsec:     db  "/mnt/b/Long Dir/crossing a sector.txt",0
+p_xclus:    db  "/mnt/b/Long Dir/crossing a cluster.txt",0
+p_lfn:      db  "/lfn",0
+p_alias:    db  "/lfn/mydocu~1.txt",0
+p_longname: db  "/lfn/MyDocument.txt",0
+p_wrongcase: db "/lfn/mydocument.TXT",0
+p_wrongtext: db "/lfn/MyDocument.txz",0
+p_wronglen: db  "/lfn/MyDocument.tx",0
+p_inner:    db  "/lfn/Long Directory Name/inner file.txt",0
+p_profile:  db  "/lfn/.profile",0
+p_my2alias: db  "/lfn/myfile~1.txt",0
+p_my2long:  db  "/lfn/MyFile Two.txt",0
+p_orphan:   db  "/lfn/Orphan.txt",0
+p_badchar:  db  "/lfn/a?b",0
+p_ldir:     db  "/lfn/Long Directory Name",0
+s_ldirpath: db  "/LFN/Long Directory Name",0
+s_ldirname: db  "Long Directory Name",0
+p_longest:  db  "/lfn/"
+s_longest:  db  "long-name-"
+            DUP 236
+            db  "x"
+            EDUP
+            db  ".txt",0
+
+; The names of /lfn as their chains carry them, the two planted cases
+; included: MYFILE~1.TXT stands by its short name, ORPHAN.TXT is gone.
+names_lfn:  db  ".",0,"..",0,"readme.md",0,"README2.MD",0,"MyFile.txt",0
+            db  "MyDocument.txt",0,"caf",90h,".txt",0,".profile",0
+            db  "exactly13chr!",0,"MYFILE~1.TXT",0,"Long Directory Name",0
+            db  "long-name-"
+            DUP 236
+            db  "x"
+            EDUP
+            db  ".txt",0,0
+
+; The names made on /mnt/b, as their chains carry them.
+names_b:    db  "Hello World.txt",0,"readme.md",0,"Mixed.TXT",0,"x.y.z",0
+            db  "spacer 0.rom",0,"spacer 1.rom",0,"spacer 2.rom",0,"spacer 3.rom",0
+            db  "spacer 4.rom",0,"spacer 5.rom",0,"spacer 6.rom",0,"spacer 7.rom",0
+            db  "spacer 8.rom",0,"spacer 9.rom",0
+            DUP 244
+            db  "y"
+            EDUP
+            db  ".txt",0,0
+
+; The same after step 14.
+names_b2:   db  "hw.txt",0,"Read Me First.md",0,"MIXED.txt",0
+            db  "spacer 0.rom",0,"spacer 1.rom",0,"spacer 2.rom",0,"spacer 4.rom",0
+            db  "spacer 5.rom",0,"spacer 6.rom",0,"spacer 7.rom",0,"spacer 8.rom",0
+            db  "spacer 9.rom",0,"Renamed Long Dir",0
+            DUP 244
+            db  "y"
+            EDUP
+            db  ".txt",0,0
+
+t_two:      db  0,10
+t_step:     db  0
+t_n:        db  0
+t_fd:       db  0
+t_want:     db  0
+t_names:    dw  0
+t_pat:      dw  0
+t_off:      dw  0
+t_seen:     ds  16
+; The record and the buffer live in the storage segment's test area, in
+; page 2 of process 0 (KT_BUF_*), not in this block: page 1's room after
+; the two kernel images is what the block has, and it ran out.
+t_rec       equ KT_BUF_B            ; DIRENT_SIZE bytes of the 512
+t_buf       equ KT_BUF_A            ; PATH_MAX: the longest read into it is a path
