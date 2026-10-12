@@ -24,6 +24,9 @@ proc entry {sec i} {
     return [list $type $first $count]
 }
 proc volumes {path dev} {
+    # A Nextor driver's device carries a LUN, printed as 1.1; m6's own
+    # driver's does not, and the kernel ROM's listing prints 1.
+    if {$::env(M6_FORM) eq "rom"} { set dev "$dev" } else { set dev "$dev.1" }
     set fh [open $path rb]
     set out {}
     set sec0 [sector $fh 0]
@@ -39,7 +42,7 @@ proc volumes {path dev} {
                 lassign [entry $s 0] t f c
                 incr n
                 if {$t in {1 4 6 14} && $f != 0 && $c != 0} {
-                    lappend out [list "$dev.1" "e$n" $t [expr {$c / 2}]]
+                    lappend out [list $dev "e$n" $t [expr {$c / 2}]]
                     incr found
                 }
                 lassign [entry $s 1] lt lf lc
@@ -47,7 +50,7 @@ proc volumes {path dev} {
                 set ebr [expr {$ext + $lf}]
             }
         } elseif {$type in {1 4 6 14} && $first != 0 && $count != 0} {
-            lappend out [list "$dev.1" "p[expr {$i + 1}]" $type [expr {$count / 2}]]
+            lappend out [list $dev "p[expr {$i + 1}]" $type [expr {$count / 2}]]
             incr found
         }
     }
@@ -55,7 +58,7 @@ proc volumes {path dev} {
         binary scan [string range $sec0 0x13 0x14] su total16
         binary scan [string range $sec0 0x20 0x23] iu total32
         set total [expr {$total16 != 0 ? $total16 : $total32}]
-        lappend out [list "$dev.1" "--" 0 [expr {$total / 2}]]
+        lappend out [list $dev "--" 0 [expr {$total / 2}]]
     }
     close $fh
     return $out
@@ -79,7 +82,7 @@ proc post_verdict {} {
     set got {}
     set names {}
     foreach r $rows {
-        if {[regexp {^/mnt/([a-h])\s+(.+?)\s+(\d\.\d) (p\d|e\d|--)\s+([0-9A-F]{2})\s+(\d+) KB( /)?\s*$} $r -> letter name devlun label type kb root]} {
+        if {[regexp {^/mnt/([a-h])\s+(.+?)\s+(\d(?:\.\d)?) (p\d|e\d|--)\s+([0-9A-F]{2})\s+(\d+) KB( /)?\s*$} $r -> letter name devlun label type kb root]} {
             lappend got [list $devlun $label [expr 0x$type] $kb]
             lappend names $name
             if {$root ne ""} { set rootletter $letter }
