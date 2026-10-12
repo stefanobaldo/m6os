@@ -200,6 +200,18 @@ t_entry:
         ld      de,(K_REC+KR_FIRST+2)
         sbc     hl,de
         ld      (t_rel+2),hl
+        ; Step 10 reads sectors 0-24 of / as misses: the file's own must
+        ; lie past them, or the eviction would find it in the table.
+        ld      a,h
+        or      l
+        jr      nz,.relok
+        ld      hl,(t_rel)
+        ld      de,25
+        or      a
+        sbc     hl,de
+        ld      a,0EFh                  ; the file within /'s first 25 sectors
+        jp      c,t_fail
+.relok:
 
 ; --- step 9: blk_rw, and its bounds check -----------------------------
         ld      a,9
