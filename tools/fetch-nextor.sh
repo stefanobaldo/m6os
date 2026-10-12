@@ -9,7 +9,10 @@
 # the kernel ROM CI boots as a plain ASCII16 cartridge: the same bank switch
 # as the SD Mapper's, a driver with no hardware behind it), and NEXTOR.SYS
 # (last published on v2.1.3) and COMMAND2.COM (from tools.zip on v2.1.0)
-# into .tools/nextor/ for the disk image.
+# into .tools/nextor/ for the disk image; and, from
+# github.com/fbelavenuto/msxsdmapperv2 releases, the FBLabs SD Mapper V2's
+# own kernel ROM (Nextor 2.1.2 with the SDXC driver 1.1.0) into the pool,
+# the input of the kernel ROM for that cartridge.
 . "$(dirname "$0")/lib.sh"
 
 BASE="https://github.com/Konamiman/Nextor/releases/download"
@@ -28,4 +31,11 @@ if [ ! -f "$DIR/COMMAND2.COM" ]; then
     unzip -o -q -j "$DIR/tools.zip" COMMAND2.COM -d "$DIR"
 fi
 verify sha256 1bb7860631cd6257fefdbd996640bd345d7eab931758e7dc2725cdb02072067c "$DIR/COMMAND2.COM"
-echo "fetch: Nextor 2.1.4 kernel ROMs (Sunrise IDE, standalone ASCII16), NEXTOR.SYS 2.1.3 and COMMAND2.COM 2.1.0 ready" >&2
+FBLABS="https://github.com/fbelavenuto/msxsdmapperv2/releases/download/v110_212/SDMapper_1.1.0_Nextor_2.1.2.zip"
+fetch "$FBLABS" sha256 \
+      a3bca730e82cda24c18ffb677d55d2979ec48487cefa15cc086ec7ece8f92a7c "$TOOLS/src/SDMapper_1.1.0_Nextor_2.1.2.zip"
+if [ ! -f "$POOL/SDXC110.ROM" ]; then
+    unzip -o -q -j "$TOOLS/src/SDMapper_1.1.0_Nextor_2.1.2.zip" SDXC110.ROM -d "$POOL"
+fi
+verify sha256 4f118a524c1d47412af001a35c7b302b08e53494d51aaf4a54b66413e276adc9 "$POOL/SDXC110.ROM"
+echo "fetch: Nextor 2.1.4 kernel ROMs (Sunrise IDE, standalone ASCII16), the FBLabs SD Mapper V2 kernel ROM, NEXTOR.SYS 2.1.3 and COMMAND2.COM 2.1.0 ready" >&2

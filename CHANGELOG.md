@@ -53,6 +53,12 @@ to install.
   through `read()`, one sector per call today, about a tenth less. The boot
   listing names each disk by the model it reports. The ROM with the Nextor
   driver remains as `build/m6-sunriseide-legacy.rom`.
+- The kernel ROM for the FBLabs SD Mapper V2. `make rom` builds
+  `build/m6-sdmapper-legacy.rom` from that cartridge's own kernel ROM,
+  which `make fetch` downloads from FBLabs's release: the cartridge's SDXC
+  driver taken whole, both SD slots served, the same way the Sunrise legacy
+  ROM is built. Flashed in place of the cartridge's kernel it boots m6 with
+  no system file on the card.
 - Memory. The kernel finds every memory mapper in the machine and allocates 16K
   segments of the one it runs in, never handing out a segment that does not
   exist or was already in use when it started. A `mem=<K>` argument caps the

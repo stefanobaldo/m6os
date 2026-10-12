@@ -86,19 +86,25 @@ NEXTORSYS := build/nextor.sys
 # ROM was built before there was a driver of m6's own; and the ASCII16
 # one from Nextor's standalone kernel, whose driver has no hardware
 # behind it — a test fixture, the bytes m6 writes into an SD Mapper ROM,
-# booted in CI as far as a kernel with no volume. `rom-from
+# booted in CI as far as a kernel with no volume. A fourth, from the
+# FBLabs SD Mapper V2's own kernel ROM (SDXC110.ROM, fetched too): that
+# cartridge's driver bank and the adapter, `-legacy` as the Sunrise's is,
+# the ROM an SD Mapper V2 owner flashes, and the one CI boots in the
+# emulated cartridge. `rom-from
 # DRIVER_ROM=<file>` builds from any eight-bank Nextor kernel ROM, which
-# is how the SD Mapper's own ROM is made from the kernel ROM its owner
-# has; with `DRIVER=<block.asm>` besides, bank 7 is that driver block
+# is how the MSX-Pico+'s ROM is made from the kernel ROM its firmware
+# embeds; with `DRIVER=<block.asm>` besides, bank 7 is that driver block
 # instead of the input's driver bank, the resident has no adapter, the
 # output's name carries the block's, and the bank's room is printed.
 ROM          := build/m6-sunriseide.rom
 ROM_LEGACY   := build/m6-sunriseide-legacy.rom
 ROM16        := build/m6-ascii16-test.rom
+ROM_SDL      := build/m6-sdmapper-legacy.rom
 M6IDE        := src/drivers/m6ide.asm
 ROM_POOL     := tools/openmsx/systemroms
 NEXTOR_ROM   := $(ROM_POOL)/Nextor-2.1.4.SunriseIDE.ROM
 NEXTOR_ROM16 := $(ROM_POOL)/Nextor-2.1.4.StandaloneASCII16.ROM
+FBLABS_ROM   := $(ROM_POOL)/SDXC110.ROM
 ROM_FROM      = build/m6-$(basename $(notdir $(DRIVER_ROM)))$(if $(DRIVER),-$(basename $(notdir $(DRIVER)))).rom
 # The driver-contract test's ROM: the kernel ROM built from the Standalone
 # ASCII16 kernel, with the pattern block in its driver bank (M6_DRIVER),
@@ -126,9 +132,9 @@ INCLUDES  := -Itests $(if $(wildcard src),-Isrc)
 
 .PHONY: all rom rom-from check check-sjasmplus check-openmsx check-tools fetch sizes clean distclean
 
-all: check-sjasmplus $(KERNEL) $(KERNEL_NA) $(KSEG) $(KBOOT) $(LEG) $(M6COM) $(NEXTORSYS) $(if $(wildcard $(NEXTOR_ROM)),$(ROM) $(ROM_LEGACY) $(M6IDE_ROM) $(M6IDE_LROM) $(TEST_ROMS)) $(if $(wildcard $(NEXTOR_ROM16)),$(ROM16) $(DRVROM)) $(BIN_BINS) $(TEST_BINS) $(PROG_BINS) sizes
+all: check-sjasmplus $(KERNEL) $(KERNEL_NA) $(KSEG) $(KBOOT) $(LEG) $(M6COM) $(NEXTORSYS) $(if $(wildcard $(NEXTOR_ROM)),$(ROM) $(ROM_LEGACY) $(M6IDE_ROM) $(M6IDE_LROM) $(TEST_ROMS)) $(if $(wildcard $(NEXTOR_ROM16)),$(ROM16) $(DRVROM)) $(if $(wildcard $(FBLABS_ROM)),$(ROM_SDL)) $(BIN_BINS) $(TEST_BINS) $(PROG_BINS) sizes
 
-rom: $(ROM) $(ROM_LEGACY) $(ROM16)
+rom: $(ROM) $(ROM_LEGACY) $(ROM16) $(ROM_SDL)
 
 build:
 	mkdir -p build
@@ -200,6 +206,9 @@ $(ROM_LEGACY): src/rom/rom.asm $(SRC_FILES) src/version.inc $(KERNEL) $(KSEG) $(
 $(ROM16): src/rom/rom.asm $(SRC_FILES) src/version.inc $(KERNEL) $(KSEG) $(KBOOT) $(NEXTOR_ROM16) tools/check-rom.sh | build
 	$(SJASMPLUS) --nologo --msg=war $(INCLUDES) -I$(ROM_POOL) -D'NEXTOR_ROM="$(notdir $(NEXTOR_ROM16))"' --raw=$@ --lst=build/rom16.lst --exp=build/rom16.exp $<
 	@tools/check-rom.sh $@ $(NEXTOR_ROM16)
+$(ROM_SDL): src/rom/rom.asm $(SRC_FILES) src/version.inc $(KERNEL) $(KSEG) $(KBOOT) $(FBLABS_ROM) tools/check-rom.sh | build
+	$(SJASMPLUS) --nologo --msg=war $(INCLUDES) -I$(ROM_POOL) -D'NEXTOR_ROM="$(notdir $(FBLABS_ROM))"' --raw=$@ --lst=build/rom-sd-legacy.lst --exp=build/rom-sd-legacy.exp $<
+	@tools/check-rom.sh $@ $(FBLABS_ROM)
 # The driver-contract test's ROM and the volume its driver carries
 # (DRVROM, above).
 $(DRVROM_VOL): tests/drvrom/mkvol.py tests/drvrom/layout.inc build/drvrom.progs/reader | build
@@ -233,7 +242,7 @@ rom-from: $(KERNEL) $(KERNEL_NA) $(KSEG) $(KBOOT) tools/check-rom.sh | build
 	@case "$(DRIVER_ROM)$(DRIVER)" in *" "*) echo "$(DRIVER_ROM) $(DRIVER): a path must not contain a space (the assembler takes the name as a definition)" >&2; exit 2 ;; esac
 	@[ -f "$(DRIVER_ROM)" ] || { echo "$(DRIVER_ROM): no such file" >&2; exit 2; }
 	@[ -z "$(DRIVER)" ] || [ -f "$(DRIVER)" ] || { echo "$(DRIVER): no such file" >&2; exit 2; }
-	@case "$(ROM_FROM)" in $(ROM)|$(ROM16)) echo "$(DRIVER_ROM): would be built as $(ROM_FROM), which make rom owns; rename the input" >&2; exit 2 ;; esac
+	@case "$(ROM_FROM)" in $(ROM)|$(ROM_LEGACY)|$(ROM16)|$(ROM_SDL)) echo "$(DRIVER_ROM): would be built as $(ROM_FROM), which make rom owns; rename the input" >&2; exit 2 ;; esac
 	$(SJASMPLUS) --nologo --msg=war $(INCLUDES) -I$(dir $(DRIVER_ROM)) -D'NEXTOR_ROM="$(notdir $(DRIVER_ROM))"' $(if $(DRIVER),-D'M6_DRIVER="$(DRIVER)"' -D'KERNEL_BIN="$(KERNEL_NA)"' -D'KERNEL_EXP="$(KERNEL_NA:.bin=.exp)"') --raw=$(ROM_FROM) --lst=$(ROM_FROM:.rom=.lst) --exp=$(ROM_FROM:.rom=.exp) src/rom/rom.asm || { rm -f $(ROM_FROM); exit 1; }
 	@tools/check-rom.sh $(ROM_FROM) $(DRIVER_ROM) $(if $(DRIVER),block) || { rm -f $(ROM_FROM); exit 1; }
 	@echo "rom-from: $(ROM_FROM)"
@@ -259,8 +268,8 @@ $(foreach b,$(patsubst src/bin/%.asm,%,$(BIN_SRCS)),$(eval $(call bin_rule,$(b))
 # <bytes>" for its four filled banks, what each leaves before CHGBNK —
 # banks 0 to 2 the same for every input, so read from the Sunrise build
 # alone, bank 7 the room the Sunrise driver leaves.
-sizes: $(KERNEL) $(KERNEL_NA) $(KSEG) $(KBOOT) $(LEG) $(M6COM) $(NEXTORSYS) $(if $(wildcard $(NEXTOR_ROM)),$(ROM) $(ROM_LEGACY)) $(if $(wildcard $(NEXTOR_ROM16)),$(ROM16)) $(BIN_BINS) $(TEST_BINS) $(PROG_BINS)
-	@for f in $(KERNEL) $(KERNEL_NA) $(KSEG) $(KBOOT) $(LEG) $(LEGB) $(M6COM) $(NEXTORSYS) $(wildcard $(ROM) $(ROM_LEGACY) $(ROM16)) $(BIN_BINS) $(TEST_BINS) $(PROG_BINS); do \
+sizes: $(KERNEL) $(KERNEL_NA) $(KSEG) $(KBOOT) $(LEG) $(M6COM) $(NEXTORSYS) $(if $(wildcard $(NEXTOR_ROM)),$(ROM) $(ROM_LEGACY)) $(if $(wildcard $(NEXTOR_ROM16)),$(ROM16)) $(if $(wildcard $(FBLABS_ROM)),$(ROM_SDL)) $(BIN_BINS) $(TEST_BINS) $(PROG_BINS)
+	@for f in $(KERNEL) $(KERNEL_NA) $(KSEG) $(KBOOT) $(LEG) $(LEGB) $(M6COM) $(NEXTORSYS) $(wildcard $(ROM) $(ROM_LEGACY) $(ROM16) $(ROM_SDL)) $(BIN_BINS) $(TEST_BINS) $(PROG_BINS); do \
 	    printf 'SIZE %s %s\n' "$$(basename $$f)" "$$(wc -c < $$f | tr -d ' ')"; \
 	done
 	@for k in kernel kernel-noadapter; do \
@@ -303,7 +312,7 @@ fetch:
 # The one command: tools, build, every test in name order, stop at the first
 # failure, summary.
 check: fetch
-	@$(MAKE) --no-print-directory all $(ROM) $(ROM_LEGACY) $(ROM16) $(DRVROM) $(M6IDE_ROM) $(M6IDE_LROM) $(TEST_ROMS) check-tools
+	@$(MAKE) --no-print-directory all $(ROM) $(ROM_LEGACY) $(ROM16) $(ROM_SDL) $(DRVROM) $(M6IDE_ROM) $(M6IDE_LROM) $(TEST_ROMS) check-tools
 	@tools/check-version.sh
 	@tools/check-headers.sh
 	@tools/check-leg.sh
