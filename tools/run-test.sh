@@ -47,6 +47,9 @@ cd "$ROOT"
 if [ -x .tools/openmsx/bin/openmsx ]; then
     OPENMSX=.tools/openmsx/bin/openmsx
     export OPENMSX_SYSTEM_DATA="$ROOT/.tools/openmsx/share"
+elif [ -x .tools/openmsx/openMSX.app/Contents/MacOS/openmsx ]; then
+    OPENMSX=.tools/openmsx/openMSX.app/Contents/MacOS/openmsx
+    export OPENMSX_SYSTEM_DATA="$ROOT/.tools/openmsx/openMSX.app/Contents/Resources/share"
 else
     OPENMSX=openmsx
 fi
