@@ -14,10 +14,13 @@ lists them — and the kernel asks each one, at boot, which devices it has
 units that are block devices with 512-byte sectors. The second is a
 driver written for m6 itself, which a kernel ROM can carry in its driver
 bank in place of the Nextor one; it names its own devices, numbered from
-1, with no units. [`drivers.md`](drivers.md) describes both and the
-contract the second is written to. Either way, a unit or device whose
-driver flags it as not to be mounted automatically is skipped with one
-line.
+1, with no units, and is called with interrupts enabled, so the clock
+and the keyboard keep running during a transfer. The Sunrise IDE kernel
+ROM carries one, for the master and the slave of that interface.
+[`drivers.md`](drivers.md) describes both kinds, the contract the second
+is written to, and the Sunrise IDE driver. Either way, a unit or device
+whose driver flags it as not to be mounted automatically is skipped with
+one line.
 
 ## Volumes
 
