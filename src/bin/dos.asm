@@ -175,6 +175,12 @@ opened: ld      (fd),a
         ld      de,K_HINGE-4000h
         ld      bc,0-K_HINGE
         ldir
+        ; RAMAD0-3 as the record has them: MSX-DOS's variables, which no
+        ; MSX-DOS wrote when the kernel booted from its ROM.
+        ld      hl,K_REC+KR_RAMAD
+        ld      de,B_RAMAD0-4000h
+        ld      bc,4
+        ldir
         ; What the layer needs to know.
         ld      hl,(K_MAP)              ; this process's page 0 and page 1
         ld      a,l
@@ -196,8 +202,10 @@ opened: ld      (fd),a
         ld      (LEG_SIZE-4000h),hl
         ; The RAM's slot, as the bits that put pages 1 and 2 there: the
         ; primary in bits 5-4 and 3-2, the secondary the same, FFh for a
-        ; slot that is not expanded.
-        ld      a,(B_RAMAD0+2)          ; page 2's
+        ; slot that is not expanded. From the record, not RAMAD2: the
+        ; kernel's page 3 holds no MSX-DOS variables when it booted from
+        ; its ROM.
+        ld      a,(K_REC+KR_RAMAD+2)    ; page 2's
         ld      c,a
         and     3
         call    .both
