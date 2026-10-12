@@ -134,7 +134,7 @@ t_entry:
         call    t_streq
         ld      a,0E4h
         jp      nz,t_fail
-        ; readdir /: the eight names, each once, nothing else — five
+        ; readdir /: the nine names, each once, nothing else — five
         ; under the ROM, whose volume carries no system files.
         ld      hl,p_root
         ld      de,root_names
