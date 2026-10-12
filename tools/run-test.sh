@@ -22,6 +22,16 @@
 # file: a 2M master alone, which is what every test had before there was a
 # file. The system files go on the first volume either way.
 #
+# The forms: tests/<name>/rom, one machine per line (m6-msx2-128k alone
+# when the file is empty), asks for a second form of the same test booted
+# from the kernel ROM with m6's own driver — build/<name>.rom, the test's
+# block in bank 2, for a test with tests/<name>/block.asm; the product
+# ROM for a test whose product marker is empty — with the same files,
+# programs, disk, patches and outside checks, and nothing of a system's
+# on the disk. The forms run in order, `com` then `rom`; the test's .tcl
+# reads M6_FORM; the ROM form's images and logs carry `.rom` in their
+# names (build/<name>.rom.<machine>.<run>.dsk).
+#
 # Files on the volume: tests/<name>/files/, a directory tree, is copied
 # into the staging directory as it is; a test with a `product` marker
 # boots the product (below) and carries every build/bin/* in BIN/; each program built from
@@ -63,24 +73,62 @@ export M6_TZ_OFFSET
 # a plain ASCII16 cartridge with no disk behind it — no image is built or
 # attached, and the test reads the kernel stopping for want of a volume;
 # `rom ascii16 <name>`, the same with build/<name>.rom in the cartridge.
-product=""
-if [ -f "tests/$name/product" ]; then
-    product=$(cat "tests/$name/product")
-    case $product in
-        "") product=m6.com; com="build/m6.com"; upper=M6 ;;
-        "nextor.sys"|"nextor.sys chain") com="build/nextor.sys"; upper=NEXTOR ;;
-        "rom") com="build/m6-sunriseide.rom"; upper=M6 ;;
-        "rom legacy") com="build/m6-sunriseide-legacy.rom"; upper=M6; product=rom ;;
-        "rom ascii16") com="build/m6-ascii16-test.rom"; upper=M6 ;;
-        "rom ascii16 "*) com="build/${product#rom ascii16 }.rom"; upper=M6; product="rom ascii16" ;;
-        "rom "*) com="build/${product#rom }.rom"; upper=M6; product=rom ;;
-        *) echo "run-test: $name: the product marker says '$product'; empty, nextor.sys, nextor.sys chain, rom, rom legacy, rom <name>, rom ascii16 or rom ascii16 <name>" >&2; exit 2 ;;
-    esac
-else
-    com="build/$name.com"
-    upper=$(echo "$name" | tr '[:lower:]' '[:upper:]')
-fi
-[ -f "$com" ] || { echo "run-test: $com not built; run make first" >&2; exit 2; }
+# set_form <form>: the product, the file booted (com), the name it takes
+# on the disk (upper), and the tag the run's files carry, for one form.
+set_form() {
+    form=$1
+    tag=$name
+    product=""
+    [ -f "tests/$name/product" ] && product=$(cat "tests/$name/product")
+    if [ "$form" = rom ]; then
+        tag=$name.rom
+        if [ -f "tests/$name/block.asm" ]; then
+            product="rom $name"
+        elif [ -z "$product" ] && [ -f "tests/$name/product" ]; then
+            product=rom
+        else
+            echo "run-test: $name: the rom marker needs tests/$name/block.asm or an empty product marker" >&2; exit 2
+        fi
+    fi
+    # own: the ROM is the test's own, not the product's — nothing of
+    # build/bin/* goes to BIN/ then.
+    own=""
+    if [ -f "tests/$name/product" ] || [ "$form" = rom ]; then
+        case $product in
+            "") product=m6.com; com="build/m6.com"; upper=M6 ;;
+            "nextor.sys"|"nextor.sys chain") com="build/nextor.sys"; upper=NEXTOR ;;
+            "rom") com="build/m6-sunriseide.rom"; upper=M6 ;;
+            "rom legacy") com="build/m6-sunriseide-legacy.rom"; upper=M6; product=rom ;;
+            "rom ascii16") com="build/m6-ascii16-test.rom"; upper=M6 ;;
+            "rom ascii16 "*) com="build/${product#rom ascii16 }.rom"; upper=M6; product="rom ascii16"; own=1 ;;
+            "rom "*) com="build/${product#rom }.rom"; upper=M6; product=rom; own=1 ;;
+            *) echo "run-test: $name: the product marker says '$product'; empty, nextor.sys, nextor.sys chain, rom, rom legacy, rom <name>, rom ascii16 or rom ascii16 <name>" >&2; exit 2 ;;
+        esac
+        bin=1
+        [ -n "$own" ] && bin=""
+    else
+        com="build/$name.com"
+        upper=$(echo "$name" | tr '[:lower:]' '[:upper:]')
+        bin=""
+    fi
+    [ -f "$com" ] || { echo "run-test: $com not built; run make first" >&2; exit 2; }
+    # The cartridge: the Nextor kernel ROM, or a kernel ROM m6 builds, which
+    # the extension finds in the ROM pool beside the Nextor one — copied
+    # there now, so the emulator sees this build's.
+    ext=m6-sunriseide-nextor
+    if [ "$product" = rom ]; then
+        cp "$com" tools/openmsx/systemroms/m6-sunriseide.rom
+        ext=m6-sunriseide-m6
+    elif [ "$product" = "rom ascii16" ]; then
+        cp "$com" tools/openmsx/systemroms/m6-ascii16-test.rom
+        ext=m6-ascii16-m6
+    fi
+    [ -n "$slave" ] && ext=$ext-2
+    export M6_FORM=$form
+}
+
+forms=com
+[ -f "tests/$name/rom" ] && forms="com rom"
 
 staging="build/$name.staging"
 
@@ -99,11 +147,11 @@ staging="build/$name.staging"
 openmsx_run() {
     status=0
     "$OPENMSX" -machine "$machine" -setting tools/openmsx/settings.xml \
-        -command "set renderer none" "$@" 2> "build/$name.$machine.err" || status=$?
+        -command "set renderer none" "$@" 2> "build/$tag.$machine.err" || status=$?
     grep -a -v \
         -e '^ALSA lib seq_hw\.c:[0-9]*:(snd_seq_hw_open) open /dev/snd/seq failed: ' \
         -e '^error: Could not open sequencer: ' \
-        "build/$name.$machine.err" >&2 || :
+        "build/$tag.$machine.err" >&2 || :
     return $status
 }
 
@@ -127,7 +175,7 @@ byte() { od -An -tu1 -j "$2" -N 1 "$1" | tr -d ' \n'; }
 # handed to the checker, which must find nothing to fix; then the copies
 # of its table, which must be identical.
 check_volume() {
-    ci_vol="build/$name.$machine.$run.vol"
+    ci_vol="build/$tag.$machine.$run.vol"
     dd if="$1" of="$ci_vol" bs=512 skip="$2" count="$3" 2> /dev/null
     # A Nextor boot sector carries no extended signature (29h), and where
     # dosfstools then looks for a volume label it finds nothing: its checker
@@ -215,18 +263,6 @@ if [ -f "tests/$name/disk" ]; then
     master=$(sed -n 1p "tests/$name/disk")
     slave=$(sed -n 2p "tests/$name/disk")
 fi
-# The cartridge: the Nextor kernel ROM, or a kernel ROM m6 builds, which
-# the extension finds in the ROM pool beside the Nextor one — copied there
-# now, so the emulator sees this build's.
-ext=m6-sunriseide-nextor
-if [ "$product" = rom ]; then
-    cp "$com" tools/openmsx/systemroms/m6-sunriseide.rom
-    ext=m6-sunriseide-m6
-elif [ "$product" = "rom ascii16" ]; then
-    cp "$com" tools/openmsx/systemroms/m6-ascii16-test.rom
-    ext=m6-ascii16-m6
-fi
-[ -n "$slave" ] && ext=$ext-2
 # The argument lines, read with their line numbers so an empty line counts.
 if [ -f "tests/$name/args" ]; then
     runs=$(grep -c '' "tests/$name/args")
@@ -234,13 +270,22 @@ else
     runs=1
 fi
 
-for machine in $machines; do
+for form in $forms; do
+set_form "$form"
+form_machines=$machines
+if [ "$form" = rom ]; then
+    form_machines=$(cat "tests/$name/rom")
+    [ -n "$form_machines" ] || form_machines=m6-msx2-128k
+fi
+for machine in $form_machines; do
     run=0
     while [ "$run" -lt "$runs" ]; do
         run=$((run + 1))
         args=""
         [ -f "tests/$name/args" ] && args=$(sed -n "${run}p" "tests/$name/args")
-        echo "  machine $machine run $run${args:+ ($args)}"
+        formtag=""
+        [ "$forms" != com ] && formtag="form $form "
+        echo "  ${formtag}machine $machine run $run${args:+ ($args)}"
         rm -rf "$staging" && mkdir -p "$staging"
         case $product in
             "nextor.sys")
@@ -256,7 +301,7 @@ for machine in $machines; do
                 cp "$com" "$staging/$upper.COM"
                 printf '%s%s\r\n' "$upper" "${args:+ $args}" > "$staging/AUTOEXEC.BAT" ;;
         esac
-        if [ -n "$product" ]; then
+        if [ -n "$bin" ]; then
             mkdir -p "$staging/bin"
             for b in build/bin/*; do
                 case $b in *.lst) ;; *) cp "$b" "$staging/bin/" ;; esac
@@ -275,10 +320,10 @@ for machine in $machines; do
         M6_FILES_TCL=""
         [ -f "tests/$name/files.tcl" ] && M6_FILES_TCL="$ROOT/tests/$name/files.tcl"
         export M6_FILES_TCL
-        export M6_IMAGE="$ROOT/build/$name.$machine.$run.dsk" M6_STAGING="$ROOT/$staging"
-        export M6_EXPORT="$ROOT/build/$name.$machine.$run.export"
+        export M6_IMAGE="$ROOT/build/$tag.$machine.$run.dsk" M6_STAGING="$ROOT/$staging"
+        export M6_EXPORT="$ROOT/build/$tag.$machine.$run.export"
         export M6_MASTER="$master" M6_SLAVE="$slave"
-        export M6_SLAVE_IMAGE="$ROOT/build/$name.$machine.$run.slave.dsk"
+        export M6_SLAVE_IMAGE="$ROOT/build/$tag.$machine.$run.slave.dsk"
         # openMSX's command line takes -hda alone; the slave's image goes
         # in through the hdb command, which runs before the machine boots.
         slave_cmd="set renderer none"
@@ -366,4 +411,5 @@ for machine in $machines; do
             if [ -n "$slave" ]; then check_image "$M6_SLAVE_IMAGE"; fi
         fi
     done
+done
 done
