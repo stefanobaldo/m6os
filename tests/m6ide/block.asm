@@ -500,6 +500,8 @@ t_point:
         or      a
         sbc     hl,de
         ld      (t_ticks),hl
+        call    t_rtc_watch             ; a change during the last call:
+                                        ; counted, never taken as an edge
 .tail:  call    t_rtc_edge              ; the window's last change
         jp      c,.nortc
         ld      (t_rtc_last),hl
