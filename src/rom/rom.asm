@@ -21,7 +21,8 @@
 ; (KERNEL_BIN names it). A build that names M6_TEST puts a kernel-side
 ; test block in bank 2 after the boot image, which the boot copies to
 ; 0100h of page 0 and names in the record: the driver-contract test's
-; vehicle. Every bank begins with the cartridge header and the
+; vehicle; M6_TEST_BIN names the same thing assembled on its own, the
+; way the disk tests' blocks reach the ROM (tests/romblock.asm). Every bank begins with the cartridge header and the
 ; INIT trampoline, because the mapper register has no reset state the ROM
 ; may count on; the driver bank's own INIT, Nextor's, lands at ROM_NXINIT
 ; in bank 0, where a jump waits for it.
@@ -231,6 +232,15 @@ rom_test:
         DISP    0100h
         include M6_TEST
         ENT
+rom_test_end:
+        ASSERT  rom_test_end-rom_test <= KB_BASE-0100h
+    ENDIF
+    IFDEF M6_TEST_BIN
+        ; The same, assembled on its own for 0100h (tests/romblock.asm):
+        ; a block that carries program images under DISP of its own,
+        ; which a DISP here could not hold.
+rom_test:
+        incbin  M6_TEST_BIN
 rom_test_end:
         ASSERT  rom_test_end-rom_test <= KB_BASE-0100h
     ENDIF

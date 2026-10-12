@@ -27,6 +27,14 @@ OPENMSX   := $(if $(wildcard .tools/openmsx/bin/openmsx),.tools/openmsx/bin/open
 # A test directory holding a `product` marker boots the product,
 # build/m6.com, instead of a program of its own.
 PRODUCT_TESTS := $(notdir $(patsubst %/,%,$(dir $(wildcard tests/*/product))))
+# A test with a rom marker and a block of its own runs from the kernel ROM
+# too: build/<test>.block is the block assembled for 0100h of page 0
+# against the resident without the adapter, build/<test>.rom the Sunrise
+# kernel ROM carrying it in bank 2 beside m6's own driver (tests/romblock.asm).
+ROM_TESTS := $(notdir $(patsubst %/,%,$(dir $(wildcard tests/*/rom))))
+BLOCK_TESTS := $(foreach t,$(ROM_TESTS),$(if $(wildcard tests/$(t)/block.asm),$(t)))
+TEST_BLOCKS := $(foreach t,$(BLOCK_TESTS),build/$(t).block)
+TEST_ROMS := $(foreach t,$(BLOCK_TESTS),build/$(t).rom)
 TESTS     := $(sort $(notdir $(patsubst %/,%,$(dir $(wildcard tests/*/*.asm)))) $(PRODUCT_TESTS))
 TEST_BINS := $(foreach t,$(filter-out $(PRODUCT_TESTS),$(TESTS)),build/$(t).com)
 # A test may ship programs on its disk: tests/<name>/progs/<prog>.asm builds
@@ -116,7 +124,7 @@ INCLUDES  := -Itests $(if $(wildcard src),-Isrc)
 
 .PHONY: all rom rom-from check check-sjasmplus check-openmsx check-tools fetch sizes clean distclean
 
-all: check-sjasmplus $(KERNEL) $(KERNEL_NA) $(KSEG) $(KBOOT) $(LEG) $(M6COM) $(NEXTORSYS) $(if $(wildcard $(NEXTOR_ROM)),$(ROM) $(ROM_LEGACY) $(M6IDE_ROM) $(M6IDE_LROM)) $(if $(wildcard $(NEXTOR_ROM16)),$(ROM16) $(DRVROM)) $(BIN_BINS) $(TEST_BINS) $(PROG_BINS) sizes
+all: check-sjasmplus $(KERNEL) $(KERNEL_NA) $(KSEG) $(KBOOT) $(LEG) $(M6COM) $(NEXTORSYS) $(if $(wildcard $(NEXTOR_ROM)),$(ROM) $(ROM_LEGACY) $(M6IDE_ROM) $(M6IDE_LROM) $(TEST_ROMS)) $(if $(wildcard $(NEXTOR_ROM16)),$(ROM16) $(DRVROM)) $(BIN_BINS) $(TEST_BINS) $(PROG_BINS) sizes
 
 rom: $(ROM) $(ROM_LEGACY) $(ROM16)
 
@@ -204,6 +212,16 @@ $(M6IDE_ROM): src/rom/rom.asm $(SRC_FILES) src/version.inc $(KERNEL_NA) $(KSEG) 
 $(M6IDE_LROM): src/rom/rom.asm $(SRC_FILES) src/version.inc $(KERNEL) $(KSEG) $(KBOOT) $(NEXTOR_ROM) tools/check-rom.sh tests/m6ide-legacy/block.asm tests/m6ide/block.asm tests/m6util.asm | build
 	$(SJASMPLUS) --nologo --msg=war $(INCLUDES) -I$(ROM_POOL) -D'M6_TEST="tests/m6ide-legacy/block.asm"' --raw=$@ --lst=build/m6ide-legacy.lst --exp=build/m6ide-legacy.exp $<
 	@tools/check-rom.sh $@ $(NEXTOR_ROM)
+# A test's block for the ROM, and the ROM: one rule per test with a rom
+# marker and a block (ROM_TESTS, above).
+define block_rule
+build/$(1).block: tests/romblock.asm tests/$(1)/block.asm tests/m6test.inc tests/m6prog.inc tests/m6util.asm $$(SRC_FILES) $$(KERNEL_NA) | build
+	$$(SJASMPLUS) --nologo --msg=war $$(INCLUDES) -D'M6_BLOCK="tests/$(1)/block.asm"' --raw=$$@ --lst=build/$(1).block.lst $$<
+build/$(1).rom: src/rom/rom.asm $$(SRC_FILES) src/version.inc $$(KERNEL_NA) $$(KSEG) $$(KBOOT) $$(NEXTOR_ROM) tools/check-rom.sh build/$(1).block | build
+	$$(SJASMPLUS) --nologo --msg=war $$(INCLUDES) -I$$(ROM_POOL) -D'M6_DRIVER="$$(M6IDE)"' -D'M6_TEST_BIN="build/$(1).block"' -D'KERNEL_BIN="$$(KERNEL_NA)"' -D'KERNEL_EXP="$$(KERNEL_NA:.bin=.exp)"' --raw=$$@ --lst=build/$(1).rom.lst --exp=build/$(1).rom.exp $$<
+	@tools/check-rom.sh $$@ $$(NEXTOR_ROM) block
+endef
+$(foreach t,$(BLOCK_TESTS),$(eval $(call block_rule,$(t))))
 # Any other cartridge: the kernel ROM given by path, the output named after
 # it, in build/ beside the other two, never over one of them; nothing of
 # the input is kept. The target is phony, so .DELETE_ON_ERROR does not
@@ -283,7 +301,7 @@ fetch:
 # The one command: tools, build, every test in name order, stop at the first
 # failure, summary.
 check: fetch
-	@$(MAKE) --no-print-directory all $(ROM) $(ROM_LEGACY) $(ROM16) $(DRVROM) $(M6IDE_ROM) $(M6IDE_LROM) check-tools
+	@$(MAKE) --no-print-directory all $(ROM) $(ROM_LEGACY) $(ROM16) $(DRVROM) $(M6IDE_ROM) $(M6IDE_LROM) $(TEST_ROMS) check-tools
 	@tools/check-version.sh
 	@tools/check-headers.sh
 	@tools/check-leg.sh

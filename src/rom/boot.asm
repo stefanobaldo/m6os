@@ -425,6 +425,12 @@ rm_start:
         ld      bc,rom_kboot_end-rom_kboot
         ldir
     IFDEF M6_TEST
+        DEFINE  M6_ROM_TEST
+    ENDIF
+    IFDEF M6_TEST_BIN
+        DEFINE  M6_ROM_TEST
+    ENDIF
+    IFDEF M6_ROM_TEST
         ld      hl,rom_test             ; the test block, to 0100h of the
         ld      de,0100h                ; same segment; the record names it
         ld      bc,rom_test_end-rom_test
