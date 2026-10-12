@@ -39,9 +39,15 @@
 ; where incbin finds it, and its name as NEXTOR_ROM when it is not the
 ; default; tools/check-rom.sh then compares the bytes this file must
 ; reproduce with the driver bank's and fails the build when they differ.
+        IFNDEF  KERNEL_BIN
+        DEFINE  KERNEL_BIN "build/kernel.bin"
+        ENDIF
+        IFNDEF  KERNEL_EXP              ; the labels KERNEL_BIN exports
+        DEFINE  KERNEL_EXP "build/kernel.exp"
+        ENDIF
         include "nextor/nextor.inc"
         include "kernel/kernel.inc"
-        include "build/kernel.exp"      ; K_IMAGE_ROOF: the roof the wall
+        include KERNEL_EXP              ; K_IMAGE_ROOF: the roof the wall
                                         ; must stay above (boot.asm)
         include "version.inc"
 
@@ -50,9 +56,6 @@
         OPT     -Wno-fileorg
         IFNDEF  NEXTOR_ROM
         DEFINE  NEXTOR_ROM "Nextor-2.1.4.SunriseIDE.ROM"
-        ENDIF
-        IFNDEF  KERNEL_BIN
-        DEFINE  KERNEL_BIN "build/kernel.bin"
         ENDIF
 ROM_BANK        equ 4000h       ; a bank
 ROM_TRAMP       equ 4010h       ; the INIT trampoline, after the header
