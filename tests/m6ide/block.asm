@@ -32,7 +32,7 @@ T_TOTAL         equ 4096        ; sectors of each 2 MB image
 T_LAST          equ T_TOTAL-32  ; the slave's last 32 sectors
 T_SECTORS       equ 1024        ; sectors read per point of step 6: 8 x 64 KB
 T_TOL           equ 2           ; ticks the count may fall short of 60 n:
-                                ; one at each observed change of the clock
+                                ; the tick rounded at each of the two edges
 T_PARAMS        equ 8000h+ST_INFO
 
 tb_start:                               ; SP is the kernel's, at K_END
@@ -429,13 +429,17 @@ t_readback:
         ret
 
 ; t_point — (t_b) sectors per call: T_SECTORS sectors of device 1 read
-; from its first sectors, every call into slot 0 of the test's segment,
-; the RTC's seconds digit watched and K_TICKS noted at its first and
-; last change. The line: B, calls, ticks, ms per call, ms per sector,
-; the clock's whole seconds, the ticks counted over them, lost. CF when
-; a call failed, when the clock did not advance twice, or — not under
-; M6IDE_LEGACY — when more than T_TOL ticks were lost. Corrupts
-; everything.
+; from its first sectors, every call into slot 0 of the test's segment.
+; The RTC's seconds digit is polled tight for a change before the first
+; call and after the last, K_TICKS noted at each, and watched between
+; calls to count the changes in the window; after the last call the
+; window runs to the next change, and on until two whole seconds at
+; least. Sampled between calls instead, an edge would be seen up to a
+; call late — 5 ticks at 32 sectors a call. The line: B, calls, ticks,
+; ms per call, ms per sector, the clock's whole seconds, the ticks
+; counted over them, lost. CF when a call failed, when the clock did not
+; advance, or — not under M6IDE_LEGACY — when more than T_TOL ticks were
+; lost or more than one tick over 60 n counted. Corrupts everything.
 t_point:
         ld      a,13                    ; RTC mode register: block 0
         out     (0B4h),a
@@ -443,8 +447,12 @@ t_point:
         out     (0B5h),a
         call    t_rtc_sec
         ld      (t_rtc_prev),a
+        call    t_rtc_edge
+        jp      c,.nortc
+        ld      (t_rtc_first),hl
         xor     a
         ld      (t_rtc_n),a
+        ld      (t_over),a
         ld      hl,T_SECTORS
         ld      a,(t_b)
 .div:   srl     a
@@ -492,6 +500,14 @@ t_point:
         or      a
         sbc     hl,de
         ld      (t_ticks),hl
+.tail:  call    t_rtc_edge              ; the window's last change
+        jp      c,.nortc
+        ld      (t_rtc_last),hl
+        ld      hl,t_rtc_n
+        inc     (hl)
+        ld      a,(hl)
+        cp      2
+        jr      c,.tail
         ; The line.
         ld      hl,ts_b
         k_call  API_CON_PUTS
@@ -521,11 +537,7 @@ t_point:
         call    k_hundredths
         ld      hl,ts_rtc
         k_call  API_CON_PUTS
-        ld      a,(t_rtc_n)
-        dec     a                       ; changes seen - 1 = whole seconds
-        jp      m,.nortc
-        jr      z,.nortc
-        ld      (t_rtc_n),a
+        ld      a,(t_rtc_n)                 ; changes after the first: seconds
         call    k_dec8
         ld      hl,ts_counted
         k_call  API_CON_PUTS
@@ -548,6 +560,9 @@ t_point:
         or      a
         sbc     hl,de                   ; expected - counted = lost
         jp      p,.lost
+        inc     hl
+        ld      a,h
+        ld      (t_over),a              ; FFh: counted more than 60 n + 1
         ld      hl,0                    ; more than expected: none lost
 .lost:  ld      (t_lost),hl
         k_call  API_CON_DEC16
@@ -556,6 +571,11 @@ t_point:
         or      a
         ret
     ELSE
+        ld      a,(t_over)
+        or      a
+        ld      a,0E8h                  ; more ticks than the clock allows
+        scf
+        ret     nz
         ld      hl,(t_lost)
         ld      de,T_TOL+1
         or      a
@@ -567,13 +587,14 @@ t_point:
 .nortc: ld      hl,ts_nortc
         k_call  API_CON_PUTS
         k_call  API_CON_NEWLINE
-        ld      a,0E7h                  ; the clock did not advance twice
+        ld      a,0E7h                  ; the clock did not advance
         scf
         ret
 
 ; t_rtc_sec — A = the RTC's seconds digit. t_rtc_watch — the digit
-; compared with the last one seen; at a change, K_TICKS noted as the
-; first or the last, and the changes counted.
+; compared with the last one seen; at a change, counted. t_rtc_edge —
+; the digit polled until it changes: HL = K_TICKS then; CF when 150
+; ticks pass without a change.
 t_rtc_sec:
         xor     a
         out     (0B4h),a
@@ -588,14 +609,30 @@ t_rtc_watch:
         ret     z
         ld      a,b
         ld      (t_rtc_prev),a
+        ld      hl,t_rtc_n
+        inc     (hl)
+        ret
+t_rtc_edge:
         ld      hl,(K_TICKS)
-        ld      (t_rtc_last),hl
-        ld      a,(t_rtc_n)
+        ld      (t_rtc_t),hl
+.spin:  call    t_rtc_sec
+        ld      b,a
+        ld      a,(t_rtc_prev)
+        cp      b
+        jr      nz,.got
+        ld      hl,(K_TICKS)
+        ld      de,(t_rtc_t)
         or      a
-        jr      nz,.count
-        ld      (t_rtc_first),hl
-.count: inc     a
-        ld      (t_rtc_n),a
+        sbc     hl,de
+        ld      de,150
+        sbc     hl,de
+        jr      c,.spin
+        scf                             ; 150 ticks and no change
+        ret
+.got:   ld      a,b
+        ld      (t_rtc_prev),a
+        ld      hl,(K_TICKS)
+        or      a
         ret
 
 ; t_page2 — the test's page 2 back: the block layer leaves the window
@@ -655,7 +692,7 @@ ts_sector:  db  " ms sector ",0
 ts_rtc:     db  " ms rtc ",0
 ts_counted: db  " s counted ",0
 ts_lost:    db  " lost ",0
-ts_nortc:   db  "the clock did not advance twice",0
+ts_nortc:   db  "the clock did not advance",0
 ts_rd64:    db  ", rd64 ",0
 ts_ticks:   db  " ticks",0
 ts_fail:    db  10,"FAIL step ",0
@@ -677,8 +714,10 @@ t_i:        dw  0
 t_t0:       dw  0
 t_ticks:    dw  0
 t_lost:     dw  0
+t_over:     db  0
 t_rtc_prev: db  0
 t_rtc_n:    db  0
 t_rtc_first: dw 0
 t_rtc_last: dw  0
+t_rtc_t:    dw  0
 tb_end:
