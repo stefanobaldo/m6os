@@ -32,7 +32,8 @@ Nextor kernel ROM in both cases. A block may be up to `3ED0h` bytes long
 make rom-from DRIVER_ROM=<the cartridge's Nextor kernel ROM> DRIVER=<block.asm>
 ```
 
-builds such a ROM. The source is assembled for `4100h` with
+builds such a ROM, `build/m6-<ROM>-<block>.rom`, and prints the room
+left in its driver bank. The source is assembled for `4100h` with
 `src/kernel/kernel.inc` already included, so it names everything below
 by its symbol. The ROM's resident kernel is built without the legacy
 adapter.
