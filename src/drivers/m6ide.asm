@@ -175,8 +175,11 @@ si_identify:
         ld      de,SI_TO_CMD
         call    si_wait_bsy
         ret     c
+        ret     z                       ; status 00h: no device there, the
+                                        ; master answering for an absent
+                                        ; slave (a device shows DRDY)
         ; Two registers written and read back: a device echoes them, a
-        ; floating bus or a master answering for an absent slave does not.
+        ; floating bus does not.
         ld      a,55h
         ld      (SI_COUNT),a
         ld      a,0AAh
