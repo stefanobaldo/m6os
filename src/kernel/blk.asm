@@ -125,15 +125,13 @@ blk_rw:
 .eio:   pop     de
         pop     hl
         pop     af
-        xor     a
-        ld      (K_BLK_LASTERR),a
-        ld      a,E_IO
-        scf
-        ret
+        ld      c,E_IO
+        jr      .fail
 .inval: pop     af
-        xor     a
+        ld      c,E_INVAL
+.fail:  xor     a
         ld      (K_BLK_LASTERR),a
-        ld      a,E_INVAL
+        ld      a,c
         scf
         ret
 
@@ -218,11 +216,10 @@ blk_drv_call:
         ld      e,a
         add     a,a
         add     a,e                     ; * KD_SIZE
-        add     a,KR_DRVS
+        add     a,low (K_REC+KR_DRVS)
         ld      l,a
-        ld      h,0
-        ld      de,K_REC
-        add     hl,de                   ; hl -> the row
+        ld      h,high (K_REC+KR_DRVS)  ; hl -> the row
+        ASSERT  high (K_REC+KR_DRVS) == high (K_REC+KR_DRVS+KD_N*KD_SIZE-1)
         ld      a,(hl)                  ; KD_SLOT
         inc     hl
         ld      c,(hl)                  ; KD_BANK
@@ -375,6 +372,9 @@ blk_nx:
         call    NX_DEV_RW
         or      a
         jr      nz,.err
+        ld      hl,blk_n
+        dec     (hl)
+        jp      z,.ok                   ; the last: nothing to advance
         ld      hl,blk_tgt
         inc     (hl)
         inc     (hl)                    ; the next slot
@@ -387,10 +387,7 @@ blk_nx:
         ld      hl,(blk_sec+2)
         inc     hl
         ld      (blk_sec+2),hl
-.more:  ld      hl,blk_n
-        dec     (hl)
-        jp      z,.ok
-        ei                              ; the tick, between two sectors
+.more:  ei                              ; the tick, between two sectors
         nop
         di
         jr      .sector
