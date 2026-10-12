@@ -26,7 +26,9 @@ proc entry {sec i} {
 proc volumes {path dev} {
     # A Nextor driver's device carries a LUN, printed as 1.1; m6's own
     # driver's does not, and the kernel ROM's listing prints 1.
-    if {$::env(M6_FORM) eq "rom"} { set dev "$dev" } else { set dev "$dev.1" }
+    if {![info exists ::env(M6_FORM)] || $::env(M6_FORM) ne "rom"} {
+        append dev .1
+    }
     set fh [open $path rb]
     set out {}
     set sec0 [sector $fh 0]
