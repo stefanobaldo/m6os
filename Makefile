@@ -178,7 +178,7 @@ $(ROM16): src/rom/rom.asm $(SRC_FILES) src/version.inc $(KERNEL) $(KSEG) $(KBOOT
 $(DRVROM_VOL): tests/drvrom/mkvol.py tests/drvrom/layout.inc build/drvrom.progs/reader | build
 	python3 -I tests/drvrom/mkvol.py $@ build/drvrom.progs/reader
 $(DRVROM): src/rom/rom.asm $(SRC_FILES) src/version.inc $(KERNEL_NA) $(KSEG) $(KBOOT) $(NEXTOR_ROM16) tools/check-rom.sh tests/drvrom/pattern.asm tests/drvrom/block.asm tests/drvrom/layout.inc tests/m6util.asm $(DRVROM_VOL) | build
-	$(SJASMPLUS) --nologo --msg=war $(INCLUDES) -I$(ROM_POOL) -D'NEXTOR_ROM="$(notdir $(NEXTOR_ROM16))"' -D'M6_DRIVER="tests/drvrom/pattern.asm"' -D'M6_TEST="tests/drvrom/block.asm"' -D'KERNEL_BIN="$(KERNEL_NA)"' --raw=$@ --lst=build/drvrom.lst --exp=build/drvrom.exp $<
+	$(SJASMPLUS) --nologo --msg=war $(INCLUDES) -I$(ROM_POOL) -D'NEXTOR_ROM="$(notdir $(NEXTOR_ROM16))"' -D'M6_DRIVER="tests/drvrom/pattern.asm"' -D'M6_TEST="tests/drvrom/block.asm"' -D'KERNEL_BIN="$(KERNEL_NA)"' -D'KERNEL_EXP="$(KERNEL_NA:.bin=.exp)"' --raw=$@ --lst=build/drvrom.lst --exp=build/drvrom.exp $<
 	@tools/check-rom.sh $@ $(NEXTOR_ROM16) block
 # Any other cartridge: the kernel ROM given by path, the output named after
 # it, in build/ beside the other two, never over one of them; nothing of
@@ -190,7 +190,7 @@ rom-from: $(KERNEL) $(KERNEL_NA) $(KSEG) $(KBOOT) tools/check-rom.sh | build
 	@[ -f "$(DRIVER_ROM)" ] || { echo "$(DRIVER_ROM): no such file" >&2; exit 2; }
 	@[ -z "$(DRIVER)" ] || [ -f "$(DRIVER)" ] || { echo "$(DRIVER): no such file" >&2; exit 2; }
 	@case "$(ROM_FROM)" in $(ROM)|$(ROM16)) echo "$(DRIVER_ROM): would be built as $(ROM_FROM), which make rom owns; rename the input" >&2; exit 2 ;; esac
-	$(SJASMPLUS) --nologo --msg=war $(INCLUDES) -I$(dir $(DRIVER_ROM)) -D'NEXTOR_ROM="$(notdir $(DRIVER_ROM))"' $(if $(DRIVER),-D'M6_DRIVER="$(DRIVER)"' -D'KERNEL_BIN="$(KERNEL_NA)"') --raw=$(ROM_FROM) --lst=$(ROM_FROM:.rom=.lst) --exp=$(ROM_FROM:.rom=.exp) src/rom/rom.asm || { rm -f $(ROM_FROM); exit 1; }
+	$(SJASMPLUS) --nologo --msg=war $(INCLUDES) -I$(dir $(DRIVER_ROM)) -D'NEXTOR_ROM="$(notdir $(DRIVER_ROM))"' $(if $(DRIVER),-D'M6_DRIVER="$(DRIVER)"' -D'KERNEL_BIN="$(KERNEL_NA)"' -D'KERNEL_EXP="$(KERNEL_NA:.bin=.exp)"') --raw=$(ROM_FROM) --lst=$(ROM_FROM:.rom=.lst) --exp=$(ROM_FROM:.rom=.exp) src/rom/rom.asm || { rm -f $(ROM_FROM); exit 1; }
 	@tools/check-rom.sh $(ROM_FROM) $(DRIVER_ROM) $(if $(DRIVER),block) || { rm -f $(ROM_FROM); exit 1; }
 	@echo "rom-from: $(ROM_FROM)"
 
