@@ -59,6 +59,22 @@ to install.
   driver taken whole, both SD slots served, the same way the Sunrise legacy
   ROM is built. Flashed in place of the cartridge's kernel it boots m6 with
   no system file on the card.
+- The SD driver, m6's own. `make rom` builds `build/m6-sdmapper.rom`, the
+  kernel ROM for the FBLabs SD Mapper V2 and the cartridges that present
+  its register set, the MSX-Pico+ among them, with a driver written to
+  m6's contract from the SD specification instead of the cartridge's
+  Nextor one: both card slots served, SDHC/SDXC and standard-capacity
+  cards, interrupts enabled while a sector moves, up to 32 sectors per
+  call — on the emulator, a 32-sector transfer costs about a sixth less
+  than through the Nextor driver on the same block, and a file read
+  through `read()` the same — each card named in the boot listing by its
+  product name, revision and class, an empty slot listed as such, a card
+  whose write-protect switch is on mounted read-only and refusing writes.
+  A card changed while the system runs is refused until the next boot.
+  The ROM is built from Nextor's standalone ASCII16 kernel ROM, so it
+  needs no download from the cartridge's maker; the ROM with the
+  cartridge's own driver remains as `build/m6-sdmapper-legacy.rom`. The
+  whole disk test suite runs from this ROM in the emulated cartridge too.
 - Memory. The kernel finds every memory mapper in the machine and allocates 16K
   segments of the one it runs in, never handing out a segment that does not
   exist or was already in use when it started. A `mem=<K>` argument caps the
