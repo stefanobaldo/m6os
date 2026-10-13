@@ -195,7 +195,7 @@ $(NEXTORSYS): src/loader/nextor.asm $(SRC_FILES) src/version.inc $(KERNEL) $(KSE
 # ROM that fails the check is removed with the build's error. Asked for
 # without its input in the pool, the build says what to run instead of
 # failing on a missing prerequisite.
-$(NEXTOR_ROM) $(NEXTOR_ROM16):
+$(NEXTOR_ROM) $(NEXTOR_ROM16) $(FBLABS_ROM):
 	@echo "$@ is not there: run make fetch (tools/fetch-nextor.sh) first" >&2; exit 1
 $(ROM): src/rom/rom.asm $(SRC_FILES) src/version.inc $(KERNEL_NA) $(KSEG) $(KBOOT) $(NEXTOR_ROM) tools/check-rom.sh | build
 	$(SJASMPLUS) --nologo --msg=war $(INCLUDES) -I$(ROM_POOL) -D'M6_DRIVER="$(M6IDE)"' -D'KERNEL_BIN="$(KERNEL_NA)"' -D'KERNEL_EXP="$(KERNEL_NA:.bin=.exp)"' --raw=$@ --lst=build/rom.lst --exp=build/rom.exp $<
