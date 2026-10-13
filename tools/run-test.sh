@@ -110,6 +110,7 @@ set_form() {
             "rom legacy") com="build/m6-sunriseide-legacy.rom"; upper=M6; product=rom ;;
             "rom ascii16") com="build/m6-ascii16-test.rom"; upper=M6 ;;
             "rom ascii16 "*) com="build/${product#rom ascii16 }.rom"; upper=M6; product="rom ascii16"; own=1 ;;
+            # The SD Mapper ROM with m6's own SD driver; no rule builds it yet.
             "rom sdmapper") com="build/m6-sdmapper.rom"; upper=M6 ;;
             "rom sdmapper legacy") com="build/m6-sdmapper-legacy.rom"; upper=M6; product="rom sdmapper" ;;
             "rom sdmapper "*) com="build/${product#rom sdmapper }.rom"; upper=M6; product="rom sdmapper"; own=1 ;;
