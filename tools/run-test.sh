@@ -39,6 +39,12 @@
 # the path tests/<name>/progs/<prog>.dest names; and tests/<name>/files.tcl,
 # if present, is sourced by mkdisk.tcl before the import, with M6_STAGING
 # set, to write files too large or too regular to commit.
+#
+# tests/<name>/readonly, holding `master` or `slave`, names the image
+# the emulator must open read-only — the card's write-protect switch on
+# an SD Mapper, which openMSX reads off the file's permissions: the
+# image is made unwritable after it is built and before the boot, and
+# writable again after the run.
 set -eu
 name=${1:?usage: tools/run-test.sh <name>}
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -399,10 +405,24 @@ for machine in $form_machines; do
             openmsx_run -script "tests/$name/patch.tcl"
         fi
 
+        # A test that ships readonly: that image unwritable for the boot
+        # (above), and writable again after it, whatever the verdict.
+        ro_img=""
+        if [ -f "tests/$name/readonly" ]; then
+            case $(cat "tests/$name/readonly") in
+                master) ro_img=$M6_IMAGE ;;
+                slave)
+                    [ -n "$slave" ] || { echo "run-test: $name: readonly names the slave, and disk has none" >&2; exit 2; }
+                    ro_img=$M6_SLAVE_IMAGE ;;
+                *) echo "run-test: $name: readonly says '$(cat "tests/$name/readonly")', not master or slave" >&2; exit 2 ;;
+            esac
+            chmod a-w "$ro_img"
+        fi
         if [ -n "$disk" ]; then
             M6_TEST="$name" M6_TEST_DIR="$ROOT/tests/$name" \
                 openmsx_run -ext "$ext" -ext debugdevice -hda "$M6_IMAGE" -command "$slave_cmd" \
-                    -script tools/harness.tcl
+                    -script tools/harness.tcl || { [ -z "$ro_img" ] || chmod u+w "$ro_img"; exit 1; }
+            [ -z "$ro_img" ] || chmod u+w "$ro_img"
         else
             M6_TEST="$name" M6_TEST_DIR="$ROOT/tests/$name" \
                 openmsx_run -ext "$ext" -ext debugdevice -command "$slave_cmd" \

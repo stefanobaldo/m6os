@@ -42,14 +42,14 @@ set isr ""
 set isr_ei ""
 set state ""
 foreach line $lines {
-    if {[regexp {^\s*\d+\+?\s+([0-9A-F]{4})\s+k_enaslt:} $line -> a]} { set state enaslt; continue }
-    if {[regexp {^\s*\d+\+?\s+([0-9A-F]{4})\s+blk_drv_call:} $line -> a]} { set drv_lo 0x$a; set state drv; continue }
-    if {[regexp {^\s*\d+\+?\s+([0-9A-F]{4})\s+\S.*\sblk_jp:} $line -> a]} { set drv_hi 0x$a; set state ""; continue }
-    if {[regexp {^\s*\d+\+?\s+([0-9A-F]{4})\s+k_isr:} $line -> a]} { set isr 0x$a; set state isr; continue }
+    if {[regexp {^\s*\d+\+*\s*([0-9A-F]{4})\s+k_enaslt:} $line -> a]} { set state enaslt; continue }
+    if {[regexp {^\s*\d+\+*\s*([0-9A-F]{4})\s+blk_drv_call:} $line -> a]} { set drv_lo 0x$a; set state drv; continue }
+    if {[regexp {^\s*\d+\+*\s*([0-9A-F]{4})\s+\S.*\sblk_jp:} $line -> a]} { set drv_hi 0x$a; set state ""; continue }
+    if {[regexp {^\s*\d+\+*\s*([0-9A-F]{4})\s+k_isr:} $line -> a]} { set isr 0x$a; set state isr; continue }
     switch $state {
-        enaslt { if {[regexp {^\s*\d+\+?\s+([0-9A-F]{4})\s+F3\s} $line -> a]} { set enaslt_di 0x$a; set state "" } }
-        drv    { if {[regexp {^\s*\d+\+?\s+([0-9A-F]{4})\s+FB\s} $line -> a]} { lappend drv_ei 0x$a } }
-        isr    { if {[regexp {^\s*\d+\+?\s+([0-9A-F]{4})\s+FB\s} $line -> a]} { set isr_ei 0x$a; set state "" } }
+        enaslt { if {[regexp {^\s*\d+\+*\s*([0-9A-F]{4})\s+F3\s} $line -> a]} { set enaslt_di 0x$a; set state "" } }
+        drv    { if {[regexp {^\s*\d+\+*\s*([0-9A-F]{4})\s+FB\s} $line -> a]} { lappend drv_ei 0x$a } }
+        isr    { if {[regexp {^\s*\d+\+*\s*([0-9A-F]{4})\s+FB\s} $line -> a]} { set isr_ei 0x$a; set state "" } }
     }
 }
 if {$enaslt_di eq "" || $drv_lo eq "" || $drv_hi eq "" || [llength $drv_ei] != 2 || $isr eq "" || $isr_ei eq ""} {
@@ -57,13 +57,19 @@ if {$enaslt_di eq "" || $drv_lo eq "" || $drv_hi eq "" || [llength $drv_ei] != 2
     exit 2
 }
 
-# The block's di, from the ROM's listing.
+# The block's di, from the ROM's listing: every F3 between the markers
+# of the driver's files (::probe_files; m6ide.asm alone by default — a
+# driver made of a port and a core names both; a file included from an
+# included file lists its lines with `++`).
+if {![info exists ::probe_files]} { set ::probe_files {m6ide.asm} }
 set ::probe_block_di 0
 set inblock 0
 foreach line [probe_read [file join $::env(M6_TEST_DIR) .. .. build "$::env(M6_TEST).lst"]] {
-    if {[string match "# file opened: m6ide.asm" $line]} { set inblock 1; continue }
-    if {[string match "# file closed: m6ide.asm" $line]} { set inblock 0; continue }
-    if {$inblock && [regexp {^\s*\d+\+?\s+[0-9A-F]{4}\s+F3\s} $line]} { incr ::probe_block_di }
+    foreach f $::probe_files {
+        if {[string match "# file opened: $f" $line]} { set inblock 1 }
+        if {[string match "# file closed: $f" $line]} { set inblock 0 }
+    }
+    if {$inblock && [regexp {^\s*\d+\+*\s*[0-9A-F]{4}\s+F3\s} $line]} { incr ::probe_block_di }
 }
 
 proc probe_di {} {
