@@ -1,5 +1,4 @@
 # The SD Mapper kernel ROM product test's script: one file written on
-# each card, and the line the harness waits for.
+# the card, and the line the harness waits for.
 echo rom > /boot3
-echo rom > /mnt/b/boot3
 echo rc done

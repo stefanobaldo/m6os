@@ -86,11 +86,14 @@ NEXTORSYS := build/nextor.sys
 # ROM was built before there was a driver of m6's own; and the ASCII16
 # one from Nextor's standalone kernel, whose driver has no hardware
 # behind it — a test fixture, the bytes m6 writes into an SD Mapper ROM,
-# booted in CI as far as a kernel with no volume. A fourth, from the
-# FBLabs SD Mapper V2's own kernel ROM (SDXC110.ROM, fetched too): that
-# cartridge's driver bank and the adapter, `-legacy` as the Sunrise's is,
-# the ROM an SD Mapper V2 owner flashes, and the one CI boots in the
-# emulated cartridge. `rom-from
+# booted in CI as far as a kernel with no volume. From the same
+# standalone kernel, the SD Mapper ROM with m6's own SD driver
+# (src/drivers/m6sd.asm) and the resident without the adapter — the
+# product for the FBLabs SD Mapper V2 and the MSX-Pico+, whose bank
+# switch is byte for byte the standalone kernel's, so no FBLabs file is
+# needed to build it. A fifth, from the FBLabs SD Mapper V2's own kernel
+# ROM (SDXC110.ROM, fetched too): that cartridge's driver bank and the
+# adapter, `-legacy` as the Sunrise's is. `rom-from
 # DRIVER_ROM=<file>` builds from any eight-bank Nextor kernel ROM, which
 # is how the MSX-Pico+'s ROM is made from the kernel ROM its firmware
 # embeds; with `DRIVER=<block.asm>` besides, bank 7 is that driver block
@@ -100,7 +103,9 @@ ROM          := build/m6-sunriseide.rom
 ROM_LEGACY   := build/m6-sunriseide-legacy.rom
 ROM16        := build/m6-ascii16-test.rom
 ROM_SDL      := build/m6-sdmapper-legacy.rom
+ROM_SD       := build/m6-sdmapper.rom
 M6IDE        := src/drivers/m6ide.asm
+M6SD         := src/drivers/m6sd.asm
 ROM_POOL     := tools/openmsx/systemroms
 NEXTOR_ROM   := $(ROM_POOL)/Nextor-2.1.4.SunriseIDE.ROM
 NEXTOR_ROM16 := $(ROM_POOL)/Nextor-2.1.4.StandaloneASCII16.ROM
@@ -132,9 +137,9 @@ INCLUDES  := -Itests $(if $(wildcard src),-Isrc)
 
 .PHONY: all rom rom-from check check-sjasmplus check-openmsx check-tools fetch sizes clean distclean
 
-all: check-sjasmplus $(KERNEL) $(KERNEL_NA) $(KSEG) $(KBOOT) $(LEG) $(M6COM) $(NEXTORSYS) $(if $(wildcard $(NEXTOR_ROM)),$(ROM) $(ROM_LEGACY) $(M6IDE_ROM) $(M6IDE_LROM) $(TEST_ROMS)) $(if $(wildcard $(NEXTOR_ROM16)),$(ROM16) $(DRVROM)) $(if $(wildcard $(FBLABS_ROM)),$(ROM_SDL)) $(BIN_BINS) $(TEST_BINS) $(PROG_BINS) sizes
+all: check-sjasmplus $(KERNEL) $(KERNEL_NA) $(KSEG) $(KBOOT) $(LEG) $(M6COM) $(NEXTORSYS) $(if $(wildcard $(NEXTOR_ROM)),$(ROM) $(ROM_LEGACY) $(M6IDE_ROM) $(M6IDE_LROM) $(TEST_ROMS)) $(if $(wildcard $(NEXTOR_ROM16)),$(ROM16) $(ROM_SD) $(DRVROM)) $(if $(wildcard $(FBLABS_ROM)),$(ROM_SDL)) $(BIN_BINS) $(TEST_BINS) $(PROG_BINS) sizes
 
-rom: $(ROM) $(ROM_LEGACY) $(ROM16) $(ROM_SDL)
+rom: $(ROM) $(ROM_LEGACY) $(ROM16) $(ROM_SD) $(ROM_SDL)
 
 build:
 	mkdir -p build
@@ -206,6 +211,9 @@ $(ROM_LEGACY): src/rom/rom.asm $(SRC_FILES) src/version.inc $(KERNEL) $(KSEG) $(
 $(ROM16): src/rom/rom.asm $(SRC_FILES) src/version.inc $(KERNEL) $(KSEG) $(KBOOT) $(NEXTOR_ROM16) tools/check-rom.sh | build
 	$(SJASMPLUS) --nologo --msg=war $(INCLUDES) -I$(ROM_POOL) -D'NEXTOR_ROM="$(notdir $(NEXTOR_ROM16))"' --raw=$@ --lst=build/rom16.lst --exp=build/rom16.exp $<
 	@tools/check-rom.sh $@ $(NEXTOR_ROM16)
+$(ROM_SD): src/rom/rom.asm $(SRC_FILES) src/version.inc $(KERNEL_NA) $(KSEG) $(KBOOT) $(NEXTOR_ROM16) tools/check-rom.sh | build
+	$(SJASMPLUS) --nologo --msg=war $(INCLUDES) -I$(ROM_POOL) -D'NEXTOR_ROM="$(notdir $(NEXTOR_ROM16))"' -D'M6_DRIVER="$(M6SD)"' -D'KERNEL_BIN="$(KERNEL_NA)"' -D'KERNEL_EXP="$(KERNEL_NA:.bin=.exp)"' --raw=$@ --lst=build/rom-sd.lst --exp=build/rom-sd.exp $<
+	@tools/check-rom.sh $@ $(NEXTOR_ROM16) block
 $(ROM_SDL): src/rom/rom.asm $(SRC_FILES) src/version.inc $(KERNEL) $(KSEG) $(KBOOT) $(FBLABS_ROM) tools/check-rom.sh | build
 	$(SJASMPLUS) --nologo --msg=war $(INCLUDES) -I$(ROM_POOL) -D'NEXTOR_ROM="$(notdir $(FBLABS_ROM))"' --raw=$@ --lst=build/rom-sd-legacy.lst --exp=build/rom-sd-legacy.exp $<
 	@tools/check-rom.sh $@ $(FBLABS_ROM)
@@ -268,8 +276,8 @@ $(foreach b,$(patsubst src/bin/%.asm,%,$(BIN_SRCS)),$(eval $(call bin_rule,$(b))
 # <bytes>" for its four filled banks, what each leaves before CHGBNK —
 # banks 0 to 2 the same for every input, so read from the Sunrise build
 # alone, bank 7 the room the Sunrise driver leaves.
-sizes: $(KERNEL) $(KERNEL_NA) $(KSEG) $(KBOOT) $(LEG) $(M6COM) $(NEXTORSYS) $(if $(wildcard $(NEXTOR_ROM)),$(ROM) $(ROM_LEGACY)) $(if $(wildcard $(NEXTOR_ROM16)),$(ROM16)) $(if $(wildcard $(FBLABS_ROM)),$(ROM_SDL)) $(BIN_BINS) $(TEST_BINS) $(PROG_BINS)
-	@for f in $(KERNEL) $(KERNEL_NA) $(KSEG) $(KBOOT) $(LEG) $(LEGB) $(M6COM) $(NEXTORSYS) $(wildcard $(ROM) $(ROM_LEGACY) $(ROM16) $(ROM_SDL)) $(BIN_BINS) $(TEST_BINS) $(PROG_BINS); do \
+sizes: $(KERNEL) $(KERNEL_NA) $(KSEG) $(KBOOT) $(LEG) $(M6COM) $(NEXTORSYS) $(if $(wildcard $(NEXTOR_ROM)),$(ROM) $(ROM_LEGACY)) $(if $(wildcard $(NEXTOR_ROM16)),$(ROM16) $(ROM_SD)) $(if $(wildcard $(FBLABS_ROM)),$(ROM_SDL)) $(BIN_BINS) $(TEST_BINS) $(PROG_BINS)
+	@for f in $(KERNEL) $(KERNEL_NA) $(KSEG) $(KBOOT) $(LEG) $(LEGB) $(M6COM) $(NEXTORSYS) $(wildcard $(ROM) $(ROM_LEGACY) $(ROM16) $(ROM_SD) $(ROM_SDL)) $(BIN_BINS) $(TEST_BINS) $(PROG_BINS); do \
 	    printf 'SIZE %s %s\n' "$$(basename $$f)" "$$(wc -c < $$f | tr -d ' ')"; \
 	done
 	@for k in kernel kernel-noadapter; do \
@@ -281,6 +289,10 @@ sizes: $(KERNEL) $(KERNEL_NA) $(KSEG) $(KBOOT) $(LEG) $(M6COM) $(NEXTORSYS) $(if
 	    v=$$(sed -n "s/^ROM_B$${b}_FREE: EQU 0x0*\([0-9A-Fa-f]*\)$$/\1/p" build/rom.exp); \
 	    printf 'ROOM rom-bank%s %d\n' "$$b" $$(( 0x$${v:-0} )); \
 	done; fi
+	@if [ -f build/rom-sd.exp ]; then \
+	    v=$$(sed -n "s/^ROM_B7_FREE: EQU 0x0*\([0-9A-Fa-f]*\)$$/\1/p" build/rom-sd.exp); \
+	    printf 'ROOM sdrom-bank7 %d\n' $$(( 0x$${v:-0} )); \
+	fi
 	@if [ -f build/drvrom.exp ]; then \
 	    printf 'SIZE drvrom.rom %s\n' "$$(wc -c < $(DRVROM) | tr -d ' ')"; \
 	    v=$$(sed -n "s/^ROM_B7_FREE: EQU 0x0*\([0-9A-Fa-f]*\)$$/\1/p" build/drvrom.exp); \
@@ -312,7 +324,7 @@ fetch:
 # The one command: tools, build, every test in name order, stop at the first
 # failure, summary.
 check: fetch
-	@$(MAKE) --no-print-directory all $(ROM) $(ROM_LEGACY) $(ROM16) $(ROM_SDL) $(DRVROM) $(M6IDE_ROM) $(M6IDE_LROM) $(TEST_ROMS) check-tools
+	@$(MAKE) --no-print-directory all $(ROM) $(ROM_LEGACY) $(ROM16) $(ROM_SD) $(ROM_SDL) $(DRVROM) $(M6IDE_ROM) $(M6IDE_LROM) $(TEST_ROMS) check-tools
 	@tools/check-version.sh
 	@tools/check-headers.sh
 	@tools/check-leg.sh
