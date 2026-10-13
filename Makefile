@@ -36,7 +36,10 @@ PRODUCT_TESTS := $(notdir $(patsubst %/,%,$(dir $(wildcard tests/*/product))))
 ROM_TESTS := $(notdir $(patsubst %/,%,$(dir $(wildcard tests/*/rom))))
 BLOCK_TESTS := $(foreach t,$(ROM_TESTS),$(if $(wildcard tests/$(t)/block.asm),$(t)))
 TEST_BLOCKS := $(foreach t,$(BLOCK_TESTS),build/$(t).block)
-TEST_ROMS := $(foreach t,$(BLOCK_TESTS),build/$(t).rom)
+# A marker line starting with `sdmapper` asks for the same block on the
+# SD Mapper kernel ROM with m6's SD driver, build/<test>.sd.rom.
+SD_BLOCK_TESTS := $(foreach t,$(BLOCK_TESTS),$(if $(shell grep -l '^sdmapper' tests/$(t)/rom 2>/dev/null),$(t)))
+TEST_ROMS := $(foreach t,$(BLOCK_TESTS),build/$(t).rom) $(foreach t,$(SD_BLOCK_TESTS),build/$(t).sd.rom)
 TESTS     := $(sort $(notdir $(patsubst %/,%,$(dir $(wildcard tests/*/*.asm)))) $(PRODUCT_TESTS))
 TEST_BINS := $(foreach t,$(filter-out $(PRODUCT_TESTS),$(TESTS)),build/$(t).com)
 # A test may ship programs on its disk: tests/<name>/progs/<prog>.asm builds
@@ -253,6 +256,12 @@ build/$(1).rom: src/rom/rom.asm $$(SRC_FILES) src/version.inc $$(KERNEL_NA) $$(K
 	@tools/check-rom.sh $$@ $$(NEXTOR_ROM) block
 endef
 $(foreach t,$(BLOCK_TESTS),$(eval $(call block_rule,$(t))))
+define sdblock_rule
+build/$(1).sd.rom: src/rom/rom.asm $$(SRC_FILES) src/version.inc $$(KERNEL_NA) $$(KSEG) $$(KBOOT) $$(NEXTOR_ROM16) tools/check-rom.sh build/$(1).block | build
+	$$(SJASMPLUS) --nologo --msg=war $$(INCLUDES) -I$$(ROM_POOL) -D'NEXTOR_ROM="$$(notdir $$(NEXTOR_ROM16))"' -D'M6_DRIVER="$$(M6SD)"' -D'M6_TEST_BIN="build/$(1).block"' -D'KERNEL_BIN="$$(KERNEL_NA)"' -D'KERNEL_EXP="$$(KERNEL_NA:.bin=.exp)"' --raw=$$@ --lst=build/$(1).sd.rom.lst --exp=build/$(1).sd.rom.exp $$<
+	@tools/check-rom.sh $$@ $$(NEXTOR_ROM16) block
+endef
+$(foreach t,$(SD_BLOCK_TESTS),$(eval $(call sdblock_rule,$(t))))
 # Any other cartridge: the kernel ROM given by path, the output named after
 # it, in build/ beside the other two, never over one of them; nothing of
 # the input is kept. The target is phony, so .DELETE_ON_ERROR does not

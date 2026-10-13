@@ -3,9 +3,9 @@
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # The harness's half of the SD Mapper kernel ROM's disk workload: m6 booted
-# from the emulated FBLabs SD Mapper V2 with the cartridge's own driver
-# through the adapter, two cards (an SDHC and a standard-capacity one),
-# /etc/rc running the utilities over
+# from the emulated FBLabs SD Mapper V2 with m6's own SD driver, two
+# cards (an SDHC and a standard-capacity one), /etc/rc running the
+# utilities over
 # the files files.tcl wrote (cat, cat of two, sort | uniq, wc), and the
 # login shell up when the script's last line shows. The verdict is that
 # line, then the files the script wrote, exported from the image with
