@@ -86,15 +86,21 @@ proc post_verdict {} {
     foreach r $rows {
         if {[regexp {^/mnt/([a-h])\s+(.+?)\s+(\d(?:\.\d)?) (p\d|e\d|--)\s+([0-9A-F]{2})\s+(\d+) KB( /)?\s*$} $r -> letter name devlun label type kb root]} {
             lappend got [list $devlun $label [expr 0x$type] $kb]
-            lappend names $name
+            lappend names [list [string index $devlun 0] $name]
             if {$root ne ""} { set rootletter $letter }
         }
     }
     if {$got ne $expected} {
         return "listing is {$got}, the images say {$expected}"
     }
-    if {[lsort -unique $names] ne [list [lindex $names 0]]} {
-        return "the driver's name differs between lines: $names"
+    # One name per device, the same on every one of its lines: the two
+    # devices may differ (two SD cards do), a device's partitions may not.
+    foreach dev {1 2} {
+        set dn {}
+        foreach n $names { if {[lindex $n 0] eq $dev} { lappend dn [lindex $n 1] } }
+        if {[llength [lsort -unique $dn]] > 1} {
+            return "device $dev's name differs between its lines: $dn"
+        }
     }
     if {![info exists rootletter] || $rootletter ne "a"} {
         return "the boot volume is not /mnt/a"

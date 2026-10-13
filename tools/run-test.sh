@@ -28,9 +28,14 @@
 # block in bank 2, for a test with tests/<name>/block.asm; the product
 # ROM for a test whose product marker is empty — with the same files,
 # programs, disk, patches and outside checks, and nothing of a system's
-# on the disk. The forms run in order, `com` then `rom`; the test's .tcl
-# reads M6_FORM; the ROM form's images and logs carry `.rom` in their
-# names (build/<name>.rom.<machine>.<run>.dsk).
+# on the disk. A line may start with the word `sdmapper`: that run boots
+# the same test from the SD Mapper kernel ROM with m6's SD driver —
+# build/<name>.sd.rom, or the product ROM build/m6-sdmapper.rom — in the
+# emulated SD Mapper V2 with the disk's images as its cards; without the
+# word the cartridge is the Sunrise IDE. The forms run in order, `com`
+# then `rom`; the test's .tcl reads M6_FORM and M6_CART (`sunrise` or
+# `sdmapper`); the ROM form's images and logs carry `.rom` or `.sd.rom`
+# in their names (build/<name>.rom.<machine>.<run>.dsk).
 #
 # Files on the volume: tests/<name>/files/, a directory tree, is copied
 # into the staging directory as it is; a test with a `product` marker
@@ -88,19 +93,25 @@ export M6_TZ_OFFSET
 # build/m6-sdmapper-legacy.rom, the ROM with that cartridge's own Nextor
 # driver bank and the adapter; `rom sdmapper <name>`, the same with
 # build/<name>.rom, a ROM the test builds for itself.
-# set_form <form>: the product, the file booted (com), the name it takes
-# on the disk (upper), and the tag the run's files carry, for one form.
+# set_form <form> <cartridge>: the product, the file booted (com), the
+# name it takes on the disk (upper), and the tag the run's files carry,
+# for one form on one cartridge (sunrise or sdmapper; the com form's is
+# the Nextor ROM's, whatever is given).
 set_form() {
     form=$1
+    cart=$2
     tag=$name
     product=""
     [ -f "tests/$name/product" ] && product=$(cat "tests/$name/product")
     if [ "$form" = rom ]; then
         tag=$name.rom
+        [ "$cart" = sdmapper ] && tag=$name.sd.rom
         if [ -f "tests/$name/block.asm" ]; then
             product="rom $name"
+            [ "$cart" = sdmapper ] && product="rom sdmapper $name.sd"
         elif [ -z "$product" ] && [ -f "tests/$name/product" ]; then
             product=rom
+            [ "$cart" = sdmapper ] && product="rom sdmapper"
         else
             echo "run-test: $name: the rom marker needs tests/$name/block.asm or an empty product marker" >&2; exit 2
         fi
@@ -145,7 +156,7 @@ set_form() {
         ext=m6-sdmapper-m6
     fi
     [ -n "$slave" ] && ext=$ext-2
-    export M6_FORM=$form
+    export M6_FORM=$form M6_CART=$cart
 }
 
 forms=com
@@ -292,13 +303,24 @@ else
 fi
 
 for form in $forms; do
-set_form "$form"
-form_machines=$machines
+# The form's runs, as cartridge:machine — the com form on the test's
+# machines, the rom form on its marker's lines.
+form_runs=""
 if [ "$form" = rom ]; then
-    form_machines=$(cat "tests/$name/rom")
-    [ -n "$form_machines" ] || form_machines=m6-msx2-128k
+    while read -r w1 w2; do
+        case $w1 in
+            "") ;;
+            sdmapper) form_runs="$form_runs sdmapper:${w2:-m6-msx2-128k}" ;;
+            *) form_runs="$form_runs sunrise:$w1" ;;
+        esac
+    done < "tests/$name/rom"
+    [ -n "$form_runs" ] || form_runs=sunrise:m6-msx2-128k
+else
+    for machine in $machines; do form_runs="$form_runs sunrise:$machine"; done
 fi
-for machine in $form_machines; do
+for form_run in $form_runs; do
+    machine=${form_run#*:}
+    set_form "$form" "${form_run%%:*}"
     run=0
     while [ "$run" -lt "$runs" ]; do
         run=$((run + 1))
@@ -306,6 +328,7 @@ for machine in $form_machines; do
         [ -f "tests/$name/args" ] && args=$(sed -n "${run}p" "tests/$name/args")
         formtag=""
         [ "$forms" != com ] && formtag="form $form "
+        [ "$cart" = sdmapper ] && formtag="form $form on sdmapper "
         echo "  ${formtag}machine $machine run $run${args:+ ($args)}"
         rm -rf "$staging" && mkdir -p "$staging"
         case $product in
