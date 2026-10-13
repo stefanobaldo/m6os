@@ -4,14 +4,14 @@
 # SPDX-License-Identifier: BSD-3-Clause
 #
 # openMSX 21.0 with the FBLabs SD Mapper V2 cartridge, from the project's
-# fork of openMSX (github.com/stefanobaldo/m6os-openmsx, branch m6, release
-# m6-21.0.1; the device is offered upstream). On x86_64 Linux the release's
-# portable build is fetched into .tools/openmsx/ (bin/ and share/); on
-# macOS on Apple silicon its disk image is fetched and the application
-# bundle copied into .tools/openmsx/openMSX.app. Anywhere else the fork is
-# built from its tag and its build copied into .tools/openmsx/ in one of
-# those two layouts, or installed with an openmsx on PATH; the version is
-# checked in every case.
+# fork of openMSX (github.com/stefanobaldo/m6os-openmsx, branch m6,
+# release m6-21.0.1). On x86_64 Linux the release's portable build is
+# fetched into .tools/openmsx/ (bin/ and share/); on macOS on Apple
+# silicon its disk image is fetched and the application bundle copied into
+# .tools/openmsx/openMSX.app. Anywhere else the fork is built from its tag
+# and its build copied into .tools/openmsx/ in one of those two layouts,
+# or installed with an openmsx on PATH; the version is checked in every
+# case.
 . "$(dirname "$0")/lib.sh"
 
 VERSION=21.0-m6.1
