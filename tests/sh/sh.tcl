@@ -370,7 +370,8 @@ proc post_verdict {} {
         set want [slurp [file join $expdir $f]]
         # A file whose expected contents end in .re holds one pattern
         # per line, each matched whole against the line it stands for:
-        # the form for a listing whose time is the host clock's.
+        # the form for a listing whose time is the host clock's, or for a
+        # process's state that depends on where a tick fell.
         set pat [string match *.re $f]
         if {$pat} { set f [file rootname $f] }
         set path [exported $dir $f]
