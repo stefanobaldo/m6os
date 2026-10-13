@@ -61,22 +61,30 @@ disk. With another Nextor kernel in the machine the later slot wins; to
 boot m6 past an internal one, hold that kernel's own disable key while
 the machine starts (`C` for slot 3-2, the OCM's).
 
-`make rom` also builds `build/m6-sdmapper-legacy.rom` for the FBLabs SD
-Mapper V2, from that cartridge's own kernel ROM — Nextor with the SDXC
-driver, which `make fetch` downloads from FBLabs's release — with the
-driver taken whole, the way the Sunrise legacy ROM is built; flashed in
-place of the cartridge's kernel it boots m6 with that driver, both card
-slots served. It has been run in an emulated SD Mapper V2 and not yet on
-the cartridge itself. The same ROM is built for any other ASCII16
-cartridge an SD Mapper driver serves — the MSX-Pico+ among them: `make
-rom-from DRIVER_ROM=<file>` takes the Nextor kernel ROM built for that
-cartridge — the one its firmware embeds, or the one it ships with — and
-writes `build/m6-<name>.rom` with that ROM's bank switch and its driver
-taken whole. In an MSX-Pico+ the file replaces the Nextor ROM in the
-firmware's system-ROM image and is flashed with it; the card needs no
-system file, as above. Every one of these ROMs is built on your machine,
-from a kernel ROM you have or `make fetch` downloads, and none is
-distributed. `make rom` also writes
+`make rom` also builds `build/m6-sdmapper.rom` for the FBLabs SD Mapper
+V2 and the cartridges that present its register set, the MSX-Pico+
+among them: a 128K ROM with m6's own SD driver — both card slots served,
+SDHC/SDXC and standard-capacity cards, interrupts enabled during
+transfers, up to 32 sectors per call, each card named in the boot
+listing from its own identification, a card whose write-protect switch
+is on mounted read-only — and the bank switch of Nextor's standalone
+ASCII16 kernel ROM, which `make fetch` downloads and which is byte for
+byte the SD Mapper's. Flash it in place of the cartridge's kernel; in an
+MSX-Pico+ the file replaces the Nextor ROM in the firmware's system-ROM
+image and is flashed with it; the card needs no system file, as above.
+A card changed while the system runs is refused until the next boot:
+changing cards with the system up is not supported yet. It has been run
+in an emulated SD Mapper V2 and not yet on the cartridge itself.
+`build/m6-sdmapper-legacy.rom`, built beside it from the cartridge's own
+kernel ROM — Nextor with the SDXC driver, which `make fetch` downloads
+from FBLabs's release — carries that driver instead, taken whole, the
+way the Sunrise legacy ROM is built. `make rom-from DRIVER_ROM=<file>`
+still builds the legacy ROM for any other ASCII16 cartridge from the
+Nextor kernel ROM built for it, and `make rom-from DRIVER_ROM=<file>
+DRIVER=src/drivers/m6sd.asm` the native one, which for an SD Mapper
+cartridge is the same bytes as `build/m6-sdmapper.rom`. Every one of
+these ROMs is built on your machine, from a kernel ROM you have or
+`make fetch` downloads, and none is distributed. `make rom` also writes
 `build/m6-ascii16-test.rom`, built from Nextor's standalone ASCII16
 kernel for the tests: it has no storage driver and boots no further than
 a kernel with no volume, so it is not the ROM to flash. An input named

@@ -252,8 +252,57 @@ code.
 cartridge's Nextor driver bank and the adapter instead, the way every
 kernel ROM was built before this driver existed; it boots the same
 card at the Nextor driver's speed, one sector per call with interrupts
-disabled for each. `build/m6-sdmapper-legacy.rom` is the kernel ROM
-built the same way for the FBLabs SD Mapper V2, from that cartridge's
-own kernel ROM (Nextor with the SDXC driver, which `make fetch`
-downloads): the driver bank taken whole, called through the adapter,
-both SD slots served.
+disabled for each.
+
+## The SD driver
+
+`src/drivers/m6sd.asm` is the block `build/m6-sdmapper.rom` carries,
+written from the SD specification for the FBLabs SD Mapper V2 and the
+cartridges that present its register set — the MSX-Pico+ among them.
+It is two files: `src/drivers/sdspi.asm`, the SD protocol in SPI mode
+with nothing of the cartridge in it, and the port, which gives the core
+the cartridge's SPI window, its card select and sense register, and the
+512-byte copy through the window, as a handful of macros the core
+expands. A driver for another SD cartridge is another port around the
+same core.
+
+The two card slots are devices 1 and 2, both removable. At boot each
+slot is brought up at the cartridge's clock — `CMD0`, `CMD8`, `ACMD41`,
+`CMD58` for the capacity class, `CMD16` on a standard-capacity card —
+and asked for its CSD and CID: the card's sector count becomes the
+device's size, its product name, revision and class (`SDHC` or `SDSC`)
+the device's name in the boot listing, its serial number part of the
+identity. An empty slot is a device with no medium, listed as such;
+a card the driver cannot bring up is one too, and the step that failed
+is kept in the driver's record, which `query` number `80h` returns. A
+card that is not an SD card (an MMC) is not supported.
+
+A call of up to 32 sectors is one `CMD18` ended by `CMD12`, or one
+`ACMD23` and `CMD25` ended by the stop token; one sector is `CMD17` or
+`CMD24`. Every response is read within eight bytes, every data token
+and every busy is bounded by the kernel's tick — 100 ms for a token,
+500 ms for a write's busy, one second for a card to become ready — and
+nothing in the block disables interrupts: the window's exchange is one
+bus cycle, and a card waits as long as the bus does between two bytes.
+A transfer the card refuses returns `E_IO` with the card's own byte —
+its `R1`, a data error token, a data response — as the block's code.
+
+The sense register is read at the start of every `rw` and `status`. A
+card whose write-protect switch is on is listed read-only and refuses
+writes with `E_ROFS` before any traffic. A card that was taken out
+since the driver initialised it — the register's latch — answers
+`E_NXIO` to every transfer until `status` is asked for that device,
+which re-initialises the slot and answers `DS_CHANGED` (or
+`DS_NOTAVAIL` when the slot is empty now); a card put into a slot that
+was empty at boot is found the same way. The kernel does not ask
+`status` on its own yet, so a card changed while the system runs is
+refused until the next boot: nothing of a volume mounted from the old
+card reaches the new one.
+
+`build/m6-sdmapper.rom` is built from Nextor's standalone ASCII16
+kernel ROM, whose bank switch is byte for byte the SD Mapper's and the
+MSX-Pico+'s, so the native SD ROM needs no file of the cartridge's
+maker; `build/m6-sdmapper-legacy.rom` is the kernel ROM built the way
+every ROM was before this driver, from the cartridge's own kernel ROM
+(Nextor with the SDXC driver, which `make fetch` downloads): the driver
+bank taken whole, called through the adapter, both SD slots served.
