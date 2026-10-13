@@ -9,7 +9,8 @@
 # portable build is fetched into .tools/openmsx/ (bin/ and share/); on
 # macOS on Apple silicon its disk image is fetched and the application
 # bundle copied into .tools/openmsx/openMSX.app. Anywhere else the fork is
-# built from its tag and an openmsx on PATH is required; the version is
+# built from its tag and its build copied into .tools/openmsx/ in one of
+# those two layouts, or installed with an openmsx on PATH; the version is
 # checked in every case.
 . "$(dirname "$0")/lib.sh"
 
@@ -65,9 +66,21 @@ elif [ "$os" = Darwin ] && [ "$arch" = arm64 ]; then
     fi
     echo "fetch: openMSX $VERSION copied into .tools/openmsx/openMSX.app" >&2
 else
+    for b in "$BIN" "$APP/Contents/MacOS/openmsx"; do
+        if [ -x "$b" ] && [ "$(version_of "$b")" = "$VERSION" ]; then
+            echo "fetch: using openMSX $VERSION built into ${b#"$ROOT"/}" >&2
+            exit 0
+        fi
+    done
+    if [ "$os" = Darwin ]; then
+        built="derived/*/bindist/openMSX.app \"$TOOLS/openmsx/\""
+    else
+        built="derived/*/bindist/install/. \"$TOOLS/openmsx/\""
+    fi
     if ! command -v openmsx >/dev/null 2>&1; then
-        echo "fetch: no openMSX build to fetch for $os/$arch; build the fork's tag and put openmsx on PATH:" >&2
+        echo "fetch: no openMSX build to fetch for $os/$arch; build the fork's tag into .tools/openmsx:" >&2
         echo "  git clone --depth 1 --branch $TAG https://github.com/stefanobaldo/m6os-openmsx.git && cd m6os-openmsx && make staticbindist" >&2
+        echo "  mkdir -p \"$TOOLS/openmsx\" && cp -R $built" >&2
         exit 2
     fi
     got=$(version_of openmsx)

@@ -44,8 +44,9 @@ FBLabs SD Mapper V2 cartridge added, from the project's
 [fork of openMSX](https://github.com/stefanobaldo/m6os-openmsx) (branch `m6`,
 release `m6-21.0.1`, reported by the binary as `21.0-m6.1`; the cartridge
 is offered upstream). On x86_64 Linux and on macOS on Apple silicon it is
-fetched too. Elsewhere, build the fork's tag (`tools/fetch-openmsx.sh`
-prints the commands) and have `openmsx` on `PATH`; the version is checked.
+fetched too. Elsewhere, build the fork's tag and copy the build into
+`.tools/openmsx/` (`tools/fetch-openmsx.sh` prints the commands), or install
+it with `openmsx` on `PATH`; the version is checked.
 
 Every download is pinned by version and checksum in `tools/fetch-*.sh`. Tools
 land in `.tools/` (ignored by git) and the ROMs in `tools/openmsx/systemroms/`;
