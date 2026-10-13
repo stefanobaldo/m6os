@@ -54,11 +54,19 @@ elif [ "$os" = Darwin ] && [ "$arch" = arm64 ]; then
     fetch "$BASE/$dmg" sha256 "$MAC_SHA256" "$TOOLS/src/$dmg"
     rm -rf "$TOOLS/openmsx"
     mkdir -p "$TOOLS/openmsx"
+    # The image is detached and the mount point removed on every way out,
+    # an interrupt included.
     mnt=$(mktemp -d "${TMPDIR:-/tmp}/openmsx-dmg.XXXXXX")
+    attached=
+    trap '[ -z "$attached" ] || hdiutil detach -quiet "$mnt" || true; rmdir "$mnt" 2>/dev/null || true' EXIT
+    trap 'exit 130' INT TERM HUP
     hdiutil attach -nobrowse -quiet -readonly -mountpoint "$mnt" "$TOOLS/src/$dmg"
-    cp -R "$mnt/openMSX.app" "$APP" || { hdiutil detach -quiet "$mnt"; rmdir "$mnt"; exit 2; }
+    attached=1
+    cp -R "$mnt/openMSX.app" "$APP"
     hdiutil detach -quiet "$mnt"
+    attached=
     rmdir "$mnt"
+    trap - EXIT INT TERM HUP
     got=$(version_of "$APP/Contents/MacOS/openmsx")
     if [ "$got" != "$VERSION" ]; then
         echo "fetch: the application in the disk image reports '$got', expected $VERSION" >&2
