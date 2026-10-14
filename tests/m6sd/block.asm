@@ -20,7 +20,9 @@
 ; read back at 1, 8 and 32 per call; a range past the device refused
 ; before the card is touched, a slot the kernel refuses, a write to the
 ; protected card refused with E_ROFS, and a third device, then card
-; 2's slot found again by status after the driver took it for empty;
+; 2's slot found again by status after the driver took it for empty,
+; and a read the card ends with a data error token followed by one it
+; serves;
 ; 64 KB read 1, 8 and 32 sectors per call with the real-time clock
 ; watched — the ticks the kernel counted over the clock's whole
 ; seconds, against sixty a second: none lost — and the cost per call
@@ -38,6 +40,7 @@ T_TOTAL         equ 4096        ; sectors of each 2 MB image
 T_LAST          equ T_TOTAL-32  ; the slave's last 32 sectors
 T_REC2          equ 0F380h-56+24 ; the SD driver's record of slot 2
 SD_FLAGS_       equ 1           ; its flags: bit 1 absent
+SD_TOTAL_       equ 4           ; its sector count
 T_SECTORS       equ 1024        ; sectors read per point of step 6: 8 x 64 KB
 T_TOL           equ 2           ; ticks the count may fall short of 60 n:
                                 ; the tick rounded at each of the two edges
@@ -256,6 +259,42 @@ tb_start:                               ; SP is the kernel's, at K_END
         ld      c,1
         xor     a
         call    t_private
+        jp      c,t_fail
+        ld      hl,(T_REC2+SD_TOTAL_)   ; a CMD18 the card ends with a
+        inc     hl                      ; data error token: card 2 taken
+        inc     hl                      ; as two sectors larger, sectors
+        ld      (T_REC2+SD_TOTAL_),hl   ; 4095 and 4096 asked for
+        ld      a,T_SLAVE
+        ld      ixh,0
+        ld      ixl,2
+        ld      bc,(t_seg)
+        ld      b,c
+        ld      c,0
+        ld      hl,T_TOTAL-1
+        ld      de,0
+        or      a
+        k_call  API_BLK_DEV_RW
+        call    t_page2
+        ld      hl,T_TOTAL
+        ld      (T_REC2+SD_TOTAL_),hl
+        jp      nc,t_fail
+        cp      E_IO
+        jp      nz,t_fail
+        ld      a,(K_BLK_LASTERR)       ; out of range, the card's token
+        cp      08h
+        ld      a,0E7h
+        jp      nz,t_fail
+        ld      a,T_SLAVE               ; and the card serves the next call
+        ld      ixh,0
+        ld      ixl,2
+        ld      bc,(t_seg)
+        ld      b,c
+        ld      c,0
+        ld      hl,T_LAST
+        ld      de,0
+        or      a
+        k_call  API_BLK_DEV_RW
+        call    t_page2
         jp      c,t_fail
     ENDIF
         call    t_ok
