@@ -52,7 +52,7 @@ SD_T0           equ 2*SD_SLOT   ; 2: the tick at the current wait's entry
 SD_CARD         equ SD_T0+2     ; the call's slot, 1 or 2
 SD_N            equ SD_T0+3     ; sectors left in the call
 SD_TGT          equ SD_T0+4     ; the high byte of the sector's target
-SD_WR           equ SD_T0+5     ; 1 = a write
+SD_WR           equ SD_T0+5     ; bit 0 a write, bit 1 a CMD18/CMD25 open
 SD_V2           equ SD_T0+6     ; init: the card answered CMD8
 SD_RAM          equ SD_T0+8
 
@@ -658,6 +658,7 @@ sd_read:
         jp      c,sd_fail
         or      a
         jp      nz,sd_fail
+        set     1,(ix+SD_WR)
 .sector:
         call    sd_rd_sector
         jp      c,sd_fail
@@ -702,6 +703,7 @@ sd_write:
         jp      c,sd_fail
         or      a
         jp      nz,sd_fail
+        set     1,(ix+SD_WR)
         sdp_in                          ; Nwr: a byte before the token
 .sector:
         ld      c,SD_TOK_MBW
@@ -780,8 +782,11 @@ sd_wr_sector:
         jp      sd_wait
 
 ; sd_end — the call done: the card deselected, a byte after it; A = 0,
-; B = 0, CF clear. sd_fail — A = the card's byte or SD_ETIMEOUT: the
-; same, then E_IO with B = that byte.
+; B = 0, CF clear. sd_fail — A = the card's byte or SD_ETIMEOUT: a
+; CMD18 the card accepted ended by CMD12, a CMD25 by the stop token, and
+; after either, or after any write, the card's busy waited out, so the
+; next call meets a card back in its transfer state; then the same as
+; sd_end, with E_IO and B = that byte.
 sd_end:
         sdp_deselect
         sdp_in
@@ -789,6 +794,26 @@ sd_end:
         ld      b,a
         ret
 sd_fail:
+        push    af
+        bit     1,(ix+SD_WR)
+        jr      z,.one
+        bit     0,(ix+SD_WR)
+        jr      nz,.stop
+        ld      a,SDC_CMD12
+        ld      bc,0
+        ld      de,0
+        call    sd_cmd_stuff
+        jr      .busy
+.stop:  ld      a,SD_TOK_STOP
+        sdp_out
+        sdp_in
+        jr      .busy
+.one:   bit     0,(ix+SD_WR)
+        jr      z,.out
+.busy:  ld      b,SD_TO_WRITE           ; its outcome not judged: the call
+        ld      c,0                     ; has failed already
+        call    sd_wait
+.out:   pop     af
         ld      b,a
         sdp_deselect
         sdp_in

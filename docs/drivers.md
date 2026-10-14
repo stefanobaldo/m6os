@@ -285,7 +285,10 @@ and every busy is bounded by the kernel's tick — 100 ms for a token,
 nothing in the block disables interrupts: the window's exchange is one
 bus cycle, and a card waits as long as the bus does between two bytes.
 A transfer the card refuses returns `E_IO` with the card's own byte —
-its `R1`, a data error token, a data response — as the block's code.
+its `R1`, a data error token, a data response — as the block's code;
+one the card refuses partway is closed first, `CMD18` with `CMD12` and
+`CMD25` with the stop token, and the card's busy waited out, so the
+next call finds the card ready.
 
 The sense register is read at the start of every `rw` and `status`. A
 card whose write-protect switch is on is listed read-only and refuses
