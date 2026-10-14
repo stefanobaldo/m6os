@@ -485,8 +485,9 @@ sd_status:
         jr      nc,sd_nxio
         ld      a,c
         call    sd_slot
-        call    sd_sense
-        bit     1,a                     ; absent now
+        res     1,(iy+SD_FLAGS)         ; absent is what the register says
+        call    sd_sense                ; now; the change stays latched
+        bit     1,a
         jr      nz,.gone
         ld      a,(iy+SD_FLAGS)
         bit     0,a

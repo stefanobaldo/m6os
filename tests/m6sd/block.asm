@@ -19,12 +19,13 @@
 ; sectors of a pattern written to card 2's last sectors in one call and
 ; read back at 1, 8 and 32 per call; a range past the device refused
 ; before the card is touched, a slot the kernel refuses, a write to the
-; protected card refused with E_ROFS, and a third device; 64 KB read
-; 1, 8 and 32 sectors per call with the real-time clock watched — the
-; ticks the kernel counted over the clock's whole seconds, against
-; sixty a second: none lost — and the cost per call and per sector
-; printed; and a program from the volume reading a 64 KB file through
-; read(), its ticks printed. The harness reads card 2's image afterwards
+; protected card refused with E_ROFS, and a third device, then card
+; 2's slot found again by status after the driver took it for empty;
+; 64 KB read 1, 8 and 32 sectors per call with the real-time clock
+; watched — the ticks the kernel counted over the clock's whole
+; seconds, against sixty a second: none lost — and the cost per call
+; and per sector printed; and a program from the volume reading a 64 KB
+; file through read(), its ticks printed. The harness reads card 2's image afterwards
 ; and compares its last sectors with the pattern.
         include "m6test.inc"
 
@@ -35,6 +36,8 @@ T_SLAVE         equ 2
     ENDIF
 T_TOTAL         equ 4096        ; sectors of each 2 MB image
 T_LAST          equ T_TOTAL-32  ; the slave's last 32 sectors
+T_REC2          equ 0F380h-56+24 ; the SD driver's record of slot 2
+SD_FLAGS_       equ 1           ; its flags: bit 1 absent
 T_SECTORS       equ 1024        ; sectors read per point of step 6: 8 x 64 KB
 T_TOL           equ 2           ; ticks the count may fall short of 60 n:
                                 ; the tick rounded at each of the two edges
@@ -236,6 +239,24 @@ tb_start:                               ; SP is the kernel's, at K_END
         jp      nc,t_fail
         cp      E_NXIO
         jp      nz,t_fail
+        ld      a,(T_REC2+SD_FLAGS_)    ; card 2's slot as init leaves an
+        or      2                       ; empty one: no medium, absent;
+        ld      (T_REC2+SD_FLAGS_),a    ; status finds the card there now
+        xor     a
+        ld      (T_REC2),a
+        ld      b,T_SLAVE
+        ld      d,BQ_STATUS
+        k_call  API_BLK_QUERY
+        call    t_page2
+        jp      c,t_fail
+        cp      DS_CHANGED
+        ld      a,0E6h
+        jp      nz,t_fail
+        ld      b,T_SLAVE               ; SDSC again, the switch off
+        ld      c,1
+        xor     a
+        call    t_private
+        jp      c,t_fail
     ENDIF
         call    t_ok
 
