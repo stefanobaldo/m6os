@@ -1,0 +1,31 @@
+<?xml version="1.0" ?>
+<!DOCTYPE msxconfig SYSTEM 'msxconfig2.dtd'>
+<msxconfig>
+  <info>
+    <name>FBLabs SD Mapper V2 with the m6 kernel ROM and an m6 block device that offers Turbo with no mapper behind it</name>
+    <manufacturer>FBLabs</manufacturer>
+    <code/>
+    <release_year>2020</release_year>
+    <description>The SD Mapper V2 cartridge with the m6 kernel ROM (build/m6-sdmapper.rom, copied into the ROM pool by the harness) presenting the m6 block device's registers with Turbo offered and a mapper claimed in subslot 3 where there is none: a cartridge that lies, for the kernel ROM's boot to refuse; one card, the image given with -hda.</description>
+    <type>external hard disk</type>
+  </info>
+  <devices>
+    <primary slot="any">
+      <secondary slot="0">
+        <SDMapperV2 id="SD Mapper V2">
+          <mem base="0x4000" size="0x8000"/>
+          <rom>
+            <filename>../systemroms/m6-sdmapper.rom</filename>
+          </rom>
+          <sdcard1>
+            <filename>sd_card1.dsk</filename>
+            <size>2</size>
+          </sdcard1>
+          <m6block>
+            <turbo_subslot>3</turbo_subslot>
+          </m6block>
+        </SDMapperV2>
+      </secondary>
+    </primary>
+  </devices>
+</msxconfig>

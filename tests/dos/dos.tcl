@@ -17,6 +17,9 @@ set machine [machine_info config_name]
 # the 4 MB one: what decides whether a second live process leaves a
 # segment for a program.
 set small [string match m6-msx2-128k* $machine]
+# On the Turbo cartridge the primary mapper is the cartridge's own, 432K:
+# the 128K machine is a large one there, whatever its name says.
+if {[info exists ::env(M6_CART)] && $::env(M6_CART) eq "turbo"} { set small 0 }
 
 proc problem {what} {
     lappend ::problems $what
@@ -80,10 +83,14 @@ proc disk_error_once {} {
 }
 set stseg -1
 set LENT 16         ;# buffers the layer's body takes while a program runs
+# The mapper the storage segment is in: the machine's own, or, on the
+# Turbo cartridge, the cartridge's (the primary mapper there).
+set RAM "Main RAM"
+if {!$small && [info exists ::env(M6_CART)] && $::env(M6_CART) eq "turbo"} { set RAM "SD Mapper RAM" }
 proc lent {} {
     set n 0
     for {set i 0} {$i < 22} {incr i} {
-        if {[debug read "Main RAM" [expr {$::stseg * 0x4000 + 0x0800 + $i * 8}]] == 0xFE} { incr n }
+        if {[debug read $::RAM [expr {$::stseg * 0x4000 + 0x0800 + $i * 8}]] == 0xFE} { incr n }
     }
     return $n
 }

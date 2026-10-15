@@ -60,11 +60,14 @@ if {$enaslt_di eq "" || $drv_lo eq "" || $drv_hi eq "" || [llength $drv_ei] != 2
 # The block's di, from the ROM's listing: every F3 between the markers
 # of the driver's files (::probe_files; m6ide.asm alone by default — a
 # driver made of a port and a core names both; a file included from an
-# included file lists its lines with `++`).
+# included file lists its lines with `++`). The listing is the test's
+# own (build/<test>.lst) unless ::probe_rom_lst names another — a test
+# that boots another test's ROM, as m6sd-turbo boots m6sd's.
 if {![info exists ::probe_files]} { set ::probe_files {m6ide.asm} }
+if {![info exists ::probe_rom_lst]} { set ::probe_rom_lst "$::env(M6_TEST).lst" }
 set ::probe_block_di 0
 set inblock 0
-foreach line [probe_read [file join $::env(M6_TEST_DIR) .. .. build "$::env(M6_TEST).lst"]] {
+foreach line [probe_read [file join $::env(M6_TEST_DIR) .. .. build $::probe_rom_lst]] {
     foreach f $::probe_files {
         if {[string match "# file opened: $f" $line]} { set inblock 1 }
         if {[string match "# file closed: $f" $line]} { set inblock 0 }

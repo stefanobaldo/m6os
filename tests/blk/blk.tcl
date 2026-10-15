@@ -84,7 +84,7 @@ proc post_verdict {} {
     set got {}
     set names {}
     foreach r $rows {
-        if {[regexp {^/mnt/([a-h])\s+(.+?)\s+(\d(?:\.\d)?) (p\d|e\d|--)\s+([0-9A-F]{2})\s+(\d+) KB( /)?\s*$} $r -> letter name devlun label type kb root]} {
+        if {[regexp {^/mnt/([a-h])\s+(.+?)\s+(\d(?:\.\d)?) (p\d|e\d|--)\s+([0-9A-F]{2})\s+(\d+) KB( /)?( turbo)?\s*$} $r -> letter name devlun label type kb root mode]} {
             lappend got [list $devlun $label [expr 0x$type] $kb]
             lappend names [list [string index $devlun 0] $name]
             if {$root ne ""} { set rootletter $letter }
