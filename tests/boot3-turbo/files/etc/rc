@@ -1,0 +1,4 @@
+# The Turbo product test's script: one file written on the card, and
+# the line the harness waits for.
+echo turbo > /boot3
+echo rc done

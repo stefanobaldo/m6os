@@ -31,11 +31,14 @@
 # on the disk. A line may start with the word `sdmapper`: that run boots
 # the same test from the SD Mapper kernel ROM with m6's SD driver —
 # build/<name>.sd.rom, or the product ROM build/m6-sdmapper.rom — in the
-# emulated SD Mapper V2 with the disk's images as its cards; without the
-# word the cartridge is the Sunrise IDE. The forms run in order, `com`
-# then `rom`; the test's .tcl reads M6_FORM and M6_CART (`sunrise` or
-# `sdmapper`); the ROM form's images and logs carry `.rom` or `.sd.rom`
-# in their names (build/<name>.rom.<machine>.<run>.dsk).
+# emulated SD Mapper V2 with the disk's images as its cards; a line may
+# start with `turbo` instead: the same ROM in the SD Mapper cartridge
+# that presents the m6 block device and a memory mapper of its own, so
+# the kernel runs the driver in Turbo; without a word the cartridge is
+# the Sunrise IDE. The forms run in order, `com` then `rom`; the test's
+# .tcl reads M6_FORM and M6_CART (`sunrise`, `sdmapper` or `turbo`); the
+# ROM form's images and logs carry `.rom`, `.sd.rom` or `.turbo.rom` in
+# their names (build/<name>.rom.<machine>.<run>.dsk).
 #
 # Files on the volume: tests/<name>/files/, a directory tree, is copied
 # into the staging directory as it is; a test with a `product` marker
@@ -92,26 +95,36 @@ export M6_TZ_OFFSET
 # on them; `rom sdmapper legacy`, the same with
 # build/m6-sdmapper-legacy.rom, the ROM with that cartridge's own Nextor
 # driver bank and the adapter; `rom sdmapper <name>`, the same with
-# build/<name>.rom, a ROM the test builds for itself.
+# build/<name>.rom, a ROM the test builds for itself; `rom turbo`, the
+# kernel ROM build/m6-sdmapper.rom in the SD Mapper cartridge that also
+# presents the m6 block device and a 432K memory mapper of its own, the
+# disk's images as its cards, so the driver runs in Turbo; `rom
+# turbo-liar`, the same ROM in a cartridge whose block offers Turbo with
+# no mapper behind it; `rom turbo <name>`, the Turbo cartridge with
+# build/<name>.rom.
 # set_form <form> <cartridge>: the product, the file booted (com), the
 # name it takes on the disk (upper), and the tag the run's files carry,
-# for one form on one cartridge (sunrise or sdmapper; the com form's is
-# the Nextor ROM's, whatever is given).
+# for one form on one cartridge (sunrise, sdmapper or turbo; the com
+# form's is the Nextor ROM's, whatever is given).
 set_form() {
     form=$1
     cart=$2
     tag=$name
     product=""
+    liar=""
     [ -f "tests/$name/product" ] && product=$(cat "tests/$name/product")
     if [ "$form" = rom ]; then
         tag=$name.rom
         [ "$cart" = sdmapper ] && tag=$name.sd.rom
+        [ "$cart" = turbo ] && tag=$name.turbo.rom
         if [ -f "tests/$name/block.asm" ]; then
             product="rom $name"
             [ "$cart" = sdmapper ] && product="rom sdmapper $name.sd"
+            [ "$cart" = turbo ] && product="rom turbo $name.sd"
         elif [ -z "$product" ] && [ -f "tests/$name/product" ]; then
             product=rom
             [ "$cart" = sdmapper ] && product="rom sdmapper"
+            [ "$cart" = turbo ] && product="rom turbo"
         else
             echo "run-test: $name: the rom marker needs tests/$name/block.asm or an empty product marker" >&2; exit 2
         fi
@@ -130,8 +143,11 @@ set_form() {
             "rom sdmapper") com="build/m6-sdmapper.rom"; upper=M6 ;;
             "rom sdmapper legacy") com="build/m6-sdmapper-legacy.rom"; upper=M6; product="rom sdmapper" ;;
             "rom sdmapper "*) com="build/${product#rom sdmapper }.rom"; upper=M6; product="rom sdmapper"; own=1 ;;
+            "rom turbo") com="build/m6-sdmapper.rom"; upper=M6 ;;
+            "rom turbo-liar") com="build/m6-sdmapper.rom"; upper=M6; product="rom turbo"; liar=1 ;;
+            "rom turbo "*) com="build/${product#rom turbo }.rom"; upper=M6; product="rom turbo"; own=1 ;;
             "rom "*) com="build/${product#rom }.rom"; upper=M6; product=rom; own=1 ;;
-            *) echo "run-test: $name: the product marker says '$product'; empty, nextor.sys, nextor.sys chain, rom, rom legacy, rom <name>, rom ascii16, rom ascii16 <name>, rom sdmapper, rom sdmapper legacy or rom sdmapper <name>" >&2; exit 2 ;;
+            *) echo "run-test: $name: the product marker says '$product'; empty, nextor.sys, nextor.sys chain, rom, rom legacy, rom <name>, rom ascii16, rom ascii16 <name>, rom sdmapper, rom sdmapper legacy, rom sdmapper <name>, rom turbo, rom turbo-liar or rom turbo <name>" >&2; exit 2 ;;
         esac
         bin=1
         [ -n "$own" ] && bin=""
@@ -154,6 +170,10 @@ set_form() {
     elif [ "$product" = "rom sdmapper" ]; then
         cp "$com" tools/openmsx/systemroms/m6-sdmapper.rom
         ext=m6-sdmapper-m6
+    elif [ "$product" = "rom turbo" ]; then
+        cp "$com" tools/openmsx/systemroms/m6-sdmapper.rom
+        ext=m6-sdmapper-m6-turbo
+        [ -n "$liar" ] && ext=m6-sdmapper-m6-turbo-liar
     fi
     [ -n "$slave" ] && ext=$ext-2
     export M6_FORM=$form M6_CART=$cart
@@ -311,6 +331,7 @@ if [ "$form" = rom ]; then
         case $w1 in
             "") ;;
             sdmapper) form_runs="$form_runs sdmapper:${w2:-m6-msx2-128k}" ;;
+            turbo) form_runs="$form_runs turbo:${w2:-m6-msx2-128k}" ;;
             *) form_runs="$form_runs sunrise:$w1" ;;
         esac
     done < "tests/$name/rom"
@@ -329,6 +350,7 @@ for form_run in $form_runs; do
         formtag=""
         [ "$forms" != com ] && formtag="form $form "
         [ "$cart" = sdmapper ] && formtag="form $form on sdmapper "
+        [ "$cart" = turbo ] && formtag="form $form on turbo "
         echo "  ${formtag}machine $machine run $run${args:+ ($args)}"
         rm -rf "$staging" && mkdir -p "$staging"
         case $product in
@@ -338,7 +360,7 @@ for form_run in $form_runs; do
                 cp "$com" "$staging/NEXTOR.SYS"
                 cp .tools/nextor/NEXTOR.SYS "$staging/MSXDOS2.SYS"
                 cp .tools/nextor/COMMAND2.COM "$staging/" ;;
-            "rom"|"rom ascii16"|"rom sdmapper")
+            "rom"|"rom ascii16"|"rom sdmapper"|"rom turbo")
                 ;;                      # nothing of a system's on the disk
             *)
                 cp .tools/nextor/NEXTOR.SYS .tools/nextor/COMMAND2.COM "$staging/"

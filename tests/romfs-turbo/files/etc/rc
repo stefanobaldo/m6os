@@ -1,0 +1,9 @@
+# The SD Mapper kernel ROM's disk workload: files copied, joined, sorted
+# and counted through the utilities on the first card, the big file
+# copied to the second, and the line the harness waits for.
+cat big > big2
+cat big big2 > big3
+sort text | uniq > u
+wc -c big3 > n
+cat big > /mnt/b/big2
+echo rc done
