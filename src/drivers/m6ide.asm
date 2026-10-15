@@ -77,7 +77,7 @@ SI_RAM          equ 108
         jp      si_status               ; DRV_STATUS
         jp      si_rw                   ; DRV_RW
         jp      si_query                ; DRV_QUERY
-        jp      si_nosys                ; DRV_RES1
+        jp      si_nosys                ; DRV_PROBE: no Turbo
         jp      si_nosys                ; DRV_RES2
         dw      SI_RAM                  ; DRV_RAM
         dw      0                       ; DRV_RELOC

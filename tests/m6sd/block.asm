@@ -28,7 +28,13 @@
 ; seconds, against sixty a second: none lost — and the cost per call
 ; and per sector printed; and a program from the volume reading a 64 KB
 ; file through read(), its ticks printed. The harness reads card 2's image afterwards
-; and compares its last sectors with the pattern.
+; and compares its last sectors with the pattern. Last, the transfer
+; mode: on a cartridge whose block device offers Turbo the kernel put
+; the driver in Turbo at boot, and sixteen of the pattern's sectors read
+; in Turbo and again in Standard, the mode switched through DQ_MODE,
+; must be the same bytes, the mode back in Turbo after; on a cartridge
+; without the block the step records that Turbo is not offered. The
+; line printed says which.
         include "m6test.inc"
 
     IFDEF M6SD_LEGACY
@@ -38,7 +44,8 @@ T_SLAVE         equ 2
     ENDIF
 T_TOTAL         equ 4096        ; sectors of each 2 MB image
 T_LAST          equ T_TOTAL-32  ; the slave's last 32 sectors
-T_REC2          equ 0F380h-56+24 ; the SD driver's record of slot 2
+T_REC2          equ 0F380h-58+24 ; the SD driver's record of slot 2
+T_MODE          equ 0F380h-58+56 ; the driver's SD_MODE byte
 SD_FLAGS_       equ 1           ; its flags: bit 1 absent
 SD_TOTAL_       equ 4           ; its sector count
 T_SECTORS       equ 1024        ; sectors read per point of step 6: 8 x 64 KB
@@ -65,10 +72,12 @@ tb_start:                               ; SP is the kernel's, at K_END
         jp      nz,t_fail
     IFNDEF M6SD_LEGACY
         ld      hl,(K_REC+KR_WALL)
-        ld      de,0F380h-56            ; SD_RAM
+        ld      de,0F380h-58            ; SD_RAM
         or      a
         sbc     hl,de
         jp      nz,t_fail
+        ld      a,(T_MODE)              ; the mode the kernel's boot chose,
+        ld      (t_bootmode),a          ; before step 2's init resets it
     ENDIF
         call    t_ok
 
@@ -88,6 +97,13 @@ tb_start:                               ; SP is the kernel's, at K_END
         ld      de,ts_name1
         call    t_info
         jp      c,t_fail
+        ld      a,(T_PARAMS+DI_CAPS)    ; the init above reset the mode:
+        and     DIC_TURBO               ; the kernel's choice made again,
+        jr      z,.std2                 ; Turbo where the block offers it
+        ld      a,DM_TURBO
+        call    t_mode
+        jp      c,t_fail
+.std2:
         ld      b,T_SLAVE               ; device 2: card 2, SDSC
         ld      c,DIF_REMOVABLE
         ld      de,ts_name2
@@ -280,8 +296,15 @@ tb_start:                               ; SP is the kernel's, at K_END
         jp      nc,t_fail
         cp      E_IO
         jp      nz,t_fail
-        ld      a,(K_BLK_LASTERR)       ; out of range, the card's token
+        ld      a,(T_MODE)              ; out of range: the card's token;
+        cp      DM_TURBO                ; in Turbo the device's own range
+        ld      a,(K_BLK_LASTERR)       ; check answers first, with its code
+        jr      z,.range5
         cp      08h
+        jr      .judge5
+.range5:
+        cp      40h|BDE_RANGE
+.judge5:
         ld      a,0E7h
         jp      nz,t_fail
         ld      a,T_SLAVE               ; and the card serves the next call
@@ -350,12 +373,108 @@ tb_start:                               ; SP is the kernel's, at K_END
         ld      hl,ts_ticks
         k_call  API_CON_PUTS
         k_call  API_CON_NEWLINE
-        ld      hl,ts_pass
+
+; --- step 8: Turbo against Standard, the mode switched ---------------------
+        ld      a,8
+        call    t_begin
+    IFNDEF M6SD_LEGACY
+        xor     a
+        ld      b,1
+        ld      d,BQ_INFO
+        ld      hl,T_PARAMS
+        k_call  API_BLK_QUERY
+        call    t_page2
+        jp      c,t_fail
+        ld      a,(T_PARAMS+DI_CAPS)
+        and     DIC_TURBO
+        jr      z,.no8
+        ld      a,(t_bootmode)          ; the boot's choice: Turbo
+        cp      DM_TURBO
+        ld      a,0E2h
+        jp      nz,t_fail
+        ld      a,0                     ; sixteen sectors at slot 0, Turbo
+        call    t_read16
+        jp      c,t_fail
+        ld      a,DM_STANDARD
+        call    t_mode
+        jp      c,t_fail
+        ld      a,32                    ; the same at slot 32, Standard
+        call    t_read16
+        jp      c,t_fail
+        ld      a,DM_TURBO
+        call    t_mode
+        jp      c,t_fail
+        ld      a,(t_seg)
+        out     (0FEh),a
+        ld      hl,8000h
+        ld      de,0A000h
+        ld      bc,16*512
+.cmp8:  ld      a,(de)
+        cp      (hl)
+        jr      nz,.differ
+        inc     hl
+        inc     de
+        dec     bc
+        ld      a,b
+        or      c
+        jr      nz,.cmp8
+        call    t_page2
+        call    t_ok
+        ld      hl,ts_turbo_yes
+        k_call  API_CON_PUTS
+        jr      .pass
+.differ:
+        call    t_page2
+        ld      a,0E3h                  ; Turbo and Standard bytes differ
+        jp      t_fail
+.no8:   call    t_ok
+    ELSE
+        call    t_ok
+    ENDIF
+        ld      hl,ts_turbo_no
+        k_call  API_CON_PUTS
+.pass:  ld      hl,ts_pass
         k_call  API_CON_PUTS
         m6_verdict M6_PASS
 t_halt: ei
         halt
         jr      t_halt
+
+; t_mode — A = the mode asked of the driver through DQ_MODE; the mode
+; in force must be it. CF otherwise. Corrupts everything.
+t_mode:
+        ld      (T_PARAMS),a
+        xor     a
+        ld      b,1
+        ld      d,BQ_QUERY
+        ld      e,DQ_MODE
+        ld      hl,T_PARAMS
+        k_call  API_BLK_QUERY
+        call    t_page2
+        ret     c
+        ld      a,(T_PARAMS+1)
+        ld      hl,T_PARAMS
+        cp      (hl)
+        ld      a,0E2h                  ; the mode in force differs
+        scf
+        ret     nz
+        or      a
+        ret
+
+; t_read16 — A = the slot: the slave's last sixteen sectors read into
+; the test's segment from that slot, one call. CF when it failed.
+t_read16:
+        ld      c,a
+        ld      a,T_SLAVE
+        ld      ixh,0
+        ld      ixl,16
+        ld      hl,t_seg
+        ld      b,(hl)
+        ld      hl,T_LAST
+        ld      de,0
+        or      a
+        k_call  API_BLK_DEV_RW
+        jp      t_page2
 
 ; t_info — B = device, C = its flags, DE -> its name's 14 bytes: the
 ; record through BQ_INFO, checked: the flags, count T_TOTAL, the name,
@@ -853,6 +972,8 @@ ts_counted: db  " s counted ",0
 ts_lost:    db  " lost ",0
 ts_nortc:   db  "the clock did not advance",0
 ts_rd64:    db  ", rd64 ",0
+ts_turbo_yes: db " turbo: yes",10,0
+ts_turbo_no: db  " turbo: no",10,0
 ts_ticks:   db  " ticks",0
 ts_fail:    db  10,"FAIL step ",0
 ts_status:  db  10,"FAIL status step ",0
@@ -861,6 +982,7 @@ ts_pass:    db  "PASS",10,0
 p_rd64:     db  "/RD64",0
 t_fds:      db  0FFh,0FFh,0FFh
 t_step:     db  0
+t_bootmode: db  0
 t_seg:      db  0
 t_dev:      db  0
 t_flags:    db  0

@@ -48,7 +48,7 @@ PT_OPEN         equ 23          ; 1 from a transfer's entry to its return
         jp      pt_status               ; DRV_STATUS
         jp      pt_rw                   ; DRV_RW
         jp      pt_query                ; DRV_QUERY
-        jp      pt_nosys                ; DRV_RES1
+        jp      pt_nosys                ; DRV_PROBE: no Turbo
         jp      pt_nosys                ; DRV_RES2
         dw      PT_RAM                  ; DRV_RAM
         dw      0                       ; DRV_RELOC

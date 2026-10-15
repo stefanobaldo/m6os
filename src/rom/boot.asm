@@ -39,6 +39,17 @@
 ;   F6  bank 7 holds a driver block of a version this kernel does not know
 ; From the first copy on there is no machine to return to; a failure
 ; after it is the kernel's, as in every boot mode.
+;
+; Turbo (docs/block-device.md): a block whose probe says the cartridge
+; serves a memory mapper and offers Turbo wants that mapper to be the
+; primary — the one page 3 lives in, which the BIOS chose. When the BIOS
+; has put page 3 there already there is nothing to do; otherwise, once
+; the BIOS is done with (after the banner, under di), rm_move checks that
+; a mapper answers in that subslot and copies page 3 whole into the same
+; segment number there, then switches page 3 to it — the DOS 2 kernel's
+; own move to its primary mapper — so that the kernel finds the primary
+; where the device writes. A mapper that does not answer leaves the boot
+; in Standard, as if the probe had said no.
 
 RM_HRUNC        equ 0FECBh      ; H.RUNC: the BIOS, every INIT run
 RM_RAMLOW       equ 0F380h      ; the BIOS work area's start: the driver's
@@ -308,6 +319,32 @@ rm_start:
         ld      a,RMC_WORK
         jp      c,rom_fail
         call    rm_wall_set
+        ; The probe: Turbo offered, and where the mapper is — a subslot
+        ; of this cartridge's slot, which must be expanded for that to
+        ; mean anything. The slot id composed; the BIOS's choice of page
+        ; 3 compared with it: the same slot, nothing to move.
+        ld      a,(rm_slot)
+        bit     7,a
+        jr      z,.inited
+        ld      a,(rm_drvbank)
+        call    NX_CHGBNK
+        call    DRV_BASE+DRV_PROBE
+        push    af
+        xor     a
+        call    NX_CHGBNK
+        pop     af
+        jr      c,.inited
+        add     a,a
+        add     a,a
+        or      80h
+        ld      b,a
+        ld      a,(rm_slot)
+        and     3
+        or      b
+        ld      hl,rm_ram
+        cp      (hl)
+        jr      z,.inited
+        ld      (rm_tslot),a
         jr      .inited
 .nextor:
         ; The driver's first call: the work area's size, and whether it
@@ -387,7 +424,12 @@ rm_start:
         ; here, interrupts off — and shows, in turn, page 1's segment for
         ; the switched image (at 4000h once that segment is in page 1) and
         ; its own for the boot image; then the resident, from bank 0.
+        ; First, when the probe named a mapper the BIOS did not choose,
+        ; page 3 moves into it (rm_move), and the RAM slot is that one.
         di
+        ld      a,(rm_tslot)
+        or      a
+        call    nz,rm_move
         ld      a,(rm_ram)
         bit     7,a
         jr      z,.prim
@@ -471,6 +513,109 @@ rm_start:
         halt
         jr      .halt
 
+; rm_move — rm_tslot names a subslot of this cartridge's slot: a mapper
+; looked for there, and page 3 moved into it. Runs from page 2 with
+; interrupts off, the stack in page 2. The cartridge's subslot register
+; is reachable only while its primary is in page 3, so that primary is
+; put there for the instant of the write, with nothing on the stack
+; meanwhile; page 0 then shows the candidate, where two segment numbers
+; — page 3's and page 0's, the ones the boot uses, the mapper registers
+; being one set every mapper obeys — must hold their bytes apart. Then
+; page 3's segment is copied whole through page 0 and page 3 switched
+; to the cartridge: the same bytes, so the stack and the variables go
+; on; rm_ram, the record's RAM slots and the BIOS's RAMAD0-3 follow.
+; A mapper that does not answer: page 0 back to the BIOS, rm_tslot
+; cleared, nothing else changed. Corrupts everything.
+rm_move:
+        in      a,(PPI_A)
+        ld      (rm_ppi),a
+        and     3Fh
+        ld      c,a
+        ld      a,(rm_tslot)
+        and     3
+        rrca
+        rrca
+        or      c
+        out     (PPI_A),a               ; page 3 := the cartridge's primary
+        ld      a,(0FFFFh)              ; its subslot register: pages 0
+        cpl                             ; and 3 to the mapper's subslot,
+        and     3Ch                     ; pages 1 and 2 as they are
+        ld      c,a
+        ld      a,(rm_tslot)
+        and     0Ch
+        rrca
+        rrca
+        ld      b,a                     ; page 0's field
+        rrca
+        rrca
+        or      b
+        or      c
+        ld      (0FFFFh),a
+        ld      a,(rm_ppi)
+        out     (PPI_A),a               ; page 3 := the RAM back
+        and     0FCh
+        ld      c,a
+        ld      a,(rm_tslot)
+        and     3
+        or      c
+        out     (PPI_A),a               ; page 0 := the candidate
+        ld      hl,0100h
+        ld      a,(rm_rec+KR_SEG64K+0)
+        out     (0FCh),a
+        ld      (hl),0AAh
+        ld      a,(rm_rec+KR_SEG64K+3)
+        out     (0FCh),a
+        ld      (hl),55h
+        ld      a,(rm_rec+KR_SEG64K+0)
+        out     (0FCh),a
+        ld      a,(hl)
+        cp      0AAh
+        jr      nz,.absent
+        ld      a,(rm_rec+KR_SEG64K+3)
+        out     (0FCh),a
+        ld      a,(hl)
+        cp      55h
+        jr      nz,.absent
+        ld      hl,0C000h               ; page 3, whole, into the same
+        ld      de,0                    ; segment of the candidate
+        ld      bc,4000h
+        ldir
+        in      a,(PPI_A)
+        and     3Fh
+        ld      c,a
+        ld      a,(rm_tslot)
+        and     3
+        rrca
+        rrca
+        or      c
+        out     (PPI_A),a               ; page 3 := the candidate: the
+        ld      a,(rm_tslot)            ; same bytes, the stack goes on
+        ld      (rm_ram),a
+        ld      (rm_rec+KR_MAPSLOT),a
+        ld      hl,rm_rec+KR_RAMAD
+        ld      (hl),a
+        inc     hl
+        ld      (hl),a
+        inc     hl
+        ld      (hl),a
+        inc     hl
+        ld      (hl),a
+        ld      hl,B_RAMAD0
+        ld      (hl),a
+        inc     hl
+        ld      (hl),a
+        inc     hl
+        ld      (hl),a
+        inc     hl
+        ld      (hl),a
+        ret
+.absent:
+        ld      a,(rm_ppi)
+        out     (PPI_A),a               ; page 0 := the BIOS
+        xor     a
+        ld      (rm_tslot),a
+        ret
+
 ; rm_wall_set — BC = the bytes of page 3 the driver takes: the wall is
 ; RAMLOW less them, into rm_wall and the record; refused (RMC_FIT) when
 ; the resident does not end below it; the bytes cleared. Preserves BC.
@@ -514,6 +659,10 @@ ld_block_len    equ 0
 
 rm_slot:    db  0                       ; this slot
 rm_ram:     db  0                       ; the RAM slot
+rm_tslot:   db  0                       ; the slot of the mapper a Turbo
+                                        ; device writes, when page 3 is
+                                        ; to move there; else 0
+rm_ppi:     db  0                       ; the PPI before rm_move
 rm_drvbank: db  0                       ; the driver's bank
 rm_wall:    dw  0
 rm_rec:     ds  KREC_SIZE               ; the record, zero in the ROM

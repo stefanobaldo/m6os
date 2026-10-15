@@ -54,7 +54,9 @@ SD_N            equ SD_T0+3     ; sectors left in the call
 SD_TGT          equ SD_T0+4     ; the high byte of the sector's target
 SD_WR           equ SD_T0+5     ; bit 0 a write, bit 1 a CMD18/CMD25 open
 SD_V2           equ SD_T0+6     ; init: the card answered CMD8
-SD_RAM          equ SD_T0+8
+SD_CAPS         equ SD_T0+7     ; the block device's BD_CAPS, 0 without one
+SD_MODE         equ SD_T0+8     ; DM_STANDARD or DM_TURBO, the kernel's choice
+SD_RAM          equ SD_T0+10
 
 ; The block's own codes, in B.
 SD_ENOCARD      equ 1           ; no card in the slot
@@ -93,12 +95,16 @@ SD_TO_WRITE     equ 31
 SD_TO_INIT      equ 61
 SD_CMD0_TRIES   equ 8
 
-; init — both slots brought up; A = 2 always, CF clear.
+; init — both slots brought up, the block device looked for; A = 2
+; always, CF clear.
 sd_init:
         ld      a,1
         call    sd_init_slot
         ld      a,2
         call    sd_init_slot
+        call    sdp_bd_detect
+        ld      (ix+SD_CAPS),a
+        ld      (ix+SD_MODE),DM_STANDARD
         ld      a,2
         or      a
         ret
@@ -353,6 +359,24 @@ sd_info:
         ldir
         pop     bc
         pop     hl
+        push    hl
+        push    bc
+        inc     hl                      ; DI_CAPS: Turbo when the block
+        ld      a,(ix+SD_CAPS)          ; offers it; DI_TSLOT: where its
+        and     BDC_TURBO               ; mapper is, as 80h | subslot << 2
+        ld      (hl),a
+        ld      a,(ix+SD_CAPS)
+        bit     7,a                     ; BDC_MAPPER
+        jr      z,.caps
+        and     BDC_MSUB
+        rrca
+        rrca
+        or      80h
+        ld      bc,DI_TSLOT-DI_CAPS
+        add     hl,bc
+        ld      (hl),a
+.caps:  pop     bc
+        pop     hl
         ld      a,(iy+SD_FLAGS)
         and     SDF_PROT
         ld      e,DIF_REMOVABLE
@@ -482,7 +506,7 @@ sd_status:
         ld      c,a
         dec     a
         cp      2
-        jr      nc,sd_nxio
+        jp      nc,sd_nxio
         ld      a,c
         call    sd_slot
         res     1,(iy+SD_FLAGS)         ; absent is what the register says
@@ -523,11 +547,14 @@ sd_sense:
         ld      a,(iy+SD_FLAGS)
         ret
 
-; query — DQ_PRIVATE: the device's record, SD_SLOT bytes, to HL in page
-; 2. Everything else E_NOSYS.
+; query — DQ_MODE: byte 0 the mode asked; Turbo taken only when the
+; block offers it; byte 1 the mode in force. DQ_PRIVATE: the device's
+; record, SD_SLOT bytes, to HL in page 2. Everything else E_NOSYS.
 sd_query:
         ld      c,a
         ld      a,b
+        cp      DQ_MODE
+        jr      z,sd_mode
         cp      DQ_PRIVATE
         jr      nz,sd_nosys
         ld      a,c
@@ -541,6 +568,20 @@ sd_query:
         pop     hl
         ld      bc,SD_SLOT
         ldir
+        xor     a
+        ld      b,a
+        ret
+sd_mode:
+        ld      a,(hl)
+        cp      DM_TURBO
+        jr      nz,.standard
+        bit     0,(ix+SD_CAPS)          ; BDC_TURBO
+        jr      nz,.set
+.standard:
+        xor     a
+.set:   ld      (ix+SD_MODE),a
+        inc     hl
+        ld      (hl),a
         xor     a
         ld      b,a
         ret
@@ -618,9 +659,17 @@ sd_rw:
         bit     0,a
         jr      nz,.changed
         bit     0,(ix+SD_WR)
-        jr      z,.go
+        jr      z,.mode
         bit     2,a
         jr      nz,.rofs
+.mode:  bit     0,(ix+SD_MODE)          ; Turbo: the device moves the
+        jr      z,.go                   ; sectors; a refused probe comes
+        call    sdp_turbo               ; back here for the window
+        ret     nc
+        or      a
+        jr      z,.go
+        scf
+        ret
 .go:    call    sd_bytes                ; bc:de = the argument
         ld      a,(ix+SD_CARD)
         sdp_select

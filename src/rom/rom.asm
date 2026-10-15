@@ -267,6 +267,9 @@ rom_drv:
         include M6_DRIVER
 rom_drv_end:
         ASSERT  rom_drv_end-rom_drv <= DRV_MAX
+        ASSERT  rom_drv_end <= BD_BASE  ; the block device's registers read
+                                        ; the fill there on a cartridge
+                                        ; without them, never code
 ROM_B7_FREE     equ NX_CHGBNK-$
         EXPORT  ROM_B7_FREE
         rom_tail
