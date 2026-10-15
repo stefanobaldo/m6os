@@ -97,6 +97,11 @@ When the entry returns, the kernel puts page 1 back to RAM and page 2 as
 it was. The kernel never calls a block while a call into any driver is in
 progress: a block may assume it is the only driver running.
 
+A block in Turbo (`docs/block-device.md`) may ask its device to move the
+sectors into or out of the target instead of copying them itself; the
+target is still page 2's segment as mapped above, and every rule of this
+section holds the same.
+
 A block corrupts any register but `SP` and `IX`, the alternate set and
 `IY` included. It leaves `IM` and `I` as they are. It returns with
 interrupts enabled. On return `CF` and `A` carry the result, `B` the
@@ -300,9 +305,11 @@ registers (`docs/block-device.md`), the driver finds the block's
 signature at `init`, answers the kernel ROM's probe from it, and, once
 the kernel has put it in Turbo, hands every call to the device — the
 device, the sector, the count, the target as segment and slot, and a
-probe byte put at the target — and polls the status by the tick, two
-seconds at most, while the device moves the sectors into the mapper it
-serves; the CPU copies nothing. A probe the device refuses sends that
+probe byte put at the target — and polls the status by the tick while
+the device moves the sectors into the mapper it serves; the CPU copies
+nothing. The device ends a command within four seconds, and the driver
+waits a little longer than that, and for a command still running
+before it writes the next. A probe the device refuses sends that
 call through the SPI window instead. The device's own code comes back as
 the block's code with bit 6 set. On a cartridge without the block, and
 in Standard, a call of up to 32 sectors is one `CMD18` ended by `CMD12`,

@@ -142,12 +142,25 @@ sdp_probe:
 ; sector, the count, the target as segment (API2_DRV_TGTSEG) and slot,
 ; the probe byte — a read: the byte at the target complemented and
 ; written back; a write: the target's first byte — and the command; the
-; status is polled by the tick. Out: CF clear, A = 0, B = 0 when the
+; status is polled by the tick, and before anything is written a command
+; still running is waited out under the same bound. Out: CF clear, A = 0, B = 0 when the
 ; sectors moved; CF set and A = 0 when the device refused the probe (the
 ; call goes on through the window: DE, HL preserved); CF set, A = the
 ; errno and B = 40h | the device's code otherwise. Corrupts BC.
-SD_TO_TURBO     equ 121         ; 2 s: the bound on a command
+SD_TO_TURBO     equ 255         ; 4.25 s: the device ends a command in 4
 sdp_turbo:
+        push    hl
+        push    de
+        call    sd_t0
+.idle:  ld      a,(BD_STAT)             ; no register written while the
+        cp      BDS_BUSY                ; device is busy
+        jr      nz,.free
+        ld      b,SD_TO_TURBO
+        call    sd_elapsed
+        jr      c,.idle
+        jr      .tmo
+.free:  pop     de
+        pop     hl
         push    hl
         push    de
         ld      (BD_LBA),hl
@@ -181,7 +194,7 @@ sdp_turbo:
         ld      b,SD_TO_TURBO
         call    sd_elapsed
         jr      c,.poll
-        ld      b,SD_ETIMEOUT
+.tmo:   ld      b,SD_ETIMEOUT
         ld      a,E_IO
         jr      .err
 .done:  or      a
