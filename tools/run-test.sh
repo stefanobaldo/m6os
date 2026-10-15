@@ -175,8 +175,18 @@ set_form() {
         ext=m6-sdmapper-m6-turbo
         [ -n "$liar" ] && ext=m6-sdmapper-m6-turbo-liar
     fi
+    if [ -n "$liar" ] && [ -n "$slave" ]; then
+        echo "run-test: $name: rom turbo-liar takes one card; the disk marker names two" >&2; exit 2
+    fi
     [ -n "$slave" ] && ext=$ext-2
-    export M6_FORM=$form M6_CART=$cart
+    # A product test that boots an SD Mapper ROM names its cartridge as
+    # the ROM form does, whatever form it runs as.
+    M6_CART=$cart
+    case $product in
+        "rom sdmapper") M6_CART=sdmapper ;;
+        "rom turbo") M6_CART=turbo ;;
+    esac
+    export M6_FORM=$form M6_CART
 }
 
 forms=com
