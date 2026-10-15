@@ -10,6 +10,9 @@
 # shell. On both machines the BIOS left page 3 in the machine's mapper,
 # since the cartridge has none.
 set show_screen 1
+# The machine's own mapper, by the machine: 3.2 on m6-msx2-128k, plain
+# slot 1 on -ram1.
+if {[machine_info config_name] eq "m6-msx2-128k-ram1"} { set own 1 } else { set own {3\.2} }
 
 proc rows {} {
     if {[catch {get_screen} s]} { return {} }
@@ -33,7 +36,7 @@ proc has_re {re} {
 proc wait_rc {} {
     if {[has_row "rc done"] && [has_row {/ $}]} {
         puts stderr "boot3-noturbo.tcl: rc done at [format %.2f [machine_info time]] s"
-        if {![has_re {^mapper [0-3](\.[0-3])?: 8 segments, primary, }]} {
+        if {![has_re "^mapper $::own: 8 segments, primary, "]} {
             finish 1 "the machine's mapper is not the primary"
             return
         }
