@@ -62,8 +62,8 @@ At `4100h`, 48 bytes:
 | 13 | 3 | `DRV_STATUS` | `jp` to status |
 | 16 | 3 | `DRV_RW` | `jp` to the transfer |
 | 19 | 3 | `DRV_QUERY` | `jp` to query |
-| 22 | 3 | `DRV_RES1` | `jp` to a routine returning CF set and `A` = `E_NOSYS` |
-| 25 | 3 | `DRV_RES2` | the same |
+| 22 | 3 | `DRV_PROBE` | `jp` to the probe, or to a routine returning CF set and `A` = `E_NOSYS` |
+| 25 | 3 | `DRV_RES2` | `jp` to a routine returning CF set and `A` = `E_NOSYS` |
 | 28 | 2 | `DRV_RAM` | bytes of RAM the block wants, 0 to `DRV_RAM_MAX` (576) |
 | 30 | 2 | `DRV_RELOC` | 0 |
 | 32 | 16 | `DRV_NAME` | the block's name, space padded |
@@ -116,6 +116,19 @@ the block's RAM, cleared.
 - Out, failure: `CF` set, `A` = a code of the block's own. The kernel
   prints `driver 0: init failed` and never calls the block again.
 
+### probe
+
+Whether the device offers Turbo (`docs/block-device.md`), and where
+its memory mapper is. The kernel ROM's boot calls it before `init`,
+before there is a kernel: no block RAM, no page 2, no tick. It reads the
+cartridge's registers and nothing else, writes nothing but its stack,
+and returns within 100 µs.
+
+- Out, Turbo offered: `CF` clear, `A` = the subslot (0–3) of the
+  cartridge's own slot holding the mapper the device writes.
+- Out, otherwise: `CF` set, `A` = `E_NOSYS` — what a block without a
+  probe answers through the reserved routine.
+
 ### info
 
 Describes a device. Page 2 is the storage segment.
@@ -129,7 +142,7 @@ Describes a device. Page 2 is the storage segment.
 | 0 | 1 | `DI_FLAGS` | bit 0 removable, bit 1 read-only, bit 2 floppy, bit 3 do not mount automatically — the bits of Nextor's `LUN_INFO` — and bit 7 no medium |
 | 1 | 1 | `DI_CAPS` | bit 0 Turbo, bit 1 the FAT accelerator's queries; the rest 0 |
 | 2 | 4 | `DI_COUNT` | sectors of 512 bytes; 0 when unknown or with no medium |
-| 6 | 1 | `DI_TSLOT` | the slot of the mapper a Turbo device writes into; 0 none |
+| 6 | 1 | `DI_TSLOT` | `80h` with the subslot of the cartridge's own slot holding the mapper a Turbo device writes, in bits 3–2; 0 none |
 | 7 | 1 | | 0 |
 | 8 | 32 | `DI_NAME` | the name the boot listing prints, space padded |
 | 40 | 16 | `DI_IDENT` | the device's identity: bytes 0–3 its slot, its device number as Nextor would give it, its unit as Nextor would give it (1 when the device has none), and 0; bytes 4–15 the block's own, such as a serial number |
@@ -186,10 +199,15 @@ Anything else the device can do.
 - Out: as the number defines; `CF` set and `A` = `E_NOSYS` (38) for a
   number the block does not answer.
 - Numbers `00h`–`7Fh` belong to the contract: `01h`–`04h` the FAT
-  accelerator (`DQ_FATCOUNT`, `DQ_FATNEXT`, `DQ_FATWALK`, `DQ_FATFREE`)
-  and `10h` the transfer mode (`DQ_MODE`), whose parameter blocks are not
-  defined yet; the rest are reserved. Numbers `80h`–`FFh`
-  (`DQ_PRIVATE` up) are the block's own.
+  accelerator (`DQ_FATCOUNT`, `DQ_FATNEXT`, `DQ_FATWALK`, `DQ_FATFREE`),
+  whose parameter blocks are not defined yet; `10h` the transfer mode
+  (`DQ_MODE`): byte 0 in, the mode asked — 0 Standard (`DM_STANDARD`),
+  1 Turbo (`DM_TURBO`); byte 1 out, the mode in force, which is Turbo
+  only when the device offers it. The kernel asks for Turbo at boot when
+  `info` offers it and `DI_TSLOT` names the primary mapper, and the
+  volume's row in the boot listing then ends with the word `turbo`. The
+  rest are reserved. Numbers `80h`–`FFh` (`DQ_PRIVATE` up) are the
+  block's own.
 
 ## What a block may use of the kernel
 
@@ -277,9 +295,19 @@ a card the driver cannot bring up is one too, and the step that failed
 is kept in the driver's record, which `query` number `80h` returns. A
 card that is not an SD card (an MMC) is not supported.
 
-A call of up to 32 sectors is one `CMD18` ended by `CMD12`, or one
-`ACMD23` and `CMD25` ended by the stop token; one sector is `CMD17` or
-`CMD24`. Every response is read within eight bytes, every data token
+On a cartridge that presents the m6 block device beside the SD Mapper's
+registers (`docs/block-device.md`), the driver finds the block's
+signature at `init`, answers the kernel ROM's probe from it, and, once
+the kernel has put it in Turbo, hands every call to the device — the
+device, the sector, the count, the target as segment and slot, and a
+probe byte put at the target — and polls the status by the tick, two
+seconds at most, while the device moves the sectors into the mapper it
+serves; the CPU copies nothing. A probe the device refuses sends that
+call through the SPI window instead. The device's own code comes back as
+the block's code with bit 6 set. On a cartridge without the block, and
+in Standard, a call of up to 32 sectors is one `CMD18` ended by `CMD12`,
+or one `ACMD23` and `CMD25` ended by the stop token; one sector is
+`CMD17` or `CMD24`. Every response is read within eight bytes, every data token
 and every busy is bounded by the kernel's tick — 100 ms for a token,
 500 ms for a write's busy, one second for a card to become ready — and
 nothing in the block disables interrupts: the window's exchange is one
