@@ -83,7 +83,7 @@ to install.
   the cartridge's mapper the machine's main memory when the BIOS has not,
   the memory lines of the boot listing show the machine's own mapper
   unused beside it, and the volume's row ends with the word `turbo`. On
-  the emulated cartridge a 64 KB `read()` takes about a third less time
+  the emulated cartridge a 64 KB `read()` takes over a quarter less time
   than through the SPI window, and a 32-sector transfer a small fraction
   of it. A cartridge that offers Turbo with no mapper behind the claim
   is found out at boot and run as before. No cartridge offers Turbo yet.
