@@ -40,9 +40,9 @@ request is expected to pass.
 
 Prerequisites: `make`, a C++ compiler (sjasmplus is built from source),
 `curl`, `unzip`, `xz` and `shasum`. The emulator is openMSX 21.0 with the
-FBLabs SD Mapper V2 cartridge added, from the project's [fork of
+FBLabs SD Mapper V2 cartridge and the m6 block device added, from the project's [fork of
 openMSX](https://github.com/stefanobaldo/m6os-openmsx) (branch `m6`, release
-`m6-21.0.1`, reported by the binary as `21.0-m6.1`). On x86_64 Linux and on
+`m6-21.0.2`, reported by the binary as `21.0-m6.2`). On x86_64 Linux and on
 macOS on Apple silicon it is fetched too. Elsewhere, build the fork's tag
 and copy the build into `.tools/openmsx/` (`tools/fetch-openmsx.sh` prints
 the commands), or install it with `openmsx` on `PATH`; the version is

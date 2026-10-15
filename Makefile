@@ -11,7 +11,7 @@
 # either way their versions are checked. See CONTRIBUTING.md.
 
 SJASMPLUS_VERSION := 1.24.0
-OPENMSX_VERSION   := 21.0-m6.1
+OPENMSX_VERSION   := 21.0-m6.2
 
 SJASMPLUS := $(if $(wildcard .tools/sjasmplus/bin/sjasmplus),.tools/sjasmplus/bin/sjasmplus,sjasmplus)
 # On macOS the fetched build is an application bundle (tools/fetch-openmsx.sh).
@@ -36,9 +36,10 @@ PRODUCT_TESTS := $(notdir $(patsubst %/,%,$(dir $(wildcard tests/*/product))))
 ROM_TESTS := $(notdir $(patsubst %/,%,$(dir $(wildcard tests/*/rom))))
 BLOCK_TESTS := $(foreach t,$(ROM_TESTS),$(if $(wildcard tests/$(t)/block.asm),$(t)))
 TEST_BLOCKS := $(foreach t,$(BLOCK_TESTS),build/$(t).block)
-# A marker line starting with `sdmapper` asks for the same block on the
-# SD Mapper kernel ROM with m6's SD driver, build/<test>.sd.rom.
-SD_BLOCK_TESTS := $(foreach t,$(BLOCK_TESTS),$(if $(shell grep -l '^sdmapper' tests/$(t)/rom 2>/dev/null),$(t)))
+# A marker line starting with `sdmapper` or `turbo` asks for the same
+# block on the SD Mapper kernel ROM with m6's SD driver, build/<test>.sd.rom
+# (the Turbo cartridge boots the same ROM).
+SD_BLOCK_TESTS := $(foreach t,$(BLOCK_TESTS),$(if $(shell grep -l '^sdmapper\|^turbo' tests/$(t)/rom 2>/dev/null),$(t)))
 TEST_ROMS := $(foreach t,$(BLOCK_TESTS),build/$(t).rom) $(foreach t,$(SD_BLOCK_TESTS),build/$(t).sd.rom)
 TESTS     := $(sort $(notdir $(patsubst %/,%,$(dir $(wildcard tests/*/*.asm)))) $(PRODUCT_TESTS))
 TEST_BINS := $(foreach t,$(filter-out $(PRODUCT_TESTS),$(TESTS)),build/$(t).com)

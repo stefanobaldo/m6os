@@ -3,9 +3,9 @@
 # Copyright (c) 2026 Stefano Baldo
 # SPDX-License-Identifier: BSD-3-Clause
 #
-# openMSX 21.0 with the FBLabs SD Mapper V2 cartridge, from the project's
-# fork of openMSX (github.com/stefanobaldo/m6os-openmsx, branch m6,
-# release m6-21.0.1). On x86_64 Linux the release's portable build is
+# openMSX 21.0 with the FBLabs SD Mapper V2 cartridge and the m6 block
+# device, from the project's fork of openMSX
+# (github.com/stefanobaldo/m6os-openmsx, branch m6, release m6-21.0.2). On x86_64 Linux the release's portable build is
 # fetched into .tools/openmsx/ (bin/ and share/); on macOS on Apple
 # silicon its disk image is fetched and the application bundle copied into
 # .tools/openmsx/openMSX.app. Anywhere else the fork is built from its tag
@@ -14,11 +14,11 @@
 # case.
 . "$(dirname "$0")/lib.sh"
 
-VERSION=21.0-m6.1
-TAG=m6-21.0.1
+VERSION=21.0-m6.2
+TAG=m6-21.0.2
 BASE="https://github.com/stefanobaldo/m6os-openmsx/releases/download/$TAG"
-LINUX_SHA256=9c3616c38cc0c488f1683a26d2ff753324514ea6167996d75a4e8173d021a135
-MAC_SHA256=a51471c85721834fd829a2a792addc27cfdef5bf0e2486b3f879033e4a147c9c
+LINUX_SHA256=51078c26602f98b8ead45f0f7914b8f67739a5de01abc09a51f542739b14cfec
+MAC_SHA256=71efeecdedf5417d62b2c7991d4e01df6f9e3fb1283faa74284ad7db5440df08
 BIN="$TOOLS/openmsx/bin/openmsx"
 APP="$TOOLS/openmsx/openMSX.app"
 
