@@ -37,7 +37,7 @@ kernel ROM fills with `FFh`, so they never read as the signature.
 | 0–3 | r | the signature, `"M6BD"` |
 | 4 | r | the version, 1 |
 | 5 | r | capabilities: bit 0 Turbo offered; bit 1 the FAT accelerator's commands answer; bit 2 reserved (a data window), 0; bits 5–4 the subslot of the cartridge's own slot holding the memory mapper the device serves; bit 7 the device serves a mapper there |
-| 6 | r | devices the block answers for, 1–N |
+| 6 | r | devices the block answers for, 1–N: every device the cartridge presents, numbered as the cartridge numbers them (on an SD Mapper, the card slot) |
 | 7 | w | the device of the next command, 1–N |
 | 8–11 | w | the first sector, little-endian |
 | 12 | w | sectors, 1–32 |
@@ -76,13 +76,22 @@ target segment and slot, and a probe byte it has put at the target, then
 the command. The device compares the byte at the target with the probe
 before anything moves, refuses with error `01h` when they differ — the
 target is not in its RAM — and otherwise writes `count × 512` bytes at
-the target from the medium. The command is done, and the status reads
-`00h`, when every byte is in RAM; until then the target holds its old
-bytes. A write is the same with the direction reversed: the probe byte
-is the target's first byte, and the command is done when the medium has
-every byte — a device keeps no write cache of its own, so a card pulled
-after the call has what the call wrote. A command never crosses the
-16K segment: `slot + 2 × count ≤ 64`.
+the target from the medium. A target that does not lie within its RAM
+at all is refused with `01h` as well, never with another code. The
+command is done, and the status reads `00h`, when every byte is in RAM;
+until then the target holds its old bytes, its first byte the probe. A
+write is the same with the direction reversed: the probe byte is the
+target's first byte, and the command is done when the medium has every
+byte — a device keeps no write cache of its own, so a card pulled after
+the call has what the call wrote. A command never crosses the 16K
+segment: `slot + 2 × count ≤ 64`.
+
+A device ends every command within 4 seconds of the write that started
+it: when the medium has not answered by then, the status reads `03h`.
+Once the status no longer reads `80h` the device touches neither the
+target nor the medium for that command again, whatever it reports. A
+driver that still reads `80h` after a bound longer than that takes the
+device as failed, and writes no register until the status clears.
 
 The driver polls the status with interrupts enabled; the device never
 asserts an interrupt. The driver writes no register while the status
@@ -90,9 +99,13 @@ reads `80h`. Throughout a command the device keeps serving the bus for
 its mapper: the kernel, its interrupt handler and the polling loop all
 run from that RAM meanwhile.
 
-A driver falls back on its own transfer path when the probe is refused,
-which is what lets Turbo become a per-page matter on a machine where
-process pages live in more than one mapper.
+A driver falls back on its own transfer path when the probe is refused.
+On a read the probe tells the device's RAM from any other, since the
+driver has just made the target's first byte differ from what was
+there; on a write it is the target's own byte, which another mapper may
+hold at the same address, so a write's probe proves the target only
+because Turbo is in force solely while the device's mapper is the
+primary one.
 
 ## The FAT accelerator
 

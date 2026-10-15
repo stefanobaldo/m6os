@@ -572,6 +572,10 @@ sd_query:
         ld      b,a
         ret
 sd_mode:
+        ld      a,c
+        dec     a
+        cp      2
+        jr      nc,sd_nxio
         ld      a,(hl)
         cp      DM_TURBO
         jr      nz,.standard
