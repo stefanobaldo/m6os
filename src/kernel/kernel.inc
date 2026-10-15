@@ -802,8 +802,14 @@ DRV_RW          equ 16          ; jp: A = device, CF = write, B = count
                                 ;     1-32, C = slot, DE:HL = sector -> A =
                                 ;     errno, B = the driver's code
 DRV_QUERY       equ 19          ; jp: A = device, B = DQ_*, HL = its block
-DRV_RES1        equ 22          ; jp: reserved, answers CF and E_NOSYS
-DRV_RES2        equ 25          ; jp: reserved, the same
+DRV_PROBE       equ 22          ; jp: the probe: -> A = the subslot of this
+                                ;     cartridge's slot holding the mapper the
+                                ;     device writes, CF clear, when it offers
+                                ;     Turbo; CF set otherwise (E_NOSYS from a
+                                ;     block with no probe). Called by the
+                                ;     kernel ROM's boot before init, with no
+                                ;     block RAM, no page 2 and no tick
+DRV_RES2        equ 25          ; jp: reserved, answers CF and E_NOSYS
 DRV_RAM         equ 28          ; 2: bytes of page 3 the block wants
 DRV_RELOC       equ 30          ; 2: reserved, 0
 DRV_NAME        equ 32          ; 16: the block's name, space padded
@@ -815,7 +821,9 @@ DF_TURBO        equ 1           ; the block can take a Turbo target
 DI_FLAGS        equ 0           ; DIF_*: LUN_INFO's bits, and bit 7
 DI_CAPS         equ 1           ; DIC_*
 DI_COUNT        equ 2           ; 4: sectors; 0 unknown or no medium
-DI_TSLOT        equ 6           ; the mapper slot a Turbo device writes
+DI_TSLOT        equ 6           ; 80h | subslot << 2: the subslot of the
+                                ;     cartridge's own slot holding the mapper
+                                ;     a Turbo device writes; 0 none
 DI_NAME         equ 8           ; 32: the name the listing prints
 DI_IDENT        equ 40          ; 16: slot, device, LUN (1 = none), 0, then
                                 ;     the driver's own
@@ -835,8 +843,50 @@ DQ_FATCOUNT     equ 1           ; query: the FAT accelerator's four
 DQ_FATNEXT      equ 2
 DQ_FATWALK      equ 3
 DQ_FATFREE      equ 4
-DQ_MODE         equ 10h         ; the transfer mode (Standard, Turbo)
+DQ_MODE         equ 10h         ; the transfer mode: byte 0 in, DM_* asked;
+                                ;     byte 1 out, the mode in force
 DQ_PRIVATE      equ 80h         ; from here the driver's own
+DM_STANDARD     equ 0
+DM_TURBO        equ 1
+
+; The m6 block device (docs/block-device.md): sixty-four registers a
+; cartridge presents at BD_BASE of page 1 while the driver bank is
+; selected, through which a device that is itself the machine's memory
+; mapper moves sectors into that RAM — Turbo — with the CPU moving
+; nothing. A cartridge without it shows the ROM's own bytes there (FFh,
+; rom.asm's fill), never the signature.
+BD_BASE         equ 7F00h
+BD_SIGN         equ BD_BASE+0   ; 4: "M6BD"
+BD_VER          equ BD_BASE+4   ; BD_VER_1
+BD_CAPS         equ BD_BASE+5   ; BDC_*
+BD_NDEV         equ BD_BASE+6   ; devices the block answers for, 1-N
+BD_DEV          equ BD_BASE+7   ; w: the device of the next command
+BD_LBA          equ BD_BASE+8   ; w, 4: the first sector, little-endian
+BD_COUNT        equ BD_BASE+12  ; w: sectors, 1-32
+BD_SEG          equ BD_BASE+13  ; w: the target segment
+BD_SLOT         equ BD_BASE+14  ; w: the target's 256-byte slot, 0-62
+BD_PROBE        equ BD_BASE+15  ; w: the probe byte
+BD_CMD          equ BD_BASE+16  ; w: BDO_*; the write starts the command
+BD_STAT         equ BD_BASE+17  ; BDS_BUSY, 0 done, or BDE_*
+BD_RES          equ BD_BASE+18  ; 4: a 32-bit result
+BD_PARM         equ BD_BASE+22  ; w, 42: parameters of other commands
+BD_SIZE         equ 64
+BD_VER_1        equ 1
+BDC_TURBO       equ 1           ; Turbo offered
+BDC_FATACC      equ 2           ; the FAT accelerator's commands answer
+BDC_WINDOW      equ 4           ; reserved: a data window
+BDC_MSUB        equ 30h         ; bits 5-4: the mapper's subslot
+BDC_MAPPER      equ 80h         ; the device serves a mapper there
+BDO_READ        equ 1           ; medium -> RAM
+BDO_WRITE       equ 2           ; RAM -> medium
+BDS_BUSY        equ 80h
+BDE_PROBE       equ 1           ; the probe byte is not at the target
+BDE_RANGE       equ 2
+BDE_IO          equ 3
+BDE_NOMEDIUM    equ 4
+BDE_RO          equ 5
+BDE_PARAM       equ 6
+BDE_CMD         equ 7
 
 ; The storage segment: the boot segment of page 2 (KR_SEG64K+2), the
 ; kernel's, addressed as (segment, offset) — the switched part sees it at
@@ -936,6 +986,8 @@ SV_IDENT        equ ST_VARS+112 ; 3: the device's identity: slot, device,
 SV_NXDEV        equ ST_VARS+115 ; a Nextor bank: the device DEV_INFO was
 SV_NXLUNS       equ ST_VARS+116 ;    asked for, and its LUNs; 0 = none yet
 SV_NXLUN        equ ST_VARS+117 ;    the LUN being walked
+SV_TMODE        equ ST_VARS+118 ; the device's transfer mode, DM_*, once
+                                ;    the boot has asked (kboot.asm bi_turbo)
 PK_PRIMARY      equ 0
 PK_LOGICAL      equ 1
 PK_SUPER        equ 2

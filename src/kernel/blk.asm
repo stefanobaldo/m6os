@@ -282,7 +282,7 @@ blk_jp: jp      0                       ; the operand is the entry
 ; Nextor's own queries have no entry in a block: the reserved one answers.
 blk_optab:
         db      DRV_RW, DRV_INIT, DRV_INFO, DRV_STATUS, DRV_QUERY
-        db      DRV_RES1, DRV_RES1, DRV_RES1
+        db      DRV_RES2, DRV_RES2, DRV_RES2
         ASSERT  high blk_optab == high (blk_optab+7)
 
 ; blk_tgtseg — A = the segment the current transfer's target is in: what

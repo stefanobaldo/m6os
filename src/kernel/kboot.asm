@@ -182,6 +182,7 @@ bi_device:
         ld      bc,3
         ldir
         call    bi_name                 ; the name into SV_NAME
+        call    bi_turbo                ; its transfer mode into SV_TMODE
         ld      a,(SG_INFO+DI_FLAGS)
         bit     7,a
         jr      nz,.novol               ; no medium
@@ -207,6 +208,75 @@ bi_device:
 .novol: call    bi_dev
         ld      hl,s_novolumes
         k_call  API_CON_PUTS
+        ret
+
+; bi_turbo — the device's transfer mode: Turbo when its record offers
+; it (DI_CAPS) and names a mapper (DI_TSLOT, a subslot of the driver's
+; own slot) that is the primary one — which the kernel ROM's boot made
+; true when it could — asked of the driver through DQ_MODE, whose
+; answer, the mode in force, goes to SV_TMODE for the listing. A Nextor
+; bank has no mode. Corrupts everything.
+bi_turbo:
+        xor     a
+        ld      (SG+SV_TMODE),a
+        ld      a,(SG+SV_KIND)
+        or      a
+        ret     z
+        ld      a,(SG_INFO+DI_CAPS)
+        and     DIC_TURBO
+        ret     z
+        ld      a,(SG_INFO+DI_TSLOT)
+        bit     7,a
+        ret     z
+        and     8Ch
+        ld      c,a
+        ld      a,(SG+SV_DRV)
+        ld      e,a
+        add     a,a
+        add     a,e                     ; * KD_SIZE
+        add     a,KR_DRVS+KD_SLOT
+        ld      l,a
+        ld      h,0
+        ld      de,K_REC
+        add     hl,de
+        ld      a,(hl)
+        and     3
+        or      c
+        ld      (SG+SV_TMODE),a         ; the mapper's slot id, until the
+        k_call  API_MEM_INFO            ; compare (the call corrupts BC)
+        ld      b,(hl)
+        inc     hl
+.map:   ld      a,b
+        or      a
+        jr      z,.none                 ; no primary: no Turbo
+        ld      a,(hl)
+        inc     hl
+        inc     hl
+        inc     hl
+        bit     0,(hl)                  ; MMF_PRIMARY
+        inc     hl
+        jr      nz,.primary
+        dec     b
+        jr      .map
+.primary:
+        ld      hl,SG+SV_TMODE
+        cp      (hl)
+        jr      nz,.none                ; the primary is elsewhere
+        ld      a,DM_TURBO
+        ld      (SG_SCRATCH),a
+        ld      a,(SG+SV_DEV)
+        ld      b,a
+        ld      a,(SG+SV_DRV)
+        ld      d,BQ_QUERY
+        ld      e,DQ_MODE
+        ld      hl,8000h+ST_SCRATCH
+        k_call  API_BLK_QUERY
+        jr      c,.none
+        ld      a,(SG_SCRATCH+1)
+        ld      (SG+SV_TMODE),a
+        ret
+.none:  xor     a
+        ld      (SG+SV_TMODE),a
         ret
 
 ; bi_info — the DI_SIZE record of device SV_DEV of driver SV_DRV into
@@ -768,8 +838,13 @@ bi_row:
         pop     af
         ld      hl,K_BLK_ROOT
         cp      (hl)
-        jr      nz,.nl
+        jr      nz,.mode
         ld      hl,s_root
+        k_call  API_CON_PUTS
+.mode:  ld      a,(SG+SV_TMODE)
+        cp      DM_TURBO
+        jr      nz,.nl
+        ld      hl,s_turbo
         k_call  API_CON_PUTS
 .nl:    k_call  API_CON_NEWLINE
         ret
@@ -1076,6 +1151,7 @@ s_mnt:        db "/mnt/",0
 s_two:        db "  ",0
 s_kb:         db " KB",0
 s_root:       db " /",0
+s_turbo:    db  " turbo",0
 
 ; cache_init — every header free, the clock at 0; and every row of the
 ; open-file table (ks_vfs.asm) nobody's, since this is where the storage
