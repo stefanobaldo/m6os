@@ -14,6 +14,14 @@
 # boot line with its tick count (a hint, printed), and the file the
 # script wrote, read from the image with the emulator gone.
 set show_screen 1
+# Which mapper is which, by the machine: the cartridge's in subslot 3 of
+# slot 1 on m6-msx2-128k and of slot 2 on -ram1, whose own mapper is in
+# plain slot 1 — so a BIOS that changed its choice shows as a failure.
+if {[machine_info config_name] eq "m6-msx2-128k-ram1"} {
+    set cart {2\.3}; set own 1
+} else {
+    set cart {1\.3}; set own {3\.2}
+}
 
 proc rows {} {
     if {[catch {get_screen} s]} { return {} }
@@ -37,12 +45,12 @@ proc has_re {re} {
 proc wait_rc {} {
     if {[has_row "rc done"] && [has_row {/ $}]} {
         puts stderr "boot3-turbo.tcl: rc done at [format %.2f [machine_info time]] s"
-        foreach want {
-            {^mapper [0-3](\.[0-3])?: 27 segments, primary, }
-            {^mapper [0-3](\.[0-3])?: 8 segments, not used$}
-            {^/mnt/a  enMSX 0\.1 SDHC .* / turbo$}
-            {^  2: no volumes$}
-        } {
+        foreach want [list \
+            "^mapper $::cart: 27 segments, primary, " \
+            "^mapper $::own: 8 segments, not used\$" \
+            {^/mnt/a  enMSX 0\.1 SDHC .* / turbo$} \
+            {^  2: no volumes$} \
+        ] {
             if {![has_re $want]} {
                 finish 1 "no row matching \"$want\" on the screen"
                 return
