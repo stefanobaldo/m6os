@@ -75,6 +75,18 @@ to install.
   needs no download from the cartridge's maker; the ROM with the
   cartridge's own driver remains as `build/m6-sdmapper-legacy.rom`. The
   whole disk test suite runs from this ROM in the emulated cartridge too.
+- Turbo, and the block device it rides on. `docs/block-device.md` is the
+  specification of a register block a storage cartridge that is itself
+  the machine's memory mapper may present: through it the cartridge moves
+  sectors between its medium and that RAM with the CPU moving nothing.
+  The SD driver uses it where it finds it: the kernel ROM's boot makes
+  the cartridge's mapper the machine's main memory when the BIOS has not,
+  the memory lines of the boot listing show the machine's own mapper
+  unused beside it, and the volume's row ends with the word `turbo`. On
+  the emulated cartridge a 64 KB `read()` takes about a third less time
+  than through the SPI window, and a 32-sector transfer a small fraction
+  of it. A cartridge that offers Turbo with no mapper behind the claim
+  is found out at boot and run as before. No cartridge offers Turbo yet.
 - Memory. The kernel finds every memory mapper in the machine and allocates 16K
   segments of the one it runs in, never handing out a segment that does not
   exist or was already in use when it started. A `mem=<K>` argument caps the

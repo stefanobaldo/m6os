@@ -74,7 +74,17 @@ MSX-Pico+ the file replaces the Nextor ROM in the firmware's system-ROM
 image and is flashed with it; the card needs no system file, as above.
 A card changed while the system runs is refused until the next boot:
 changing cards with the system up is not supported yet. It has been run
-in an emulated SD Mapper V2 and not yet on the cartridge itself.
+in an emulated SD Mapper V2 and not yet on the cartridge itself. On a
+cartridge that offers Turbo — one that is itself the machine's memory
+mapper and presents the block device of
+[`docs/block-device.md`](docs/block-device.md) beside the SD Mapper's
+registers — the driver lets the cartridge write each sector into that
+RAM itself: the kernel makes the cartridge's mapper the machine's main
+memory at boot, says so in the memory lines of the listing, and marks
+the volume's row with the word `turbo`; a machine whose own mapper is
+larger gives that capacity up, and the cartridge's own configuration is
+where Turbo is turned off. No cartridge offers it yet; the emulated one
+the tests run on does.
 `build/m6-sdmapper-legacy.rom`, built beside it from the cartridge's own
 kernel ROM — Nextor with the SDXC driver, which `make fetch` downloads
 from FBLabs's release — carries that driver instead, taken whole, the
