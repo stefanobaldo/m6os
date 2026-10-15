@@ -92,7 +92,8 @@ echo xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 /t/tick > /t/s1; sleep 1; /t/tick > /t/s2
 # Processes: a script shell, a job, ps and kill. The shell is in its
 # wait when ps reads the table, or still runnable when a tick fell
-# between the spawn and the wait, and r54 takes either.
+# between the spawn and the wait, and r54 takes either; the job is
+# asleep, or still runnable when ps ran before it reached its sleep.
 sh < /t/procs > /t/r54 2> /t/r54e
 sh < /t/jobs > /t/j 2> /t/r62e
 sh < /etc/bench1
