@@ -344,6 +344,11 @@ rm_start:
         ld      hl,rm_ram
         cp      (hl)
         jr      z,.inited
+        ld      c,a
+        xor     (hl)
+        and     3                       ; page 3's RAM behind the same
+        jr      z,.inited               ; primary: the move cannot be made
+        ld      a,c
         ld      (rm_tslot),a
         jr      .inited
 .nextor:
@@ -524,8 +529,9 @@ rm_start:
 ; page 3's segment is copied whole through page 0 and page 3 switched
 ; to the cartridge: the same bytes, so the stack and the variables go
 ; on; rm_ram, the record's RAM slots and the BIOS's RAMAD0-3 follow.
-; A mapper that does not answer: page 0 back to the BIOS, rm_tslot
-; cleared, nothing else changed. Corrupts everything.
+; SLTTBL keeps the cartridge's subslot register true. A mapper that
+; does not answer: the register as it was, page 0 back to the BIOS,
+; rm_tslot cleared, nothing else changed. Corrupts everything.
 rm_move:
         in      a,(PPI_A)
         ld      (rm_ppi),a
@@ -539,6 +545,7 @@ rm_move:
         out     (PPI_A),a               ; page 3 := the cartridge's primary
         ld      a,(0FFFFh)              ; its subslot register: pages 0
         cpl                             ; and 3 to the mapper's subslot,
+        ld      (rm_ssr0),a
         and     3Ch                     ; pages 1 and 2 as they are
         ld      c,a
         ld      a,(rm_tslot)
@@ -551,6 +558,7 @@ rm_move:
         or      b
         or      c
         ld      (0FFFFh),a
+        ld      (rm_ssr),a
         ld      a,(rm_ppi)
         out     (PPI_A),a               ; page 3 := the RAM back
         and     0FCh
@@ -576,6 +584,13 @@ rm_move:
         ld      a,(hl)
         cp      55h
         jr      nz,.absent
+        ld      a,(rm_tslot)            ; SLTTBL[the cartridge's primary],
+        and     3                       ; before the copy carries it
+        add     a,low B_SLTTBL          ; no carry: C5h + 3
+        ld      l,a
+        ld      h,high B_SLTTBL
+        ld      a,(rm_ssr)
+        ld      (hl),a
         ld      hl,0C000h               ; page 3, whole, into the same
         ld      de,0                    ; segment of the candidate
         ld      bc,4000h
@@ -611,7 +626,18 @@ rm_move:
         ret
 .absent:
         ld      a,(rm_ppi)
-        out     (PPI_A),a               ; page 0 := the BIOS
+        and     3Fh
+        ld      c,a
+        ld      a,(rm_tslot)
+        and     3
+        rrca
+        rrca
+        or      c
+        out     (PPI_A),a               ; page 3 := the cartridge's primary
+        ld      a,(rm_ssr0)
+        ld      (0FFFFh),a              ; its subslot register as it was
+        ld      a,(rm_ppi)
+        out     (PPI_A),a               ; page 3 := the RAM, page 0 := the BIOS
         xor     a
         ld      (rm_tslot),a
         ret
@@ -663,6 +689,8 @@ rm_tslot:   db  0                       ; the slot of the mapper a Turbo
                                         ; device writes, when page 3 is
                                         ; to move there; else 0
 rm_ppi:     db  0                       ; the PPI before rm_move
+rm_ssr0:    db  0                       ; the cartridge's subslot register
+rm_ssr:     db  0                       ; ... before rm_move and after
 rm_drvbank: db  0                       ; the driver's bank
 rm_wall:    dw  0
 rm_rec:     ds  KREC_SIZE               ; the record, zero in the ROM
