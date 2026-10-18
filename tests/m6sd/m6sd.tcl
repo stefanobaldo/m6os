@@ -37,5 +37,15 @@ proc post_verdict {} {
         }
     }
     puts stderr "harness: $::test: card 2's last 32 sectors hold the pattern"
+    # Step 9's line: the queries answered on a cartridge whose block
+    # offers the accelerator (turbo, fatacc), E_NOSYS on the plain one.
+    set want " fatacc: no"
+    if {[info exists ::env(M6_CART)] && $::env(M6_CART) in {turbo fatacc}} { set want " fatacc: yes" }
+    set seen 0
+    if {![catch {get_screen} s]} {
+        foreach r [split $s \n] { if {[string match "*$want*" $r]} { set seen 1 } }
+    }
+    if {!$seen} { return "the block did not report$want" }
+    puts stderr "harness: $::test: the FAT accelerator's queries:[string range $want 8 end]"
     return [probe_report]
 }

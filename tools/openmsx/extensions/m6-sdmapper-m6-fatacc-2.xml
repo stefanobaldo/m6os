@@ -1,0 +1,36 @@
+<?xml version="1.0" ?>
+<!DOCTYPE msxconfig SYSTEM 'msxconfig2.dtd'>
+<msxconfig>
+  <info>
+    <name>SD Mapper V2 compatible test cartridge with the m6 kernel ROM, the m6 block device offering the FAT accelerator alone, two cards</name>
+    <manufacturer>m6 (emulated only)</manufacturer>
+    <code/>
+    <release_year>2026</release_year>
+    <description>The SD Mapper V2 cartridge with the m6 kernel ROM (build/m6-sdmapper.rom, copied into the ROM pool by the harness; no checksum, the ROM changes with every build) presenting the m6 block device's registers in bank 7 beside its own, the block offering the FAT accelerator's commands and not Turbo — the shape of a cartridge with no memory of its own that still reads the table for the kernel; two cards: card 1 the image given with -hda, an SDHC card; card 2 the image given to the hdb command, a standard-capacity (SDSC) card addressed by byte.</description>
+    <type>external hard disk</type>
+  </info>
+  <devices>
+    <primary slot="any">
+      <secondary slot="0">
+        <SDMapperV2 id="SD Mapper V2">
+          <mem base="0x4000" size="0x8000"/>
+          <rom>
+            <filename>../systemroms/m6-sdmapper.rom</filename>
+          </rom>
+          <sdcard1>
+            <filename>sd_card1.dsk</filename>
+            <size>2</size>
+          </sdcard1>
+          <sdcard2>
+            <type>SDSC</type>
+            <filename>sd_card2.dsk</filename>
+            <size>2</size>
+          </sdcard2>
+          <m6block>
+            <turbo>false</turbo>
+          </m6block>
+        </SDMapperV2>
+      </secondary>
+    </primary>
+  </devices>
+</msxconfig>

@@ -814,6 +814,112 @@ t_entry:
         ld      hl,t_ok
         k_call  API_CON_PUTS
 
+; --- step 13: the allocator past the hint's table sector ------------------------------
+        ld      a,13
+        ld      (t_step),a
+        ld      hl,t_k13
+        k_call  API_CON_PUTS
+        ; Two 64K files and a byte on /mnt/d, the FAT16 volume whose
+        ; table is 256 sectors and whose first clusters files.tcl's
+        ; files hold: 257 clusters, one more than the table sector the
+        ; hint started in holds — on a device with the accelerator the
+        ; last one is the device's answer, elsewhere the walk's. The
+        ; count before, in the 32-bit field, less 257 after; then the
+        ; files given back and the count as before.
+        ld      a,3                     ; /mnt/d
+        ld      hl,t_buf
+        ld      b,1
+        sys     SYS_STATFS
+        jp      c,t_fail
+        ld      hl,(t_buf+SF_FREE32)
+        ld      (t_free0),hl
+        ld      hl,p_dx
+        call    t_w64k
+        ld      hl,p_dy
+        call    t_w64k
+        ld      hl,p_dz
+        ld      a,O_CW
+        sys     SYS_OPEN
+        jp      c,t_fail
+        ld      (t_fd),a
+        ld      hl,s_abc
+        ld      bc,1
+        sys     SYS_WRITE
+        jp      c,t_fail
+        ld      a,(t_fd)
+        sys     SYS_CLOSE
+        ld      hl,(t_free0)
+        ld      de,257
+        or      a
+        sbc     hl,de
+        ex      de,hl
+        ld      a,0F7h
+        call    t_dfree
+        ld      hl,p_dx
+        sys     SYS_UNLINK
+        jp      c,t_fail
+        ld      hl,p_dy
+        sys     SYS_UNLINK
+        jp      c,t_fail
+        ld      hl,p_dz
+        sys     SYS_UNLINK
+        jp      c,t_fail
+        ld      de,(t_free0)
+        ld      a,0F8h
+        call    t_dfree
+        ld      hl,t_ok
+        k_call  API_CON_PUTS
+        jp      t_verdict
+
+; t_w64k — HL = a path: created and 64K written to it, 128 writes of
+; 512 bytes from t_buf, then closed. Fails the step on an error.
+t_w64k: ld      a,O_CW
+        sys     SYS_OPEN
+        jp      c,t_fail
+        ld      (t_fd),a
+        ld      b,128
+.w:     push    bc
+        ld      a,(t_fd)
+        ld      hl,t_buf
+        ld      bc,512
+        sys     SYS_WRITE
+        pop     bc
+        jp      c,t_fail
+        djnz    .w
+        ld      a,(t_fd)
+        sys     SYS_CLOSE
+        ret
+
+; t_dfree — DE = the free clusters /mnt/d must have, A = the code to
+; fail with: statfs with the count, SF_FREE32 compared.
+t_dfree:
+        ld      (t_dcode),a
+        push    de
+        ld      a,3                     ; /mnt/d
+        ld      hl,t_buf
+        ld      b,1
+        sys     SYS_STATFS
+        pop     de
+        jp      c,t_fail
+        ld      hl,(t_buf+SF_FREE32)
+        or      a
+        sbc     hl,de
+        jr      nz,.no
+        ld      hl,(t_buf+SF_FREE32+2)
+        ld      a,h
+        or      l
+        ret     z
+.no:    ld      hl,(t_buf+SF_FREE32)    ; the count seen, the evidence
+        k_call  API_CON_HEX16
+        ld      a,' '
+        k_call  API_CON_PUTC
+        ld      hl,(t_buf+SF_NCLUS32)
+        k_call  API_CON_HEX16
+        ld      a,' '
+        k_call  API_CON_PUTC
+        ld      a,(t_dcode)
+        jp      t_fail
+
 ; --- verdict --------------------------------------------------------------
 t_verdict:
         ld      hl,t_pass
@@ -1247,6 +1353,7 @@ t_k10:      db  "10 writer",10,0
 t_k10b:     db  "10 writer ok",10,0
 t_k11:      db  "11 dirs:",0
 t_k12:      db  "12 full:",0
+t_k13:      db  "13 accel:",0
 t_rootn:    db  "11 root entries ",0
 t_ok:       db  " ok",10,0
 t_pass:     db  "PASS",10,0
@@ -1283,6 +1390,9 @@ p_m1:       db  "/tmp/m1",0
 p_m1sub:    db  "/tmp/m1/sub",0
 p_sub2:     db  "/tmp/d1/sub2",0
 p_spare:    db  "/mnt/b/spare.bin",0
+p_dx:       db  "/mnt/d/x.bin",0
+p_dy:       db  "/mnt/d/y.bin",0
+p_dz:       db  "/mnt/d/z.bin",0
 p_again:    db  "/mnt/b/again.txt",0
 s_abc:      db  "abc"
 s_X:        db  "X"
@@ -1297,6 +1407,8 @@ dots_names: db  ".",0,"..",0,0
 t_step:     db  0
 t_n:        db  0
 t_fd:       db  0
+t_dcode:    db  0
+t_free0:    dw  0
 t_want:     db  0
 t_names:    dw  0
 t_pat:      dw  0
