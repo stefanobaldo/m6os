@@ -1,0 +1,5 @@
+# The volumes' space through df, once a file has taken clusters on the
+# large FAT16 volume, and the line the harness waits for.
+cat /big > /mnt/b/big
+df
+echo rc done

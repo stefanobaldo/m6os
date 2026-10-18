@@ -34,7 +34,14 @@
 ; in Turbo and again in Standard, the mode switched through DQ_MODE,
 ; must be the same bytes, the mode back in Turbo after; on a cartridge
 ; without the block the step records that Turbo is not offered. The
-; line printed says which.
+; line printed says which. Last, the FAT accelerator's two queries: on
+; a device whose block answers them, three tables — FAT32, FAT16 and
+; FAT12, every entry c free when c mod 3 = 0 — written to card 2's
+; sectors T_FATS up and asked for counts and next free clusters, whole
+; and over a one-sector span, a FAT12 entry across two sectors among
+; them, and three refusals (a type that is no FAT's, a cluster below 2,
+; a table running past the device); on a device without them, E_NOSYS.
+; The line printed says which.
         include "m6test.inc"
 
     IFDEF M6SD_LEGACY
@@ -44,6 +51,7 @@ T_SLAVE         equ 2
     ENDIF
 T_TOTAL         equ 4096        ; sectors of each 2 MB image
 T_LAST          equ T_TOTAL-32  ; the slave's last 32 sectors
+T_FATS          equ T_LAST-32   ; step 9's tables: 8 sectors from here
 T_REC2          equ 0F380h-58+24 ; the SD driver's record of slot 2
 T_MODE          equ 0F380h-58+56 ; the driver's SD_MODE byte
 SD_FLAGS_       equ 1           ; its flags: bit 1 absent
@@ -422,7 +430,7 @@ tb_start:                               ; SP is the kernel's, at K_END
         call    t_ok
         ld      hl,ts_turbo_yes
         k_call  API_CON_PUTS
-        jr      .pass
+        jr      .step9
 .differ:
         call    t_page2
         ld      a,0E3h                  ; Turbo and Standard bytes differ
@@ -433,12 +441,353 @@ tb_start:                               ; SP is the kernel's, at K_END
     ENDIF
         ld      hl,ts_turbo_no
         k_call  API_CON_PUTS
+.step9:
+
+; --- step 9: the FAT accelerator's two queries -----------------------------
+        ld      a,9
+        call    t_begin
+    IFNDEF M6SD_LEGACY
+        xor     a
+        ld      b,1
+        ld      d,BQ_INFO
+        ld      hl,T_PARAMS
+        k_call  API_BLK_QUERY
+        call    t_page2
+        jp      c,t_fail
+        ld      a,(T_PARAMS+DI_CAPS)
+        and     DIC_FATACC
+        jp      z,.noacc
+        ; FAT32: entries 2 to 1001.
+        ld      a,32
+        call    t_table
+        jp      c,t_fail
+        ld      a,DQ_FATCOUNT
+        ld      hl,2
+        ld      de,0
+        ld      bc,333
+        call    t_qis
+        jp      c,t_fail
+        ld      a,DQ_FATCOUNT
+        ld      hl,500
+        ld      de,0
+        ld      bc,167
+        call    t_qis
+        jp      c,t_fail
+        ld      a,DQ_FATNEXT
+        ld      hl,2
+        ld      de,0
+        ld      bc,3
+        call    t_qis
+        jp      c,t_fail
+        ld      a,DQ_FATNEXT
+        ld      hl,1000
+        ld      de,0
+        ld      bc,0
+        call    t_qis
+        jp      c,t_fail
+        ld      a,DQ_FATCOUNT
+        ld      hl,2
+        ld      de,1                    ; the span: one sector
+        ld      bc,42
+        call    t_qis
+        jp      c,t_fail
+        ; FAT16: entries 2 to 2001.
+        ld      a,16
+        call    t_table
+        jp      c,t_fail
+        ld      a,DQ_FATCOUNT
+        ld      hl,2
+        ld      de,0
+        ld      bc,667
+        call    t_qis
+        jp      c,t_fail
+        ld      a,DQ_FATNEXT
+        ld      hl,2000
+        ld      de,0
+        ld      bc,2001
+        call    t_qis
+        jp      c,t_fail
+        ld      a,DQ_FATCOUNT
+        ld      hl,2
+        ld      de,1
+        ld      bc,85
+        call    t_qis
+        jp      c,t_fail
+        ; FAT12: entries 2 to 2001, entry 341 across two sectors.
+        ld      a,12
+        call    t_table
+        jp      c,t_fail
+        ld      a,DQ_FATCOUNT
+        ld      hl,2
+        ld      de,0
+        ld      bc,667
+        call    t_qis
+        jp      c,t_fail
+        ld      a,DQ_FATCOUNT
+        ld      hl,2
+        ld      de,1
+        ld      bc,113
+        call    t_qis
+        jp      c,t_fail
+        ld      a,DQ_FATNEXT
+        ld      hl,340
+        ld      de,0
+        ld      bc,342
+        call    t_qis
+        jp      c,t_fail
+        ; Refused: a type that is no FAT's, a cluster below 2, a table
+        ; that runs past the device.
+        ld      a,13
+        ld      (t_qtype),a
+        ld      a,DQ_FATCOUNT
+        ld      hl,2
+        ld      de,0
+        call    t_fatq
+        ld      b,E_INVAL
+        call    t_qerr
+        jp      c,t_fail
+        ld      a,16
+        ld      (t_qtype),a
+        ld      a,DQ_FATNEXT
+        ld      hl,0
+        ld      de,0
+        call    t_fatq
+        ld      b,E_INVAL
+        call    t_qerr
+        jp      c,t_fail
+        ld      hl,T_TOTAL-2
+        ld      (t_qfat),hl
+        ld      a,DQ_FATCOUNT
+        ld      hl,2
+        ld      de,0
+        call    t_fatq
+        ld      b,E_IO
+        call    t_qerr
+        jp      c,t_fail
+        call    t_ok
+        ld      hl,ts_fatacc_yes
+        k_call  API_CON_PUTS
+        jr      .pass
+.noacc:
+    ENDIF
+        ; Without the capability — or through the adapter — the queries
+        ; answer E_NOSYS.
+        ld      a,16
+        ld      (t_qtype),a
+        ld      hl,T_FATS
+        ld      (t_qfat),hl
+        ld      a,DQ_FATCOUNT
+        ld      hl,2
+        ld      de,0
+        call    t_fatq
+        ld      b,E_NOSYS
+        call    t_qerr
+        jp      c,t_fail
+        call    t_ok
+        ld      hl,ts_fatacc_no
+        k_call  API_CON_PUTS
 .pass:  ld      hl,ts_pass
         k_call  API_CON_PUTS
         m6_verdict M6_PASS
 t_halt: ei
         halt
         jr      t_halt
+
+; t_table — A = the type, 12, 16 or 32: the 8 sectors of a table of
+; that type with 2000 data clusters (1000 for FAT32), every entry c
+; free when c mod 3 = 0 and marked otherwise (FFFh, FFFFh, F0000001h —
+; a FAT32 entry's top four bits set either way, to be ignored), built
+; in the test's segment and written to card 2's sectors T_FATS up;
+; t_qfat and t_qtype set for the queries. CF when the write failed.
+; Corrupts everything.
+t_table:
+        ld      (t_qtype),a
+        ld      hl,T_FATS
+        ld      (t_qfat),hl
+        ld      a,(t_seg)
+        out     (0FEh),a
+        ld      hl,8000h
+        ld      de,8001h
+        ld      bc,4095
+        ld      (hl),0
+        ldir
+        ld      hl,0
+        ld      (t_c),hl
+        xor     a
+        ld      (t_mod3),a
+.entry: ld      a,(t_mod3)
+        or      a
+        ld      a,0                     ; free: 00
+        jr      z,.v
+        dec     a                       ; marked: FF
+.v:     ld      (t_v),a
+        ld      a,(t_qtype)
+        cp      32
+        jr      z,.e32
+        cp      16
+        jr      z,.e16
+        ld      hl,(t_c)                ; FAT12: byte c + c/2 up
+        ld      d,h
+        ld      e,l
+        srl     d
+        rr      e
+        add     hl,de
+        ld      de,8000h
+        add     hl,de
+        ld      a,(t_c)
+        rra
+        ld      a,(t_v)
+        jr      c,.odd
+        ld      (hl),a                  ; even: the whole byte, then the
+        inc     hl                      ;   low nibble of the next
+        and     0Fh
+        ld      b,a
+        ld      a,(hl)
+        and     0F0h
+        or      b
+        ld      (hl),a
+        jr      .step
+.odd:   and     0F0h                    ; odd: the high nibble of the
+        ld      b,a                     ;   byte, then the whole next
+        ld      a,(hl)
+        and     0Fh
+        or      b
+        ld      (hl),a
+        inc     hl
+        ld      a,(t_v)
+        ld      (hl),a
+        jr      .step
+.e16:   ld      hl,(t_c)
+        add     hl,hl
+        ld      de,8000h
+        add     hl,de
+        ld      a,(t_v)
+        ld      (hl),a
+        inc     hl
+        ld      (hl),a
+        jr      .step
+.e32:   ld      hl,(t_c)
+        add     hl,hl
+        add     hl,hl
+        ld      de,8000h
+        add     hl,de
+        ld      a,(t_v)
+        and     1
+        ld      (hl),a
+        inc     hl
+        ld      (hl),0
+        inc     hl
+        ld      (hl),0
+        inc     hl
+        ld      (hl),0F0h
+.step:  ld      a,(t_mod3)
+        inc     a
+        cp      3
+        jr      nz,.m3
+        xor     a
+.m3:    ld      (t_mod3),a
+        ld      hl,(t_c)
+        inc     hl
+        ld      (t_c),hl
+        ld      de,2002                 ; N + 2: past the last entry
+        ld      a,(t_qtype)
+        cp      32
+        jr      nz,.last
+        ld      de,1002
+.last:  or      a
+        sbc     hl,de
+        jp      nz,.entry
+        call    t_page2
+        ld      a,(t_seg)
+        ld      b,a
+        ld      c,0
+        ld      ixh,0
+        ld      ixl,8
+        ld      hl,T_FATS
+        ld      de,0
+        ld      a,T_SLAVE
+        scf                             ; write
+        k_call  API_BLK_DEV_RW
+        jp      t_page2
+
+; t_fatq — A = the query, HL = the starting cluster, DE = the span: the
+; block built in T_PARAMS from t_qfat and t_qtype (8 sectors; 2000 data
+; clusters, 1000 for FAT32) and the driver asked for card 2. Out as the
+; driver answers: DE:HL, or CF and A = the errno. Corrupts everything.
+t_fatq:
+        ld      (t_qq),a
+        ld      (t_qx),hl
+        ld      (t_qspan),de
+        ld      hl,T_PARAMS
+        ld      de,T_PARAMS+1
+        ld      bc,BP_SIZE-1
+        ld      (hl),0
+        ldir
+        ld      hl,(t_qfat)
+        ld      (T_PARAMS+BP_FAT),hl
+        ld      a,8
+        ld      (T_PARAMS+BP_FATSZ),a
+        ld      a,(t_qtype)
+        ld      (T_PARAMS+BP_TYPE),a
+        ld      hl,2000
+        cp      32
+        jr      nz,.n
+        ld      hl,1000
+.n:     ld      (T_PARAMS+BP_NCLUS),hl
+        ld      hl,(t_qx)
+        ld      (T_PARAMS+BP_START),hl
+        ld      hl,(t_qspan)
+        ld      (T_PARAMS+BP_SPAN),hl
+        ld      a,(t_qq)
+        ld      e,a
+        xor     a
+        ld      b,T_SLAVE
+        ld      d,BQ_QUERY
+        ld      hl,T_PARAMS
+        k_call  API_BLK_QUERY
+        jp      t_page2
+
+; t_qis — t_fatq with BC = the answer expected. CF with A = a code when
+; the driver failed or answered otherwise.
+t_qis:  push    bc
+        call    t_fatq
+        ld      (t_qcode),bc            ; the device's code, on a failure
+        pop     bc
+        jr      nc,.answered
+        k_call  API_CON_HEX8            ; the errno and the device's code:
+        ld      a,' '                   ;   the step's evidence
+        k_call  API_CON_PUTC
+        ld      a,(t_qcode+1)
+        k_call  API_CON_HEX8
+        ld      a,' '
+        k_call  API_CON_PUTC
+        ld      a,0EDh                  ; the query failed
+        scf
+        ret
+.answered:
+        ld      a,d
+        or      e
+        jr      nz,.no
+        or      a
+        sbc     hl,bc
+        jr      nz,.no
+        ret
+.no:    ld      a,0EEh                  ; the answer differs
+        scf
+        ret
+
+; t_qerr — after t_fatq, B = the errno expected: CF with A = a code
+; when the driver answered, or with another errno.
+t_qerr: jr      nc,.answered
+        cp      b
+        ret     z
+        ld      a,0EFh                  ; another errno
+        scf
+        ret
+.answered:
+        ld      a,0F0h                  ; answered where it should refuse
+        scf
+        ret
 
 ; t_mode — A = the mode asked of the driver through DQ_MODE; the mode
 ; in force must be it. CF otherwise. Corrupts everything.
@@ -974,6 +1323,8 @@ ts_nortc:   db  "the clock did not advance",0
 ts_rd64:    db  ", rd64 ",0
 ts_turbo_yes: db " turbo: yes",10,0
 ts_turbo_no: db  " turbo: no",10,0
+ts_fatacc_yes: db " fatacc: yes",10,0
+ts_fatacc_no: db " fatacc: no",10,0
 ts_ticks:   db  " ticks",0
 ts_fail:    db  10,"FAIL step ",0
 ts_status:  db  10,"FAIL status step ",0
@@ -1003,4 +1354,13 @@ t_rtc_n:    db  0
 t_rtc_first: dw 0
 t_rtc_last: dw  0
 t_rtc_t:    dw  0
+t_qcode:    dw  0
+t_qtype:    db  0
+t_qq:       db  0
+t_qx:       dw  0
+t_qspan:    dw  0
+t_qfat:     dw  0
+t_c:        dw  0
+t_mod3:     db  0
+t_v:        db  0
 tb_end:

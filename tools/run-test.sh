@@ -34,11 +34,13 @@
 # emulated SD Mapper V2 with the disk's images as its cards; a line may
 # start with `turbo` instead: the same ROM in the SD Mapper cartridge
 # that presents the m6 block device and a memory mapper of its own, so
-# the kernel runs the driver in Turbo; without a word the cartridge is
-# the Sunrise IDE. The forms run in order, `com` then `rom`; the test's
-# .tcl reads M6_FORM and M6_CART (`sunrise`, `sdmapper` or `turbo`); the
-# ROM form's images and logs carry `.rom`, `.sd.rom` or `.turbo.rom` in
-# their names (build/<name>.rom.<machine>.<run>.dsk).
+# the kernel runs the driver in Turbo; or with `fatacc`: the cartridge
+# whose block offers the FAT accelerator and not Turbo; without a word
+# the cartridge is the Sunrise IDE. The forms run in order, `com` then
+# `rom`; the test's .tcl reads M6_FORM and M6_CART (`sunrise`,
+# `sdmapper`, `turbo` or `fatacc`); the ROM form's images and logs carry
+# `.rom`, `.sd.rom`, `.turbo.rom` or `.fatacc.rom` in their names
+# (build/<name>.rom.<machine>.<run>.dsk).
 #
 # Files on the volume: tests/<name>/files/, a directory tree, is copied
 # into the staging directory as it is; a test with a `product` marker
@@ -101,7 +103,9 @@ export M6_TZ_OFFSET
 # disk's images as its cards, so the driver runs in Turbo; `rom
 # turbo-liar`, the same ROM in a cartridge whose block offers Turbo with
 # no mapper behind it; `rom turbo <name>`, the Turbo cartridge with
-# build/<name>.rom.
+# build/<name>.rom; `rom fatacc`, the kernel ROM in the SD Mapper
+# cartridge whose block offers the FAT accelerator and not Turbo; `rom
+# fatacc <name>`, that cartridge with build/<name>.rom.
 # set_form <form> <cartridge>: the product, the file booted (com), the
 # name it takes on the disk (upper), and the tag the run's files carry,
 # for one form on one cartridge (sunrise, sdmapper or turbo; the com
@@ -117,14 +121,17 @@ set_form() {
         tag=$name.rom
         [ "$cart" = sdmapper ] && tag=$name.sd.rom
         [ "$cart" = turbo ] && tag=$name.turbo.rom
+        [ "$cart" = fatacc ] && tag=$name.fatacc.rom
         if [ -f "tests/$name/block.asm" ]; then
             product="rom $name"
             [ "$cart" = sdmapper ] && product="rom sdmapper $name.sd"
             [ "$cart" = turbo ] && product="rom turbo $name.sd"
+            [ "$cart" = fatacc ] && product="rom fatacc $name.sd"
         elif [ -z "$product" ] && [ -f "tests/$name/product" ]; then
             product=rom
             [ "$cart" = sdmapper ] && product="rom sdmapper"
             [ "$cart" = turbo ] && product="rom turbo"
+            [ "$cart" = fatacc ] && product="rom fatacc"
         else
             echo "run-test: $name: the rom marker needs tests/$name/block.asm or an empty product marker" >&2; exit 2
         fi
@@ -146,8 +153,10 @@ set_form() {
             "rom turbo") com="build/m6-sdmapper.rom"; upper=M6 ;;
             "rom turbo-liar") com="build/m6-sdmapper.rom"; upper=M6; product="rom turbo"; liar=1 ;;
             "rom turbo "*) com="build/${product#rom turbo }.rom"; upper=M6; product="rom turbo"; own=1 ;;
+            "rom fatacc") com="build/m6-sdmapper.rom"; upper=M6 ;;
+            "rom fatacc "*) com="build/${product#rom fatacc }.rom"; upper=M6; product="rom fatacc"; own=1 ;;
             "rom "*) com="build/${product#rom }.rom"; upper=M6; product=rom; own=1 ;;
-            *) echo "run-test: $name: the product marker says '$product'; empty, nextor.sys, nextor.sys chain, rom, rom legacy, rom <name>, rom ascii16, rom ascii16 <name>, rom sdmapper, rom sdmapper legacy, rom sdmapper <name>, rom turbo, rom turbo-liar or rom turbo <name>" >&2; exit 2 ;;
+            *) echo "run-test: $name: the product marker says '$product'; empty, nextor.sys, nextor.sys chain, rom, rom legacy, rom <name>, rom ascii16, rom ascii16 <name>, rom sdmapper, rom sdmapper legacy, rom sdmapper <name>, rom turbo, rom turbo-liar, rom turbo <name>, rom fatacc or rom fatacc <name>" >&2; exit 2 ;;
         esac
         bin=1
         [ -n "$own" ] && bin=""
@@ -174,6 +183,9 @@ set_form() {
         cp "$com" tools/openmsx/systemroms/m6-sdmapper.rom
         ext=m6-sdmapper-m6-turbo
         [ -n "$liar" ] && ext=m6-sdmapper-m6-turbo-liar
+    elif [ "$product" = "rom fatacc" ]; then
+        cp "$com" tools/openmsx/systemroms/m6-sdmapper.rom
+        ext=m6-sdmapper-m6-fatacc
     fi
     if [ -n "$liar" ] && [ -n "$slave" ]; then
         echo "run-test: $name: rom turbo-liar takes one card; the disk marker names two" >&2; exit 2
@@ -185,6 +197,7 @@ set_form() {
     case $product in
         "rom sdmapper") M6_CART=sdmapper ;;
         "rom turbo") M6_CART=turbo ;;
+        "rom fatacc") M6_CART=fatacc ;;
     esac
     export M6_FORM=$form M6_CART
 }
@@ -342,6 +355,7 @@ if [ "$form" = rom ]; then
             "") ;;
             sdmapper) form_runs="$form_runs sdmapper:${w2:-m6-msx2-128k}" ;;
             turbo) form_runs="$form_runs turbo:${w2:-m6-msx2-128k}" ;;
+            fatacc) form_runs="$form_runs fatacc:${w2:-m6-msx2-128k}" ;;
             *) form_runs="$form_runs sunrise:$w1" ;;
         esac
     done < "tests/$name/rom"
@@ -361,6 +375,7 @@ for form_run in $form_runs; do
         [ "$forms" != com ] && formtag="form $form "
         [ "$cart" = sdmapper ] && formtag="form $form on sdmapper "
         [ "$cart" = turbo ] && formtag="form $form on turbo "
+        [ "$cart" = fatacc ] && formtag="form $form on fatacc "
         echo "  ${formtag}machine $machine run $run${args:+ ($args)}"
         rm -rf "$staging" && mkdir -p "$staging"
         case $product in
@@ -370,7 +385,7 @@ for form_run in $form_runs; do
                 cp "$com" "$staging/NEXTOR.SYS"
                 cp .tools/nextor/NEXTOR.SYS "$staging/MSXDOS2.SYS"
                 cp .tools/nextor/COMMAND2.COM "$staging/" ;;
-            "rom"|"rom ascii16"|"rom sdmapper"|"rom turbo")
+            "rom"|"rom ascii16"|"rom sdmapper"|"rom turbo"|"rom fatacc")
                 ;;                      # nothing of a system's on the disk
             *)
                 cp .tools/nextor/NEXTOR.SYS .tools/nextor/COMMAND2.COM "$staging/"

@@ -81,5 +81,14 @@ proc post_verdict {} {
         if {$data ne [pattern $inverted]} { return "$f does not hold the pattern" }
     }
     puts stderr "harness: $::test: b4k.bin and b1000.bin hold the pattern"
+    # On the Turbo cartridge the block counts the commands it started:
+    # the FAT accelerator's must have been asked — step 12's and step
+    # 13's counts through statfs, and the allocator's next-free query
+    # for step 13's 257th cluster — at least four.
+    if {[info exists ::env(M6_CART)] && $::env(M6_CART) eq "turbo"} {
+        binary scan [debug read_block {SD Mapper V2 m6block} 0x40 4] iu n
+        if {$n < 4} { return "the block answered $n FAT accelerator commands; at least 4 were expected" }
+        puts stderr "harness: $::test: the block answered $n FAT accelerator commands"
+    }
     return ""
 }

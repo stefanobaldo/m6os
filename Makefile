@@ -36,10 +36,10 @@ PRODUCT_TESTS := $(notdir $(patsubst %/,%,$(dir $(wildcard tests/*/product))))
 ROM_TESTS := $(notdir $(patsubst %/,%,$(dir $(wildcard tests/*/rom))))
 BLOCK_TESTS := $(foreach t,$(ROM_TESTS),$(if $(wildcard tests/$(t)/block.asm),$(t)))
 TEST_BLOCKS := $(foreach t,$(BLOCK_TESTS),build/$(t).block)
-# A marker line starting with `sdmapper` or `turbo` asks for the same
+# A marker line starting with `sdmapper`, `turbo` or `fatacc` asks for the same
 # block on the SD Mapper kernel ROM with m6's SD driver, build/<test>.sd.rom
 # (the Turbo cartridge boots the same ROM).
-SD_BLOCK_TESTS := $(foreach t,$(BLOCK_TESTS),$(if $(shell grep -l '^sdmapper\|^turbo' tests/$(t)/rom 2>/dev/null),$(t)))
+SD_BLOCK_TESTS := $(foreach t,$(BLOCK_TESTS),$(if $(shell grep -l '^sdmapper\|^turbo\|^fatacc' tests/$(t)/rom 2>/dev/null),$(t)))
 TEST_ROMS := $(foreach t,$(BLOCK_TESTS),build/$(t).rom) $(foreach t,$(SD_BLOCK_TESTS),build/$(t).sd.rom)
 TESTS     := $(sort $(notdir $(patsubst %/,%,$(dir $(wildcard tests/*/*.asm)))) $(PRODUCT_TESTS))
 TEST_BINS := $(foreach t,$(filter-out $(PRODUCT_TESTS),$(TESTS)),build/$(t).com)
