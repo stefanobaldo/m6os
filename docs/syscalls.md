@@ -226,7 +226,7 @@ input is a file or a pipe reads what is typed there: `more` in
 | 34 | `segalloc` | — | `HL` = `A` = a segment, the caller's | `ENOMEM`; `EPERM`: process 0 |
 | 35 | `segfree` | `A` = a segment of the caller's, not one of its pages | `HL` = 0 | `EINVAL` |
 | 36 | `segmap` | `A` = a page, 1 or 2; `B` = a segment of the caller's | `HL` = 0 | `EINVAL`: the page, or not the caller's segment |
-| 37 | `statfs` | `A` = a volume, 0–7; `HL` = a 32-byte buffer; `B` = 0, or 1 to count the free clusters too (see *Files*) | — | `ENODEV`: no volume; `EFAULT`; `EIO` |
+| 37 | `statfs` | `A` = a volume, 0–7; `HL` = a 40-byte buffer; `B` = 0, or 1 to count the free clusters too (see *Files*) | — | `ENODEV`: no volume; `EFAULT`; `EIO` |
 | 38 | `utime` | `HL` = path, `DE` = a FAT date, `BC` = a FAT time | — | `ENOENT`, `ENOTDIR`, `ENAMETOOLONG`, `EACCES`: a volume's root or `/mnt`; `EROFS`, `EIO` |
 | 39 | `statl` | `HL` = path, `DE` = a 265-byte buffer | — | as `stat` |
 | 40 | `ftruncate` | `A` = fd, `DE:HL` = a size | — | `EBADF`: not open for writing; `EISDIR`, `ENOSPC`, `EIO` |
@@ -494,7 +494,7 @@ it with zeros, allocating as a `write` past the end would; the entry's
 size and time are written, the table flushed, and the position stays
 where it was. `utime` sets a file's or a directory's modification time to the two FAT
 words given, as they are; a volume's root and `/mnt` have no entry to
-stamp (`EACCES`). `statfs` describes a mounted volume in a 32-byte block:
+stamp (`EACCES`). `statfs` describes a mounted volume in a 40-byte block:
 
 | Offset | Size | What |
 |---|---|---|
@@ -515,16 +515,22 @@ stamp (`EACCES`). `statfs` describes a mounted volume in a 32-byte block:
 | 24 | 4 | total sectors: the first data sector plus the whole clusters' sectors, a partial cluster at the end left out |
 | 28 | 1 | 0 for FAT12, 1 for FAT16 |
 | 29 | 1 | 0 |
-| 30 | 2 | free clusters, when `B` = 1; 0 otherwise |
+| 30 | 2 | free clusters, when `B` = 1; 0 otherwise, or when the count does not fit |
+| 32 | 4 | free clusters, when `B` = 1; 0 otherwise |
+| 36 | 4 | the number of clusters |
 
-The block is the one Nextor's `_DPARM` answers, byte for byte, with
-the free count in its last two bytes. The sectors are counted from the
-volume's first. A field that cannot
-hold the volume's number reads 0 rather than the low bits of it, which is
-what MSX-DOS 2 answers for a volume too large to describe. The free count walks
-the whole FAT through the cache, one sector at a time, and costs what
-that costs: about a second and a half for a 256-sector FAT16 read from
-an SD card; a caller that does not need it passes `B` = 0.
+The first 32 bytes are the block Nextor's `_DPARM` answers, byte for
+byte, with the free count in its last two bytes; the eight after them
+carry the free count and the cluster count whole, for a volume whose
+counts do not fit a word. The sectors are counted from the volume's
+first. A field that cannot hold the volume's number reads 0 rather than
+the low bits of it, which is what MSX-DOS 2 answers for a volume too
+large to describe. The free count is the device's where the volume's
+driver has the FAT accelerator (`docs/block-device.md`), one command;
+elsewhere it walks the whole FAT through the cache, one sector at a
+time, and costs what that costs: about a second and a half for a
+256-sector FAT16 read from an SD card. A caller that does not need it
+passes `B` = 0.
 
 ## Errors
 

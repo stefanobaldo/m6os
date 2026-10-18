@@ -89,7 +89,13 @@ a time today. The kernel keeps a cache of 22 sectors, written
 through: a write reaches the disk before the call that made it returns,
 so there is nothing to flush and a card pulled after a call has everything
 the call wrote. Whole, aligned sectors go from the driver straight into a
-program's memory without a copy.
+program's memory without a copy. A cartridge whose block device offers
+the FAT accelerator (`docs/block-device.md`) counts a volume's free
+clusters and finds the next free one for the kernel, which asks it only
+where that saves a walk of the table — the free count, and a new
+cluster once the table sector it was looking in is full — and writes
+its own dirty table sectors to the card first, so the device never reads
+a stale one.
 
 A driver error comes back as an error number and nothing is retried; a
 write to a read-only unit is refused. A card changed while the system

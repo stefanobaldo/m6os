@@ -203,9 +203,10 @@ Anything else the device can do.
   block in page 2, whose layout the number defines.
 - Out: as the number defines; `CF` set and `A` = `E_NOSYS` (38) for a
   number the block does not answer.
-- Numbers `00h`–`7Fh` belong to the contract: `01h`–`04h` the FAT
-  accelerator (`DQ_FATCOUNT`, `DQ_FATNEXT`, `DQ_FATWALK`, `DQ_FATFREE`),
-  whose parameter blocks are not defined yet; `10h` the transfer mode
+- Numbers `00h`–`7Fh` belong to the contract: `01h` and `02h` the FAT
+  accelerator's count of free entries (`DQ_FATCOUNT`) and next free
+  cluster (`DQ_FATNEXT`), `03h` and `04h` reserved for it
+  (`DQ_FATWALK`, `DQ_FATFREE`); `10h` the transfer mode
   (`DQ_MODE`): byte 0 in, the mode asked — 0 Standard (`DM_STANDARD`),
   1 Turbo (`DM_TURBO`); byte 1 out, the mode in force, which is Turbo
   only when the device offers it. The kernel asks for Turbo at boot when
@@ -213,6 +214,16 @@ Anything else the device can do.
   volume's row in the boot listing then ends with the word `turbo`. The
   rest are reserved. Numbers `80h`–`FFh` (`DQ_PRIVATE` up) are the
   block's own.
+- The two accelerator queries take `HL` → a 19-byte block laid out as
+  the parameters of the block device's commands `10h` and `11h`
+  (`docs/block-device.md`: the table's first sector on the device, 4
+  bytes; its sectors, 4; the type, 12, 16 or 32; the data clusters, 4;
+  the starting cluster, 4; the span in table sectors, 2, 0 for the
+  table's end), and answer `DE:HL` = the count, or the cluster, 0 for
+  none. A block whose device offers the accelerator (`DIC_FATACC` in
+  `info`) answers both; one whose device does not answers `E_NOSYS`,
+  and the kernel walks the table itself. `E_INVAL` for a parameter the
+  device refused, `E_NXIO` for no medium, `E_IO` otherwise.
 
 ## What a block may use of the kernel
 

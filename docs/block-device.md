@@ -50,8 +50,8 @@ kernel ROM fills with `FFh`, so they never read as the signature.
 | 22–63 | w | parameters of commands that take more than the above; 0 for the commands below |
 
 Commands: `01h` read (medium → RAM), `02h` write (RAM → medium),
-`10h`–`13h` reserved for the FAT accelerator, `80h`–`FFh` the device's
-own. Errors: `01h` the probe byte is not at the target (nothing moved),
+`10h` and `11h` the FAT accelerator's (below), `12h`–`13h` reserved for
+it, `80h`–`FFh` the device's own. Errors: `01h` the probe byte is not at the target (nothing moved),
 `02h` out of range, `03h` the medium failed, `04h` no medium, `05h` the
 medium is write-protected, `06h` a bad parameter (a count of 0 or above
 32, a slot past the page, a device of 0 or above the count), `07h` an
@@ -109,11 +109,40 @@ primary one.
 
 ## The FAT accelerator
 
-Reserved: commands `10h`–`13h`, their parameters in the block's last
-forty-two bytes, their results in the result register. They answer
-questions about a FAT table on the device's medium — a count of free
-clusters from a given one, the next free from a given one — with the
-table's geometry carried in every command, so the device keeps nothing
-between commands. Their definition follows in a later version of this
-document; a device that does not answer them leaves capability bit 1
-clear.
+A device may answer two questions about a FAT table on its medium —
+how many entries are free from a given cluster on, and which is the
+first free one — reading the table itself, at its own speed, where the
+CPU would read every sector of it. A device that answers them sets
+capability bit 1; one that does not leaves it clear, and the kernel
+walks the table itself. The commands take their parameters in the
+block's last forty-two bytes, the device in register 7 as for a read,
+and answer in the result register:
+
+| Offset | Size | Content |
+|---|---|---|
+| 22 | 4 | the table's first sector, counted as the device counts sectors |
+| 26 | 4 | the table's length in sectors |
+| 30 | 1 | the type: 12, 16 or 32 |
+| 31 | 4 | the data clusters, N: the entries are 2 to N + 1 |
+| 35 | 4 | the starting cluster, X, 2 to N + 1 |
+| 39 | 2 | the span: table sectors to scan from the one holding X's entry, 1–65535; 0 for the table's end |
+| 41 | 23 | 0 |
+
+`10h`, count free: the result is the number of entries that are 0 from
+X through the last entry inside the span, or through N + 1, whichever
+comes first. `11h`, next free: the result is the first cluster at or
+after X whose entry is 0, inside the same bounds, or 0 when there is
+none. An entry is 12, 16 or 32 bits wide by the type, the top four bits
+of a FAT32 entry ignored as the format says; a FAT12 entry across two
+sectors is read whole. The commands write nothing and keep nothing:
+every command starts from its registers alone, so a device may answer
+them from a fresh reading of the medium every time, and the kernel
+writes its own dirty table sectors to the medium before it asks.
+
+Errors: `06h` for a type that is not 12, 16 or 32, N of 0, or X outside
+2 to N + 1; `02h` for a sector of the span past the device; `03h` and
+`04h` as for a read. A device completes any span of at most 256 sectors
+within the 4-second bound every command has; a caller that asks for
+more accepts that the device may end the command with `03h` at the
+bound, the result undefined. The kernel never asks for more than 256
+sectors at a time.
