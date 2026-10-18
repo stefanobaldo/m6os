@@ -87,6 +87,21 @@ to install.
   than through the SPI window, and a 32-sector transfer a small fraction
   of it. A cartridge that offers Turbo with no mapper behind the claim
   is found out at boot and run as before. No cartridge offers Turbo yet.
+- The FAT accelerator, the block device's second capability: two
+  commands, defined in `docs/block-device.md`, by which a cartridge
+  counts the free entries of a FAT table on its card and finds the
+  first free one, reading the table itself. The SD driver answers the
+  contract's two queries with them where the device offers them, and
+  the kernel asks where that saves a walk of the table: the free count
+  of `statfs`, and a new cluster once the table sector the allocator
+  was probing is full. The commands and the queries carry 32-bit
+  cluster numbers and a FAT32 type, for a kernel that mounts FAT32 one
+  day; the emulated cartridge answers all three types.
+- `df`: every mounted volume's size, use and free space in KB, under a
+  header, with the filesystem; the free count the device's on a
+  cartridge with the accelerator, the kernel's walk elsewhere.
+- `statfs`'s block grows from 32 to 40 bytes: after Nextor's `_DPARM`,
+  the free count and the cluster count whole, 32 bits each.
 - Memory. The kernel finds every memory mapper in the machine and allocates 16K
   segments of the one it runs in, never handing out a segment that does not
   exist or was already in use when it started. A `mem=<K>` argument caps the

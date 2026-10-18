@@ -71,6 +71,25 @@ seconds printed are always even. A machine without a real-time clock,
 or one whose battery has gone, prints `1980-01-01 00:00:00`. `date` only
 reads the clock; there is no way to set it from m6.
 
+## df
+
+`df` — every mounted volume, one row each: its name as the boot listing
+prints it, its size, the space used and the space free, in KB, and the
+filesystem, under a header.
+
+```
+Volume      Size     Used     Free Type
+/mnt/a      2016      128     1888 FAT12
+/mnt/b     32750       64    32686 FAT16
+```
+
+The free space is counted at the moment `df` asks. On a cartridge whose
+block device offers the FAT accelerator the device counts; on every
+other driver the kernel walks the volume's whole table, which costs
+about a second and a half for a 256-sector FAT16 table read from an SD
+card. A volume that answers an error is reported — `df: /mnt/b: EIO` —
+and the rest are listed, with status 1. There are no options.
+
 ## dos
 
 `dos path [args...]` — runs an MSX-DOS 2 program, a `.COM` file, with the
