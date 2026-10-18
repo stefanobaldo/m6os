@@ -11,7 +11,7 @@
 # either way their versions are checked. See CONTRIBUTING.md.
 
 SJASMPLUS_VERSION := 1.24.0
-OPENMSX_VERSION   := 21.0-m6.2
+OPENMSX_VERSION   := 21.0-m6.3
 
 SJASMPLUS := $(if $(wildcard .tools/sjasmplus/bin/sjasmplus),.tools/sjasmplus/bin/sjasmplus,sjasmplus)
 # On macOS the fetched build is an application bundle (tools/fetch-openmsx.sh).
