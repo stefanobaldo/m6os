@@ -316,7 +316,7 @@ fat_alloc:
         jr      nz,.f16
         ; FAT12: entry by entry.
 .probe: call    .advance
-        jr      c,.nospc
+        jp      c,.nospc
         ld      hl,(SG+VW_ACUR)
         ld      a,(SG+VW_AVOL)
         call    fat_get
@@ -324,11 +324,15 @@ fat_alloc:
         ld      a,h
         or      l
         jr      nz,.probe
-        jr      .found
+        jp      .found
         ; FAT16: the sector holding the next cluster's entry, then its words
         ; from that entry to the sector's end.
 .f16:   call    .advance
-        jr      c,.nospc
+        jp      c,.nospc
+        ld      a,(SG+VW_ACUR+1)        ; the hint's table sector, for the
+        ld      (SG+VW_AHSEC),a         ;   wrap's span
+        xor     a
+        ld      (SG+VW_ANOQ),a
 .fetch: ld      hl,(SG+VW_ACUR)
         ld      a,(SG+VW_AVOL)
         ld      (SG+VV_T+2),a
@@ -349,13 +353,64 @@ fat_alloc:
         jr      c,.nospc
         ld      a,(SG+VW_ACUR)
         or      a
-        jr      z,.fetch                ; a new sector
+        jr      z,.newsec               ; a new sector
         cp      2
         jr      nz,.word
         ld      a,(SG+VW_ACUR+1)
         or      a
-        jr      z,.fetch                ; wrapped to 2
+        jr      z,.wrapped              ; wrapped to 2
         jr      .word
+        ; The sector after the hint's: the device asked for the first
+        ; free entry from here to the table's end, then from 2 through
+        ; the hint's sector when that finds none. A device without the
+        ; accelerator (E_NOSYS), or one that fails, leaves the rest of
+        ; the walk to the loop above, which goes on where it stood.
+.newsec:
+        ld      a,(SG+VW_ANOQ)
+        or      a
+        jr      nz,.fetch
+        ld      hl,0                    ; the span: to the table's end
+        call    .query
+        jr      c,.fetch
+        jr      nz,.found
+        ld      hl,2                    ; nothing free to the end
+        ld      (SG+VW_ACUR),hl
+        ld      a,(SG+VW_AHSEC)         ; probes left, should the loop
+        inc     a                       ;   take over: the sectors through
+        ld      h,a                     ;   the hint's
+        ld      l,0
+        ld      (SG+VW_ALEFT),hl
+.wrapped:
+        ld      a,(SG+VW_ANOQ)
+        or      a
+        jr      nz,.fetch
+        ld      a,(SG+VW_AHSEC)
+        ld      l,a
+        ld      h,0
+        inc     hl                      ; the span: through the hint's sector
+        call    .query
+        jr      c,.fetch
+        jr      nz,.found
+        jr      .nospc
+; .query — HL = the span: DQ_FATNEXT from VW_ACUR. NZ with VW_ACUR = the
+; cluster found; Z for none; CF when the device did not answer, VW_ANOQ
+; set so it is not asked again. Corrupts everything.
+.query: ld      (SG+VV_T+6),hl
+        ld      hl,(SG+VW_ACUR)
+        ld      de,0
+        ld      a,(SG+VW_AVOL)
+        ld      b,DQ_FATNEXT
+        call    fat_query
+        jr      c,.refused
+        ld      (SG+VW_ACUR),hl
+        ld      a,h
+        or      l                       ; 0 is never a cluster
+        ret
+.refused:
+        ld      a,1
+        ld      (SG+VW_ANOQ),a
+        scf
+        ret
 .found: ld      a,(SG+VW_AVOL)
         call    fat_eoc
         ld      hl,(SG+VW_ACUR)
@@ -429,6 +484,93 @@ fat_free_chain:
         jr      .link
 .err:   pop     de
         scf
+        ret
+
+; fat_query — A = a volume, B = the query (DQ_FATCOUNT or DQ_FATNEXT),
+; DE:HL = the starting cluster, (SG+VV_T+6) = the span in table sectors,
+; 0 for the whole table: the volume's device asked through its driver,
+; the table's geometry carried in the BP_SIZE block built in ST_INFO —
+; the first sector as the device counts it (V_FIRST + M_FAT), the
+; sectors, the type, the clusters, the cluster, the span. Every dirty
+; buffer is written first (API_BFLUSH): the device reads the card, and a
+; table sector still in a buffer would read stale there — a cluster
+; allocated in this syscall and not yet written would be free again.
+; Out: CF clear and DE:HL = the answer; CF set and A = the errno —
+; E_NOSYS from a driver without the accelerator, which every caller
+; answers by walking the table itself. Corrupts everything.
+fat_query:
+        push    bc
+        push    de
+        push    hl
+        call    fat_mnt
+        ld      hl,SG+ST_INFO
+        ld      de,SG+ST_INFO+1
+        ld      bc,BP_SIZE-1
+        ld      (hl),0
+        ldir
+        push    af
+        ld      e,a                     ; the volume's row in K_VOL
+        ld      d,0
+        ld      h,d
+        ld      l,e
+        add     hl,hl
+        add     hl,de
+        add     hl,hl
+        add     hl,hl                   ; * VOL_SIZE
+        ASSERT  VOL_SIZE == 12
+        ld      de,K_VOL
+        add     hl,de
+        push    hl
+        ld      de,V_FIRST
+        add     hl,de
+        ld      e,(hl)
+        inc     hl
+        ld      d,(hl)
+        inc     hl
+        ld      c,(hl)
+        inc     hl
+        ld      b,(hl)                  ; bc:de = V_FIRST
+        ld      l,(ix+M_FAT)
+        ld      h,(ix+M_FAT+1)
+        add     hl,de
+        ld      (SG+ST_INFO+BP_FAT),hl
+        ld      l,(ix+M_FAT+2)
+        ld      h,(ix+M_FAT+3)
+        adc     hl,bc
+        ld      (SG+ST_INFO+BP_FAT+2),hl
+        ld      l,(ix+M_FATSZ)
+        ld      h,(ix+M_FATSZ+1)
+        ld      (SG+ST_INFO+BP_FATSZ),hl
+        ld      a,12
+        bit     0,(ix+M_FLAGS)          ; MF_FAT16
+        jr      z,.type
+        ld      a,16
+.type:  ld      (SG+ST_INFO+BP_TYPE),a
+        ld      l,(ix+M_NCLUS)
+        ld      h,(ix+M_NCLUS+1)
+        ld      (SG+ST_INFO+BP_NCLUS),hl
+        ld      hl,(SG+VV_T+6)
+        ld      (SG+ST_INFO+BP_SPAN),hl
+        pop     hl                      ; the volume's row
+        pop     af
+        pop     de                      ; the cluster, low word
+        ld      (SG+ST_INFO+BP_START),de
+        pop     de                      ; and high
+        ld      (SG+ST_INFO+BP_START+2),de
+        pop     bc                      ; b = the query
+        push    hl
+        push    bc
+        k_call  API_BFLUSH
+        pop     bc
+        pop     hl
+        ret     c
+        ld      e,b
+        ld      a,(hl)                  ; V_DRV
+        inc     hl
+        ld      b,(hl)                  ; V_DEV
+        ld      d,BQ_QUERY
+        ld      hl,8000h+ST_INFO
+        k_call  API_BLK_QUERY
         ret
 
 ; fat_sector — A = a volume, HL = a cluster: DE:HL = its first sector,
