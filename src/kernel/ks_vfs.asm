@@ -2314,9 +2314,12 @@ ks_read:
 ; ks_statfs — SYS_STATFS: A = a volume, HL = a 32-byte buffer, B = 0, or
 ; 1 to count the volume's free clusters too. Out: the block SF_* in the
 ; buffer, from the mount row. E_NODEV for a row not filled,
-; E_FAULT, E_IO. The free count walks the whole table through the cache —
-; sector by sector for FAT16, cluster by cluster for FAT12 — and costs
-; what that costs: ~1.4 s for a 256-sector FAT16 through an SD card.
+; E_FAULT, E_IO. The free count is the device's where the volume's
+; driver has the FAT accelerator (fat_query), else a walk of the whole
+; table through the cache — sector by sector for FAT16, cluster by
+; cluster for FAT12 — which costs what that costs: ~1.4 s for a
+; 256-sector FAT16 through an SD card. SF_FREE holds it when it fits,
+; SF_FREE32 always.
 ks_statfs:
         ld      (SG+VV_SFVOL),a
         ld      a,b
@@ -2374,6 +2377,7 @@ ks_statfs:
         inc     hl
         ld      (SG+ST_LNAME+SF_MAXCLUS),hl      ; the clusters + 2, as Nextor
         pop     hl
+        ld      (SG+ST_LNAME+SF_NCLUS32),hl      ; and whole, 32 bits
         ld      b,(ix+M_SPCSH)          ; SF_TOTAL32 = the clusters'
         xor     a                       ;   sectors + the data sector: a
         inc     b                       ;   partial cluster at the end is
@@ -2405,9 +2409,28 @@ ks_statfs:
         ld      a,(SG+VV_SFFLG)
         or      a
         jp      z,.out
-        ; The free clusters: entries 2 to M_NCLUS+1 of the table.
+        ; The free clusters: the device's count, from 2 to the table's
+        ; end in one command, where its driver has the accelerator;
+        ; the walk otherwise.
+        ld      hl,0
+        ld      (SG+VV_T+6),hl          ; the span: the whole table
         ld      a,(SG+VV_SFVOL)
+        ld      b,DQ_FATCOUNT
+        ld      hl,2
+        ld      de,0
+        call    fat_query
+        jr      c,.walk
+        ld      (SG+ST_LNAME+SF_FREE32),hl
+        ld      (SG+ST_LNAME+SF_FREE32+2),de
+        ld      a,d
+        or      e
+        jp      nz,.out                 ; SF_FREE: 0 when it cannot hold it
+        ld      (SG+ST_LNAME+SF_FREE),hl
+        jp      .out
+        ; The walk: entries 2 to M_NCLUS+1 of the table, through the cache.
+.walk:  ld      a,(SG+VV_SFVOL)
         ld      (SG+VV_T+2),a           ; fat_fsec's, fat_get's volume
+        call    fat_mnt                 ; ix again: the query corrupts it
         ld      hl,2
         ld      (SG+VV_T),hl            ; the cluster being counted
         bit     0,(ix+M_FLAGS)          ; MF_FAT16
@@ -2435,7 +2458,7 @@ ks_statfs:
         sbc     hl,bc
         ex      de,hl
         jr      z,.f16l                 ; the last: count it, then done
-        jr      nc,.out                 ; past it
+        jr      nc,.walked              ; past it
 .f16l:  push    af
         ld      a,(hl)
         inc     hl
@@ -2446,7 +2469,7 @@ ks_statfs:
         inc     de
         ld      (SG+ST_LNAME+SF_FREE),de
 .f16u:  pop     af
-        jr      z,.out                  ; that was the last cluster
+        jr      z,.walked               ; that was the last cluster
         ld      de,(SG+VV_T)
         inc     de
         ld      (SG+VV_T),de
@@ -2477,11 +2500,14 @@ ks_statfs:
         ld      hl,(SG+VV_T)
         or      a
         sbc     hl,bc
-        jr      z,.out                  ; the last cluster was counted
+        jr      z,.walked               ; the last cluster was counted
         ld      hl,(SG+VV_T)
         inc     hl
         ld      (SG+VV_T),hl
         jr      .f12
+.walked:
+        ld      hl,(SG+ST_LNAME+SF_FREE)
+        ld      (SG+ST_LNAME+SF_FREE32),hl
 .out:   ld      hl,ST_LNAME
         ld      de,(SG+VV_RBUF)
         ld      bc,SF_SIZE

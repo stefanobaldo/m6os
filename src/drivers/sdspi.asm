@@ -361,10 +361,10 @@ sd_info:
         pop     hl
         push    hl
         push    bc
-        inc     hl                      ; DI_CAPS: Turbo when the block
-        ld      a,(ix+SD_CAPS)          ; offers it; DI_TSLOT: where its
-        and     BDC_TURBO               ; mapper is, as 80h | subslot << 2
-        ld      (hl),a
+        inc     hl                      ; DI_CAPS: Turbo and the FAT
+        ld      a,(ix+SD_CAPS)          ; accelerator as the block offers
+        and     BDC_TURBO|BDC_FATACC    ; them (the same bits); DI_TSLOT:
+        ld      (hl),a                  ; the mapper's subslot, 80h | sub << 2
         ld      a,(ix+SD_CAPS)
         bit     7,a                     ; BDC_MAPPER
         jr      z,.caps
@@ -555,8 +555,25 @@ sd_query:
         ld      a,b
         cp      DQ_MODE
         jr      z,sd_mode
+        cp      DQ_FATCOUNT
+        jr      z,.fat
+        cp      DQ_FATNEXT
+        jr      z,.fat
         cp      DQ_PRIVATE
         jr      nz,sd_nosys
+        jr      .private
+        ; The accelerator's two: the device's, when the block answers
+        ; them (BDC_FATACC); the port carries the command out.
+.fat:   ld      a,c
+        dec     a
+        cp      2
+        jr      nc,sd_nxio
+        bit     1,(ix+SD_CAPS)          ; BDC_FATACC
+        jr      z,sd_nosys
+        ld      a,b
+        add     a,BDO_FATCOUNT-DQ_FATCOUNT
+        jp      sdp_fatq
+.private:
         ld      a,c
         dec     a
         cp      2

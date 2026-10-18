@@ -447,8 +447,11 @@ SF_DIRTY        equ 19          ; 0
 SF_VOLID        equ 20          ; 4: the boot sector's, -1 when it has none
 SF_TOTAL32      equ 24          ; 4: the data sector + the clusters' sectors
 SF_FS           equ 28          ; 0 FAT12, 1 FAT16
-SF_FREE         equ 30          ; 2: free clusters, with B = 1; else 0
-SF_SIZE         equ 32          ; 29 zero
+SF_FREE         equ 30          ; 2: free clusters, with B = 1; else 0;
+                                ;    0 when the count does not fit
+SF_FREE32       equ 32          ; 4: the same count whole, with B = 1
+SF_NCLUS32      equ 36          ; 4: the data clusters
+SF_SIZE         equ 40          ; 29 zero
 DA_RDONLY       equ 01h
 DA_HIDDEN       equ 02h
 DA_SYSTEM       equ 04h
@@ -839,10 +842,14 @@ DS_NOTAVAIL     equ 0           ; status: as DEV_STATUS says them
 DS_SAME         equ 1
 DS_CHANGED      equ 2
 DS_UNKNOWN      equ 3
-DQ_FATCOUNT     equ 1           ; query: the FAT accelerator's four
-DQ_FATNEXT      equ 2
-DQ_FATWALK      equ 3
-DQ_FATFREE      equ 4
+DQ_FATCOUNT     equ 1           ; query: the FAT accelerator's four. The
+DQ_FATNEXT      equ 2           ;   first two take HL -> a BP_SIZE block
+DQ_FATWALK      equ 3           ;   (below) and answer DE:HL = the count
+DQ_FATFREE      equ 4           ;   of free entries, or the first free
+                                ;   cluster, 0 for none; E_NOSYS without
+                                ;   the capability (DIC_FATACC), E_INVAL
+                                ;   for a parameter the device refused;
+                                ;   3 and 4 reserved
 DQ_MODE         equ 10h         ; the transfer mode: byte 0 in, DM_* asked;
                                 ;     byte 1 out, the mode in force
 DQ_PRIVATE      equ 80h         ; from here the driver's own
@@ -879,6 +886,16 @@ BDC_MSUB        equ 30h         ; bits 5-4: the mapper's subslot
 BDC_MAPPER      equ 80h         ; the device serves a mapper there
 BDO_READ        equ 1           ; medium -> RAM
 BDO_WRITE       equ 2           ; RAM -> medium
+BDO_FATCOUNT    equ 10h         ; the free entries of a FAT table from a
+BDO_FATNEXT     equ 11h         ;   cluster, and the first free one; the
+                                ;   parameters in BD_PARM, laid out as BP_*
+BP_FAT          equ 0           ; 4: the table's first sector, the device's
+BP_FATSZ        equ 4           ; 4: its sectors
+BP_TYPE         equ 8           ; 12, 16 or 32
+BP_NCLUS        equ 9           ; 4: the data clusters N: entries 2 to N+1
+BP_START        equ 13          ; 4: the starting cluster X, 2 to N+1
+BP_SPAN         equ 17          ; 2: table sectors scanned from X's; 0 = all
+BP_SIZE         equ 19
 BDS_BUSY        equ 80h
 BDE_PROBE       equ 1           ; the probe byte is not at the target
 BDE_RANGE       equ 2
@@ -1238,6 +1255,8 @@ VW_ZB           equ ST_VFSW+239 ; 2: zw_write: the buffer of zeros, 0 = none
 VW_ZBV          equ ST_VFSW+241 ;    the volume and
 VW_ZBS          equ ST_VFSW+242 ; 4: sector its header names
 VW_T            equ ST_VFSW+246 ; 8: scratch
+VW_AHSEC        equ ST_VFSW+254 ; fat_alloc: the hint's table sector
+VW_ANOQ         equ ST_VFSW+255 ;    1: the device answered no query
 
 ; The legacy subsystem (dos.asm; src/leg/leg.asm is the layer). While a
 ; .COM program runs, page 3 shows a segment of its own — TPA to DBFFh, the

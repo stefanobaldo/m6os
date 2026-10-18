@@ -223,6 +223,67 @@ sdp_turbo:
         pop     hl
         ret
 
+; sdp_fatq — a FAT accelerator query carried to the block: A = the
+; command (BDO_FATCOUNT or BDO_FATNEXT), C = the device, HL -> the
+; BP_SIZE parameter block in page 2. A command still running is waited
+; out first, under the Turbo bound; then the device, the parameters and
+; the command are written and the status polled by the tick. Out: CF
+; clear, DE:HL = the result, A = B = 0; CF set, A = the errno — E_INVAL
+; for a parameter the device refused, E_NXIO for no medium, E_IO
+; otherwise — and B = 40h | the device's code, or SD_ETIMEOUT.
+; Corrupts everything.
+sdp_fatq:
+        push    af
+        push    hl                      ; sd_t0 takes HL
+        call    sd_t0
+.idle:  ld      a,(BD_STAT)
+        cp      BDS_BUSY
+        jr      nz,.free
+        ld      b,SD_TO_TURBO
+        call    sd_elapsed
+        jr      c,.idle
+        pop     hl
+        pop     af
+        jr      .tmo
+.free:  pop     hl
+        ld      a,c
+        ld      (BD_DEV),a
+        ld      de,BD_PARM
+        ld      bc,BP_SIZE
+        ldir
+        pop     af
+        ld      (BD_CMD),a
+        call    sd_t0
+.poll:  ld      a,(BD_STAT)
+        cp      BDS_BUSY
+        jr      nz,.done
+        ld      b,SD_TO_TURBO
+        call    sd_elapsed
+        jr      c,.poll
+.tmo:   ld      b,SD_ETIMEOUT
+        ld      a,E_IO
+        scf
+        ret
+.done:  or      a
+        jr      z,.ok
+        ld      b,a
+        set     6,b
+        cp      BDE_NOMEDIUM
+        ld      a,E_NXIO
+        jr      z,.err
+        ld      a,b
+        cp      40h|BDE_PARAM
+        ld      a,E_INVAL
+        jr      z,.err
+        ld      a,E_IO
+.err:   scf
+        ret
+.ok:    ld      hl,(BD_RES)
+        ld      de,(BD_RES+2)
+        xor     a
+        ld      b,a
+        ret
+
 sdp_s_m6bd:
         db      "M6BD"
 sdp_s_slot:
