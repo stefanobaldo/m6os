@@ -101,7 +101,7 @@ kb:     ld      a,(sf+SF_SPC)
         srl     a
         jr      .more
 
-s_head: db      "Volume      Size     Used     Free Type",10,0
+s_head: db      "Volume     Size     Used     Free Type",10,0
 s_name: db      "/mnt/x",0
 s_fat12: db     " FAT12",10,0
 s_fat16: db     " FAT16",10,0
