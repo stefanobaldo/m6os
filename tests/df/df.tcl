@@ -74,6 +74,20 @@ proc post_verdict {} {
         if {[regexp {^/mnt/b +(\d+) +(\d+) +(\d+) FAT16$} $r -> gs gu gf]} { set row $r }
     }
     if {$row eq ""} { return "no df row for /mnt/b on the screen" }
+    # The header over the columns: each of Size, Used and Free ends where
+    # the row's number below it ends, and Type starts with the filesystem.
+    set head ""
+    foreach r [rows] { if {[string match "Volume *" $r]} { set head $r } }
+    if {$head eq ""} { return "no df header on the screen" }
+    set ends {}
+    foreach {s e} [concat {*}[lrange [regexp -all -inline -indices {\S+} $row] 1 end]] { lappend ends $e }
+    set i 0
+    foreach w {Size Used Free} {
+        set e [expr {[string first $w $head] + [string length $w] - 1}]
+        if {$e != [lindex $ends $i]} { return "df's header: $w ends at column $e, the row's number at [lindex $ends $i]" }
+        incr i
+    }
+    if {[string first Type $head] != [string first FAT16 $row]} { return "df's header: Type is not over the filesystem" }
     if {$gs != $size || $gu != $used || $gf != $free} {
         return "df printed $gs $gu $gf for /mnt/b; the image says $size $used $free"
     }

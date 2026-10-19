@@ -78,9 +78,9 @@ prints it, its size, the space used and the space free, in KB, and the
 filesystem, under a header.
 
 ```
-Volume      Size     Used     Free Type
-/mnt/a      2016      128     1888 FAT12
-/mnt/b     32750       64    32686 FAT16
+Volume     Size     Used     Free Type
+/mnt/a     2016      128     1888 FAT12
+/mnt/b    32750       64    32686 FAT16
 ```
 
 The free space is counted at the moment `df` asks. On a cartridge whose
