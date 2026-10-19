@@ -361,6 +361,7 @@ sd_info:
         pop     hl
         push    hl
         push    bc
+        ASSERT  BDC_TURBO == DIC_TURBO && BDC_FATACC == DIC_FATACC
         inc     hl                      ; DI_CAPS: Turbo and the FAT
         ld      a,(ix+SD_CAPS)          ; accelerator as the block offers
         and     BDC_TURBO|BDC_FATACC    ; them (the same bits); DI_TSLOT:
