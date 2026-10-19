@@ -334,9 +334,10 @@ SYS_SEGMAP      equ 36          ; A = a page, 1 or 2; B = a segment of the
                                 ; caller's: mapped there, and kept there
                                 ; across syscalls and switches; EINVAL
                                 ; (the page, or not the caller's segment)
-SYS_STATFS      equ 37          ; A = a volume 0-7, HL = a 32-byte buffer,
+SYS_STATFS      equ 37          ; A = a volume 0-7, HL = a 40-byte buffer,
                                 ; B = 0, or 1 to count the free clusters
-                                ; too (a walk of the table): the block
+                                ; too (the device's count, or a walk of
+                                ; the table): the block
                                 ; SF_* describes; ENODEV, EFAULT, EIO
 SYS_UTIME       equ 38          ; HL = path, DE = a FAT date, BC = a FAT
                                 ; time: the entry's modification stamp;
@@ -428,9 +429,10 @@ DL_SIZE         equ 8
 LOC_VOL         equ 0
 LOC_CLUS        equ 1
 LOC_SIZE        equ 3
-; What statfs fills: the MSX-DOS 2 _DPARM block, 32 bytes, with what
-; Nextor answers in it: the total counts the whole clusters only, and the
-; maximum cluster is the clusters + 2.
+; What statfs fills, 40 bytes: the MSX-DOS 2 _DPARM block, 32 bytes, with
+; what Nextor answers in it — the total counts the whole clusters only,
+; and the maximum cluster is the clusters + 2 — then the free count and
+; the cluster count whole, 32 bits each.
 SF_DRIVE        equ 0           ; the volume + 1
 SF_SECSIZE      equ 1           ; 2: 512
 SF_SPC          equ 3           ; sectors per cluster

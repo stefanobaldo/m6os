@@ -2311,7 +2311,7 @@ ks_read:
 ; ---------------------------------------------------------------------
 ; The volume's parameters
 
-; ks_statfs — SYS_STATFS: A = a volume, HL = a 32-byte buffer, B = 0, or
+; ks_statfs — SYS_STATFS: A = a volume, HL = a 40-byte buffer, B = 0, or
 ; 1 to count the volume's free clusters too. Out: the block SF_* in the
 ; buffer, from the mount row. E_NODEV for a row not filled,
 ; E_FAULT, E_IO. The free count is the device's where the volume's
