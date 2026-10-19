@@ -95,7 +95,9 @@ clusters and finds the next free one for the kernel, which asks it only
 where that saves a walk of the table — the free count, and a new
 cluster once the table sector it was looking in is full — and writes
 its own dirty table sectors to the card first, so the device never reads
-a stale one.
+a stale one. A next-free answer that is no cluster of the volume, or
+whose entry the kernel does not read as free, is not taken: the device
+is not asked again for that cluster, and the kernel walks the table.
 
 A driver error comes back as an error number and nothing is retried; a
 write to a read-only unit is refused. A card changed while the system

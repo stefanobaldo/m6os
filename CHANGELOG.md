@@ -94,9 +94,11 @@ to install.
   contract's two queries with them where the device offers them, and
   the kernel asks where that saves a walk of the table: the free count
   of `statfs`, and a new cluster once the table sector the allocator
-  was probing is full. The commands and the queries carry 32-bit
-  cluster numbers and a FAT32 type, for a kernel that mounts FAT32 one
-  day; the emulated cartridge answers all three types.
+  was probing is full; a next-free answer that is no free cluster of
+  the volume is not taken, and the table is walked instead. The
+  commands and the queries carry 32-bit cluster numbers and a FAT32
+  type, for a kernel that mounts FAT32 one day; the emulated cartridge
+  answers all three types.
 - `df`: every mounted volume's size, use and free space in KB, under a
   header, with the filesystem; the free count the device's on a
   cartridge with the accelerator, the kernel's walk elsewhere.

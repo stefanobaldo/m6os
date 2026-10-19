@@ -372,7 +372,7 @@ fat_alloc:
         ld      hl,0                    ; the span: to the table's end
         call    .query
         jr      c,.fetch
-        jr      nz,.found
+        jp      nz,.qfound
         ld      hl,2                    ; nothing free to the end
         ld      (SG+VW_ACUR),hl
         ld      a,(SG+VW_AHSEC)         ; probes left, should the loop
@@ -390,27 +390,8 @@ fat_alloc:
         inc     hl                      ; the span: through the hint's sector
         call    .query
         jr      c,.fetch
-        jr      nz,.found
+        jr      nz,.qfound
         jr      .nospc
-; .query — HL = the span: DQ_FATNEXT from VW_ACUR. NZ with VW_ACUR = the
-; cluster found; Z for none; CF when the device did not answer, VW_ANOQ
-; set so it is not asked again. Corrupts everything.
-.query: ld      (SG+VV_T+6),hl
-        ld      hl,(SG+VW_ACUR)
-        ld      de,0
-        ld      a,(SG+VW_AVOL)
-        ld      b,DQ_FATNEXT
-        call    fat_query
-        jr      c,.refused
-        ld      (SG+VW_ACUR),hl
-        ld      a,h
-        or      l                       ; 0 is never a cluster
-        ret
-.refused:
-        ld      a,1
-        ld      (SG+VW_ANOQ),a
-        scf
-        ret
 .found: ld      a,(SG+VW_AVOL)
         call    fat_eoc
         ld      hl,(SG+VW_ACUR)
@@ -450,6 +431,54 @@ fat_alloc:
 .out:   pop     hl
         scf
         ret
+; .query — HL = the span: DQ_FATNEXT from VW_ACUR. NZ with VW_ACUR = the
+; cluster found; Z for none; CF when the device did not answer, or
+; answered with what no cluster can be — a high word, 1, or past the
+; last — VW_ANOQ set so it is not asked again. Corrupts everything.
+.query: ld      (SG+VV_T+6),hl
+        ld      hl,(SG+VW_ACUR)
+        ld      de,0
+        ld      a,(SG+VW_AVOL)
+        ld      b,DQ_FATNEXT
+        call    fat_query
+        jr      c,.refused
+        ld      a,d
+        or      e
+        jr      nz,.refused
+        ld      a,h
+        or      l                       ; 0 is never a cluster: none
+        ret     z
+        ld      a,l
+        dec     a
+        or      h                       ; 1 is the reserved entry
+        jr      z,.refused
+        ex      de,hl
+        ld      hl,(SG+VW_ALAST)
+        or      a
+        sbc     hl,de
+        jr      c,.refused              ; past the last cluster
+        ld      (SG+VW_ACUR),de
+        or      1                       ; NZ, NC
+        ret
+.refused:
+        ld      a,1
+        ld      (SG+VW_ANOQ),a
+        scf
+        ret
+; .qfound — the device's cluster, taken once its entry reads 0 here; one
+; that does not is a device not asked again, and the walk goes on from
+; it. The entry's sector is the one fat_set reads next.
+.qfound:
+        ld      hl,(SG+VW_ACUR)
+        ld      a,(SG+VW_AVOL)
+        call    fat_get
+        ret     c
+        ld      a,h
+        or      l
+        jp      z,.found
+        ld      a,1
+        ld      (SG+VW_ANOQ),a
+        jp      .fetch
 
 ; fat_eoc — A = a volume: DE = the mark a chain's last entry holds there,
 ; 0FFFh or 0FFFFh. Corrupts AF, IX.
