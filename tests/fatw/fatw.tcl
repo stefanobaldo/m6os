@@ -11,6 +11,40 @@
 # script's, once the emulator has closed the images.
 set show_screen 1
 
+# On the Turbo cartridge, a device that lies: the allocator's one
+# next-free answer of the run (step 13's 257th cluster) is rewritten as
+# the kernel receives it, to 1 — the reserved entry, which a chain must
+# never take. The allocator must refuse it and find the cluster itself,
+# so the files, the counts and the checker's verdict stay what an honest
+# device gives. The address is the instruction after fat_alloc's call to
+# fat_query, from the switched part's listing, its bytes checked so that
+# the breakpoint acts only with that part mapped; ::lie_hl and ::lie_de
+# hold the answer told.
+set ::lies 0
+if {![info exists ::lie_hl]} { set ::lie_hl 1 }
+if {![info exists ::lie_de]} { set ::lie_de "" }
+if {[info exists ::env(M6_CART)] && $::env(M6_CART) eq "turbo"} {
+    set fh [open [file join $::env(M6_TEST_DIR) .. .. build kseg.lst] r]
+    set state ""
+    set ::lie_at ""
+    foreach line [split [read $fh] \n] {
+        if {![regexp {^\s*\d+\+*\s+([0-9A-F]{4})\s+(.*)$} $line -> a rest]} { continue }
+        if {$state eq "call"} { set ::lie_at 0x$a; set ::lie_op 0x[string range $rest 0 1]; break }
+        if {[string match "*.query:*" $rest]} { set state query }
+        if {$state eq "query" && [string match "*call    fat_query*" $rest]} { set state call }
+    }
+    close $fh
+    if {$::lie_at eq ""} { puts stderr "fatw.tcl: no call to fat_query after .query in kseg.lst"; exit 2 }
+    proc lie {} {
+        if {[peek $::lie_at] != $::lie_op || ([reg f] & 1)} { return }
+        if {$::lies} { return }
+        if {$::lie_hl ne ""} { reg hl $::lie_hl }
+        if {$::lie_de ne ""} { reg de $::lie_de }
+        incr ::lies
+    }
+    debug set_bp $::lie_at {} {lie}
+}
+
 proc days_from_civil {y m d} {
     if {$m <= 2} { incr y -1 }
     set era [expr {($y >= 0 ? $y : $y - 399) / 400}]
@@ -89,6 +123,8 @@ proc post_verdict {} {
         binary scan [debug read_block {SD Mapper V2 m6block} 0x40 4] iu n
         if {$n < 4} { return "the block answered $n FAT accelerator commands; at least 4 were expected" }
         puts stderr "harness: $::test: the block answered $n FAT accelerator commands"
+        if {!$::lies} { return "the allocator never asked the device: no lie was told" }
+        puts stderr "harness: $::test: the allocator refused the device's false answer"
     }
     return ""
 }
