@@ -134,14 +134,14 @@ t_entry:
         call    t_streq
         ld      a,0E4h
         jp      nz,t_fail
-        ; readdir /: the nine names, each once, nothing else — five
+        ; readdir /: the ten names, each once, nothing else — six
         ; under the ROM, whose volume carries no system files.
         ld      hl,p_root
         ld      de,root_names
     IFDEF M6_ROM
-        ld      a,5
+        ld      a,6
     ELSE
-        ld      a,9
+        ld      a,10
     ENDIF
         call    t_listdir
         jp      c,t_fail
@@ -368,10 +368,29 @@ t_entry:
         ld      hl,t_k10b
         k_call  API_CON_PUTS
 
-; --- step 11: the current directory -------------------------------------------
+; --- step 11: the direct path's runs -------------------------------------------
         ld      a,11
         ld      (t_step),a
         ld      hl,t_k11
+        k_call  API_CON_PUTS
+        ld      hl,p_runs               ; /runs, a program on the volume
+        ld      de,0
+        ld      bc,t_fdinh
+        xor     a
+        sys     SYS_SPAWNV
+        jp      c,t_fail
+        k_call  API_WAIT
+        jp      c,t_fail
+        ld      a,l
+        or      a
+        jp      nz,t_fail_status
+        ld      hl,t_ok
+        k_call  API_CON_PUTS
+
+; --- step 12: the current directory -------------------------------------------
+        ld      a,12
+        ld      (t_step),a
+        ld      hl,t_k12
         k_call  API_CON_PUTS
         ld      hl,p_bin
         sys     SYS_CHDIR
@@ -478,10 +497,10 @@ t_entry:
         ld      hl,t_ok
         k_call  API_CON_PUTS
 
-; --- step 12: exec ---------------------------------------------------------------
-        ld      a,12
+; --- step 13: exec ---------------------------------------------------------------
+        ld      a,13
         ld      (t_step),a
-        ld      hl,t_k12
+        ld      hl,t_k13
         k_call  API_CON_PUTS
         ; A spawned child execs hello with three arguments: 7.
         ld      hl,u_exec1
@@ -561,10 +580,10 @@ t_entry:
         ld      hl,t_ok
         k_call  API_CON_PUTS
 
-; --- step 13: the short forms, and a volume's parameters --------------------
-        ld      a,13
+; --- step 14: the short forms, and a volume's parameters --------------------
+        ld      a,14
         ld      (t_step),a
-        ld      hl,t_k13
+        ld      hl,t_k14
         k_call  API_CON_PUTS
         ld      hl,p_short              ; /short, a program on the volume
         ld      de,0
@@ -779,9 +798,10 @@ t_k9:       db  "9 stat /bin/hello size ",0
 t_attr:     db  " attr ",0
 t_k10:      db  "10 reader",10,0
 t_k10b:     db  "10 reader ok",10,0
-t_k11:      db  "11 chdir: ",0
-t_k12:      db  "12 exec: ",0
-t_k13:      db  "13 short",10,0
+t_k11:      db  "11 runs",0
+t_k12:      db  "12 chdir: ",0
+t_k13:      db  "13 exec: ",0
+t_k14:      db  "14 short",10,0
 t_ok:       db  " ok",10,0
 t_pass:     db  "PASS",10,0
 t_sfail:    db  "FAIL step ",0
@@ -811,6 +831,7 @@ p_rootdd:   db  "/..",0
 p_mntbdd:   db  "/mnt/b/..",0
 p_short:    db  "/short",0
 p_reader:   db  "/reader",0
+p_runs:     db  "/runs",0
 t_fdinh:    db  0,1,2
 p_long:     db  "/"
             DUP PATH_MAX
@@ -828,7 +849,7 @@ root_names:
     IFNDEF M6_ROM
             db  "NEXTOR.SYS",0,"COMMAND2.COM",0,"VFS.COM",0,"AUTOEXEC.BAT",0
     ENDIF
-            db  "BIN",0,"DATA",0,"ETC",0,"SHORT",0,"READER",0,0
+            db  "BIN",0,"DATA",0,"ETC",0,"SHORT",0,"READER",0,"RUNS",0,0
 bin_names:  db  ".",0,"..",0,"HELLO",0,"TWO",0,"THREE",0,"BIG16K",0,0
 etc_names:  db  ".",0,"..",0,"MOTD",0
             db  "PAD01",0,"PAD02",0,"PAD03",0,"PAD04",0,"PAD05",0,"PAD06",0
