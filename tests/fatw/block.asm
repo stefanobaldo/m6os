@@ -869,7 +869,7 @@ t_entry:
         call    t_dfree
         ld      hl,t_ok
         k_call  API_CON_PUTS
-        jp      t_verdict
+        jp      t_step14
 
 ; t_w64k — HL = a path: created and 64K written to it, 128 writes of
 ; 512 bytes from t_buf, then closed. Fails the step on an error.
@@ -919,6 +919,27 @@ t_dfree:
         k_call  API_CON_PUTC
         ld      a,(t_dcode)
         jp      t_fail
+
+; --- step 14: runs written in one call -----------------------------------------
+t_step14:
+        ld      a,14
+        ld      (t_step),a
+        ld      hl,t_k14
+        k_call  API_CON_PUTS
+        ld      hl,p_wruns              ; /wruns, a program on the volume
+        ld      de,0
+        ld      bc,t_fdinh
+        xor     a
+        sys     SYS_SPAWNV
+        jp      c,t_fail
+        k_call  API_WAIT
+        jp      c,t_fail
+        ld      a,l
+        or      a
+        jp      nz,t_fail_status
+        call    t_clean
+        ld      hl,t_ok
+        k_call  API_CON_PUTS
 
 ; --- verdict --------------------------------------------------------------
 t_verdict:
@@ -1354,6 +1375,7 @@ t_k10b:     db  "10 writer ok",10,0
 t_k11:      db  "11 dirs:",0
 t_k12:      db  "12 full:",0
 t_k13:      db  "13 accel:",0
+t_k14:      db  "14 wruns:",0
 t_rootn:    db  "11 root entries ",0
 t_ok:       db  " ok",10,0
 t_pass:     db  "PASS",10,0
@@ -1377,6 +1399,7 @@ p_long83:   db  "/tmp/bad?name.txt",0    ; no name at all: ? is refused
 p_d1:       db  "/tmp/d1",0
 p_writer:   db  "/writer",0
 p_filler:   db  "/filler",0
+p_wruns:    db  "/wruns",0
 t_fdinh:    db  0FFh,0FFh,0FFh          ; spawnv: the caller's 0, 1, 2
 p_d2:       db  "/tmp/d1/d2",0
 p_d3:       db  "/tmp/d1/d2/d3",0
