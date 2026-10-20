@@ -725,9 +725,11 @@ wr_update_entry:
 ; sector of the caller's bytes from a 256-byte boundary of page 0-2 goes
 ; straight from the page; otherwise the sector's buffer — read when any
 ; byte of it lies below the old size, a buffer of zeros when none does —
-; takes the zeros and the bytes and is written at once. A cluster is
-; allocated from the chain's tail as the pass reaches it. Then the table
-; is flushed and the directory entry rewritten.
+; takes the zeros and the bytes and is written at once; whole sectors
+; from such a buffer go as a run of contiguous ones per call, up to the
+; page's end (run_gather). A cluster is allocated from the chain's tail
+; as the pass reaches it. Then the table is flushed and the directory
+; entry rewritten.
 ks_write:
         push    hl
         push    bc
@@ -1011,7 +1013,8 @@ ks_write:
 .dataok:
         ld      (SG+VW_DATA),hl
         ; Direct: no hole, at the sector's start, 512 left, the buffer on a
-        ; 256-byte boundary of page 0-2, the sector inside the page.
+        ; 256-byte boundary of page 0-2, the sector inside the page — then
+        ; as many contiguous sectors as the run allows.
         ld      hl,(SG+VW_HOLE)
         ld      a,h
         or      l
@@ -1034,22 +1037,19 @@ ks_write:
         and     3Fh
         cp      3Fh
         jr      z,.rmw
-        ld      c,a                     ; the slot
-        ld      a,b
-        rlca
-        rlca
-        and     3
-        push    bc
-        call    um_seg
-        pop     bc
-        ld      b,a                     ; the segment
-        ld      hl,(SG+VV_RSEC)
-        ld      de,(SG+VV_RSEC+2)
-        ld      a,(iy+OF_VOL)
+        ; Direct: a run gathered along the chain — allocated after its
+        ; end as the step below does — and written in one call, the
+        ; cursor moved to its last sector once the call succeeded.
+        ld      a,1                     ; allocate at the chain's end
+        call    run_gather
+        jp      c,.err
+        call    run_target
         k_call  API_BWRITE_DIRECT
         ld      iy,(SG+VV_ROW)
         jp      c,.err
-        jp      .advance                ; VW_DATA is 512
+        call    run_commit              ; bc = the run's bytes
+        ld      (SG+VW_DATA),bc
+        jp      .advance
 .rmw:   ; The sector's buffer: read when any byte of it lies below the old
         ; size, zeros when none does.
         ld      a,(iy+OF_POS+1)
@@ -1223,6 +1223,8 @@ ks_write:
 .err:   ld      (SG+VW_ERR),a
         ld      (iy+OF_CLUS),low OF_CLUS_NONE ; the cursor is for where the
         ld      (iy+OF_CLUS+1),high OF_CLUS_NONE ; pass stopped, not the position
+        ld      (iy+OF_TAIL),0          ; the chain may run past the size
+        ld      (iy+OF_TAIL+1),0        ; now: the next pass walks it
 .done:  ; The position: where the caller's bytes go, plus what was written.
         ld      hl,(SG+VW_P32)
         ld      bc,(SG+VV_RDONE)

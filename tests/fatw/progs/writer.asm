@@ -10,8 +10,9 @@
 O_CW        equ O_CREAT|O_WRONLY
 ; u_writer — three pages. (a) /mnt/d/big.bin on the FAT16 slave: 64K of
 ; the pattern in four 16K writes from page 1, timed, the driver calls
-; counted — 32 data + 2 table + 1 entry per write, plus the table sector's
-; first read: 141 — then read back through page 0 and compared. (b)
+; counted — 1 data run of 32 sectors + 2 table + 1 entry per write, plus
+; the table sector's first read: 17 — then read back through page 0 and
+; compared. (b)
 ; /tmp/b4k.bin: the same in 4K writes from page 0, timed. (c)
 ; /tmp/b1000.bin: the same in 1000-byte writes from an unaligned buffer.
 ; (d) b4k.bin reopened O_RDWR: 3000 bytes at 30000 inverted, the whole read
@@ -75,7 +76,7 @@ start:
         call    m6_dec16
         m6_puts .s_nl
         pop     hl
-        ld      de,141
+        ld      de,17
         or      a
         sbc     hl,de
         jp      nz,.x3
