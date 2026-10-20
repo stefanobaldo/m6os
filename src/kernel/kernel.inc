@@ -1203,6 +1203,7 @@ VV_RN           equ ST_VFS+308  ; the direct path's run: its sectors,
 VV_RNMAX        equ ST_VFS+309  ;    the most it may have,
 VV_RNCL         equ ST_VFS+310  ; 2: the cluster its last sector is in,
 VV_RNAL         equ ST_VFS+312  ;    1 = allocate at the chain's end
+VV_RNREF        equ ST_VFS+313  ; write: the allocator's refusal, 0 none
 VK_ENTRY        equ 0           ; VR_KIND: a directory entry (VR_ENT valid)
 VK_ROOT         equ 1           ; the root directory of VR_VOL
 VK_MNT          equ 2           ; the /mnt node
