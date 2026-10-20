@@ -29,7 +29,8 @@ start:
         call    .whole
         jp      nz,.x2
         ; Pass 2: rewind, and the sixteen reads alone, timed, the driver
-        ; calls counted: 128 sectors, 128 calls, the FAT already cached.
+        ; calls counted: 128 sectors in sixteen 4K reads, each one cluster
+        ; of the volume and one call, the FAT already cached: 16.
         ; Nothing is verified here — pass 1 did — so the ticks are the
         ; reads' and not the compare's.
         call    .rewind
@@ -70,7 +71,7 @@ start:
         call    m6_dec16
         m6_puts .s_nl
         pop     hl
-        ld      de,128
+        ld      de,16
         or      a
         sbc     hl,de
         jp      nz,.x4

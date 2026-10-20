@@ -2021,13 +2021,162 @@ add32_a:
         inc     de
         ret
 
+
+; ---------------------------------------------------------------------
+; Runs — the direct path's unit: contiguous sectors moved in one driver
+; call, up to the page's end. Shared by read and write.
+
+; run_gather — IY -> the row, its cursor (OF_CLUS, VV_RSIDX, VV_RSPC,
+; VV_RSEC) at the next sector to move, VV_RBUF on a 256-byte boundary of
+; a process page, VV_RLEFT >= 512: VV_RN = the run's length, the smallest
+; of what is left in whole sectors, the sectors to the page's end from the
+; buffer's slot — a page is 32 sectors, the block's limit too — and the
+; contiguous sectors along the chain from the cursor; VV_RNCL = the
+; cluster holding the run's last sector. A = 0 walks the chain as it
+; lies; A = 1 allocates after its end and links, as write's step does,
+; OF_TAIL following. The chain's end (A = 0), a link that cannot be
+; followed or an allocation refused end the run before them: the step
+; meets the error where it meets it today, after the run's bytes. CF with
+; the errno only when linking a new cluster failed, which leaves nothing
+; to write. The cursor is not moved. Corrupts everything but IY.
+run_gather:
+        ld      (SG+VV_RNAL),a
+        ld      a,(SG+VV_RBUF+1)
+        and     3Fh                     ; the slot
+        ld      c,a
+        ld      a,64
+        sub     c
+        srl     a                       ; sectors to the page's end, 1-32
+        ld      hl,(SG+VV_RLEFT)
+        srl     h                       ; h = left / 512
+        cp      h
+        jr      c,.max
+        ld      a,h
+.max:   ld      (SG+VV_RNMAX),a
+        ld      a,(SG+VV_RSIDX)
+        ld      c,a
+        ld      a,(SG+VV_RSPC)
+        sub     c                       ; the rest of this cluster, >= 1
+        ld      hl,SG+VV_RNMAX
+        cp      (hl)
+        jr      c,.first
+        ld      a,(hl)
+.first: ld      (SG+VV_RN),a
+        ld      l,(iy+OF_CLUS)
+        ld      h,(iy+OF_CLUS+1)
+        ld      (SG+VV_RNCL),hl
+.walk:  ld      a,(SG+VV_RN)
+        ld      hl,SG+VV_RNMAX
+        cp      (hl)
+        ret     nc                      ; as long as allowed
+        ld      hl,(SG+VV_RNCL)
+        ld      a,(iy+OF_VOL)
+        call    fat_next
+        ld      iy,(SG+VV_ROW)
+        jr      c,.stop                 ; a link that cannot be followed
+        jr      nz,.have
+        ld      a,(SG+VV_RNAL)
+        or      a
+        jr      z,.stop                 ; the chain ends: so does the run
+        ld      hl,(SG+VV_RNCL)
+        ld      a,(iy+OF_VOL)
+        call    fat_alloc
+        ld      iy,(SG+VV_ROW)
+        jr      c,.stop                 ; refused: the step meets it
+        ex      de,hl                   ; de = the new cluster
+        ld      hl,(SG+VV_RNCL)
+        push    de
+        ld      a,(iy+OF_VOL)
+        call    fat_set
+        ld      iy,(SG+VV_ROW)
+        pop     hl
+        ret     c
+        ld      (iy+OF_TAIL),l
+        ld      (iy+OF_TAIL+1),h
+.have:  ld      de,(SG+VV_RNCL)
+        inc     de
+        or      a
+        sbc     hl,de
+        jr      nz,.stop                ; not the neighbour: the next run's
+        ld      (SG+VV_RNCL),de
+        ld      a,(SG+VV_RNMAX)
+        ld      hl,SG+VV_RN
+        sub     (hl)                    ; the room left in the run
+        ld      c,a
+        ld      a,(SG+VV_RSPC)
+        cp      c
+        jr      c,.add
+        ld      a,c                     ; the room, not the whole cluster
+.add:   add     a,(hl)
+        ld      (hl),a
+        jr      .walk
+.stop:  or      a
+        ret
+
+; run_target — the call's registers for the run: B = the segment behind
+; the buffer's page, C = its slot, DE:HL = the run's first sector, A = the
+; volume with VV_RN - 1 in bits 3-7, blk_rw's count. Corrupts everything
+; but IY.
+run_target:
+        ld      a,(SG+VV_RBUF+1)
+        rlca
+        rlca
+        and     3
+        call    um_seg                  ; a = the segment
+        ld      b,a
+        ld      a,(SG+VV_RBUF+1)
+        and     3Fh
+        ld      c,a
+        ld      a,(SG+VV_RN)
+        dec     a
+        rlca
+        rlca
+        rlca                            ; (n - 1) << 3
+        ld      e,a
+        ld      a,(iy+OF_VOL)
+        or      e
+        ld      hl,(SG+VV_RSEC)
+        ld      de,(SG+VV_RSEC+2)
+        ret
+
+; run_commit — after the call succeeded: the cursor to the run's last
+; sector — VV_RSEC, OF_CLUS = VV_RNCL, VV_RSIDX its index in that cluster
+; — so that the loop's step moves to the one after it; BC = the run's
+; bytes, VV_RN x 512. Corrupts AF, DE, HL.
+run_commit:
+        ld      a,(SG+VV_RN)
+        ld      c,a
+        dec     a
+        ld      hl,(SG+VV_RSEC)
+        ld      de,(SG+VV_RSEC+2)
+        call    add32_a
+        ld      (SG+VV_RSEC),hl
+        ld      (SG+VV_RSEC+2),de
+        ld      hl,(SG+VV_RNCL)
+        ld      (iy+OF_CLUS),l
+        ld      (iy+OF_CLUS+1),h
+        ld      a,(SG+VV_RSPC)
+        dec     a
+        ld      e,a                     ; spc - 1: spc is a power of two
+        ld      a,(SG+VV_RSIDX)
+        add     a,c
+        dec     a
+        and     e
+        ld      (SG+VV_RSIDX),a
+        ld      a,c
+        add     a,a
+        ld      b,a
+        ld      c,0                     ; bc = n * 512
+        ret
+
 ; ks_read — the switched half of SYS_READ: A = the open-file row's index
 ; (the resident resolved the descriptor), HL = buffer, BC = length. Out:
 ; HL = bytes read, 0 at the end of the file; E_ISDIR on a directory; an
 ; error after some bytes were delivered returns them and is owed to the
-; next call (OFF_ERR, OF_ERRNO). A whole sector to a 256-byte boundary of
-; page 0-2 that does not cross the page goes straight from the driver;
-; everything else through the cache and the copy.
+; next call (OFF_ERR, OF_ERRNO). Whole sectors to a 256-byte boundary of
+; page 0-2 go straight from the driver, a run of contiguous ones per call
+; up to the page's end (run_gather); everything else through the cache
+; and the copy, a sector at a time.
 ks_read:
         call    um_check                ; the buffer, before a byte moves
         ret     c
@@ -2159,24 +2308,15 @@ ks_read:
         and     3Fh
         cp      3Fh
         jr      z,.copy                 ; the sector would cross the page
-        ld      c,a                     ; c = the slot
-        ld      a,b
-        rlca
-        rlca
-        and     3
-        push    hl
-        push    de
-        push    bc
-        call    um_seg
-        pop     bc
-        pop     de
-        pop     hl
-        ld      b,a                     ; b = the segment
-        ld      a,(iy+OF_VOL)
+        ; Direct: a run of contiguous sectors in one call, the cursor
+        ; moved to its last sector only once the call succeeded.
+        xor     a                       ; the chain as it lies
+        call    run_gather
+        call    run_target
         k_call  API_BREAD_DIRECT
         ld      iy,(SG+VV_ROW)
         jp      c,.err
-        ld      bc,512
+        call    run_commit              ; bc = the run's bytes
         jr      .advance
 .copy:  ld      a,(iy+OF_VOL)
         k_call  API_BGET
