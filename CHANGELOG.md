@@ -50,7 +50,8 @@ to install.
   the slave are both served, interrupts stay enabled while a sector moves,
   and up to 32 sectors move per call — on the emulator, a 32-sector transfer
   costs about a third less than through the Nextor driver, and a file read
-  through `read()`, one sector per call today, about a tenth less. The boot
+  through `read()`, which then asked for one sector per call, about a
+  tenth less. The boot
   listing names each disk by the model it reports. The ROM with the Nextor
   driver remains as `build/m6-sunriseide-legacy.rom`.
 - The kernel ROM for the FBLabs SD Mapper V2. `make rom` builds
@@ -83,9 +84,10 @@ to install.
   the cartridge's mapper the machine's main memory when the BIOS has not,
   the memory lines of the boot listing show the machine's own mapper
   unused beside it, and the volume's row ends with the word `turbo`. On
-  the emulated cartridge a 64 KB `read()` takes over a quarter less time
-  than through the SPI window, and a 32-sector transfer a small fraction
-  of it. A cartridge that offers Turbo with no mapper behind the claim
+  the emulated cartridge a 64 KB `read()` in 4 KB pieces takes about a
+  sixth of the time it takes through the SPI window, and a 32-sector
+  transfer a small fraction of it. A cartridge that offers Turbo with no
+  mapper behind the claim
   is found out at boot and run as before. No cartridge offers Turbo yet.
 - The FAT accelerator, the block device's second capability: two
   commands, defined in `docs/block-device.md`, by which a cartridge
@@ -142,9 +144,11 @@ to install.
   way a PC does them — up to 255 characters, their case kept, a short alias
   such as `MYDOCU~1.TXT` beside each — matched without regard to case, a
   current directory per process, and eight file descriptors per process
-  inherited by its children. A whole sector read into a buffer on a
-  256-byte boundary goes from the driver straight into the program's memory, so
-  sequential reads run at the driver's speed.
+  inherited by its children. Whole sectors read into a buffer on a
+  256-byte boundary go from the driver straight into the program's memory,
+  up to 32 contiguous sectors — a program's page — per driver call, so
+  sequential reads run at the driver's speed and call it as rarely as the
+  file's layout allows.
 - Running a program from a file. `exec` replaces a process's image with a
   program read from a file and hands it its arguments; a file without m6's
   six-byte header is refused with `ENOEXEC`. See
@@ -159,7 +163,8 @@ to install.
   cannot be removed while open; the read-only attribute is honoured; the
   modification time comes from the real-time clock. Whole sectors from a
   buffer on a 256-byte boundary go straight from the program's memory to the
-  driver. The test suite writes to FAT12 and FAT16 volumes and hands the
+  driver, up to 32 contiguous sectors per call, the clusters a run needs
+  allocated before it is written. The test suite writes to FAT12 and FAT16 volumes and hands the
   images to the host's FAT checker afterwards.
 - Pipes. `pipe` makes one and returns its two ends as descriptors; bytes go
   in at the write end and come out at the read end in order, 256 at a time

@@ -84,8 +84,13 @@ in the kernel can reach the partition table or a neighbouring partition
 through a volume. A Nextor driver moves one sector per call, with
 interrupts disabled for that sector and enabled between two, so the tick
 is delayed, never lost. A driver written for m6 moves up to 32 sectors per
-call with interrupts enabled; the kernel asks for one sector at
-a time today. The kernel keeps a cache of 22 sectors, written
+call with interrupts enabled, and the kernel asks for as many as it can
+use: whole sectors read or written straight between the driver and a
+program's memory go in runs of contiguous sectors, each run bounded by
+the end of the program's page — 32 sectors — by what the call has left
+to move and by where the file's next cluster lies on the volume. A run
+the driver refuses moves nothing, and the call reports what the runs
+before it moved. The kernel keeps a cache of 22 sectors, written
 through: a write reaches the disk before the call that made it returns,
 so there is nothing to flush and a card pulled after a call has everything
 the call wrote. Whole, aligned sectors go from the driver straight into a
