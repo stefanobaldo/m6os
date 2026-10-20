@@ -353,3 +353,9 @@ to install.
   from the cartridge, nothing had filled them. It now takes the slot from what
   the kernel recorded at boot, in every boot mode, and leaves those
   variables filled for the program, as MSX-DOS does.
+- A `write()` that failed left the file descriptor remembering the cluster
+  it had just linked as the file's last, and the next `write()` on that
+  descriptor trusted it: at a cluster boundary it skipped a cluster linked
+  but never written, and inside one it put the bytes in the wrong cluster.
+  A failed `write()` now forgets it, and the next one follows the file's
+  chain from the current position.
