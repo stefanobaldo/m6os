@@ -164,7 +164,7 @@ API_BGET        equ 20          ; A = volume, DE:HL = sector -> HL = buffer
 API_BWRITE      equ 21          ; HL = buffer
 API_BDROP       equ 22          ; A = volume, DE:HL = sector
 API_BINVAL      equ 23          ; A = volume
-API_BREAD_DIRECT equ 24         ; A = volume, DE:HL = sector, B = segment,
+API_BREAD_DIRECT equ 24         ; A = volume | (count - 1) << 3, DE:HL = sector, B = segment,
                                 ; C = slot
 API_BWRITE_DIRECT equ 25        ; the same, writing; bdrop first
 API_RTC_READ    equ 26          ; -> HL = FAT date, DE = FAT time
@@ -1199,6 +1199,10 @@ VV_SFVOL        equ ST_VFS+302  ; statfs: the volume,
 VV_SFFLG        equ ST_VFS+303  ;    its B
 VW_UTIME        equ ST_VFS+304  ; 2: utime: the time,
 VW_UDATE        equ ST_VFS+306  ; 2: the date
+VV_RN           equ ST_VFS+308  ; the direct path's run: its sectors,
+VV_RNMAX        equ ST_VFS+309  ;    the most it may have,
+VV_RNCL         equ ST_VFS+310  ; 2: the cluster its last sector is in,
+VV_RNAL         equ ST_VFS+312  ;    1 = allocate at the chain's end
 VK_ENTRY        equ 0           ; VR_KIND: a directory entry (VR_ENT valid)
 VK_ROOT         equ 1           ; the root directory of VR_VOL
 VK_MNT          equ 2           ; the /mnt node

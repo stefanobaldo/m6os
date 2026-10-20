@@ -268,21 +268,41 @@ bc_mark_fat:
         set     1,(ix+H_FLAGS)          ; HF_FAT
         ret
 
-; ks_bread_direct — A = volume, DE:HL = sector, B = segment, C = slot:
+; ks_bread_direct — A = volume | (count - 1) << 3 as blk_rw reads it,
+; DE:HL = the first sector, B = segment, C = slot: 1 to 32 sectors
 ; straight from the driver into the target. The cache never holds a copy
 ; newer than the disk, so nothing else is needed.
 ks_bread_direct:
         or      a                       ; read
         jp      K_API+3*API_BLK_RW
 
-; ks_bwrite_direct — the same, writing: the cached copy of the sector, if
-; any, is dropped first.
+; ks_bwrite_direct — the same, writing: the cached copy of every sector of
+; the run, if any, is dropped first.
 ks_bwrite_direct:
         push    af
         push    bc
         push    de
         push    hl
-        call    ks_bdrop
+        ld      c,a
+        rrca
+        rrca
+        rrca
+        and     1Fh
+        inc     a
+        ld      b,a                     ; b = the count
+        ld      a,c
+        and     7                       ; a = the volume
+.drop:  push    bc
+        call    ks_bdrop                ; preserves A, DE, HL
+        pop     bc
+        inc     hl
+        ld      c,a
+        ld      a,h
+        or      l
+        ld      a,c
+        jr      nz,.next
+        inc     de
+.next:  djnz    .drop
         pop     hl
         pop     de
         pop     bc
