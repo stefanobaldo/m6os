@@ -60,5 +60,5 @@ fail2:  ld      a,2
 s_file: db      "/BIG",0
 fd:     db      0
 pos:    dw      0
-        ds      100h-(($-start+P0_PROG) & 0FFh)
+        align   256                     ; buf on a 256-byte boundary
 buf:    ds      4096
