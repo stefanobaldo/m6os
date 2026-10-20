@@ -739,6 +739,8 @@ ks_write:
         pop     hl
         ld      (SG+VV_ROW),iy          ; reloaded after every call that may
                                         ; reach the driver
+        xor     a
+        ld      (SG+VV_RNREF),a         ; no refusal in this call yet
         bit     0,(iy+OF_FLAGS)         ; OFF_DIR
         jp      nz,.isdir
         bit     4,(iy+OF_FLAGS)         ; OFF_WR
@@ -1191,7 +1193,10 @@ ks_write:
         ld      (iy+OF_CLUS),l
         ld      (iy+OF_CLUS+1),h
         jp      .done
-.alloc: ld      l,(iy+OF_CLUS)
+.alloc: ld      a,(SG+VV_RNREF)        ; a run's gather was refused in
+        or      a                       ;   this call: the table has been
+        jp      nz,.err                 ;   searched once already
+        ld      l,(iy+OF_CLUS)
         ld      h,(iy+OF_CLUS+1)
         ld      a,(iy+OF_VOL)
         call    fat_alloc

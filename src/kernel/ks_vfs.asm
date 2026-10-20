@@ -2036,7 +2036,8 @@ add32_a:
 ; lies; A = 1 allocates after its end and links, as write's step does,
 ; OF_TAIL following. The chain's end (A = 0), a link that cannot be
 ; followed or an allocation refused end the run before them: the step
-; meets the error where it meets it today, after the run's bytes. CF with
+; meets the error where it meets it today, after the run's bytes; a
+; refusal's errno is kept in VV_RNREF for the step to return. CF with
 ; the errno only when linking a new cluster failed, which leaves nothing
 ; to write. The cursor is not moved. Corrupts everything but IY.
 run_gather:
@@ -2082,7 +2083,7 @@ run_gather:
         ld      a,(iy+OF_VOL)
         call    fat_alloc
         ld      iy,(SG+VV_ROW)
-        jr      c,.stop                 ; refused: the step meets it
+        jr      c,.refused              ; refused: the step meets it
         ex      de,hl                   ; de = the new cluster
         ld      hl,(SG+VV_RNCL)
         push    de
@@ -2110,6 +2111,8 @@ run_gather:
 .add:   add     a,(hl)
         ld      (hl),a
         jr      .walk
+.refused:
+        ld      (SG+VV_RNREF),a         ; the step answers it, not a search
 .stop:  or      a
         ret
 

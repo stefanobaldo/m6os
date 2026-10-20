@@ -45,6 +45,41 @@ if {[info exists ::env(M6_CART)] && $::env(M6_CART) eq "turbo"} {
     debug set_bp $::lie_at {} {lie}
 }
 
+# On every form: the allocator refuses at most once per write(). A run
+# that meets a full volume stops before the refusal, and the step after
+# it must answer that refusal, not search the table again. Breakpoints
+# at ks_write's entry and at fat_alloc's E_NOSPC, from the switched
+# part's listing, each acting only when its byte is there.
+proc lst_addr {after match} {
+    set fh [open [file join $::env(M6_TEST_DIR) .. .. build kseg.lst] r]
+    set state ""
+    set at ""
+    foreach line [split [read $fh] \n] {
+        if {![regexp {^\s*\d+\+*\s+([0-9A-F]{4})\s+(.*)$} $line -> a rest]} { continue }
+        if {$state eq ""} { if {[string match $after $rest]} { set state in } else { continue } }
+        if {[regexp {^([0-9A-F]{2}) } $rest -> op] && [string match $match $rest]} { set at [list 0x$a 0x$op]; break }
+    }
+    close $fh
+    if {$at eq ""} { puts stderr "fatw.tcl: $match after $after not found in kseg.lst"; exit 2 }
+    return $at
+}
+lassign [lst_addr "ks_write:*" "*"] ::wr_at ::wr_op
+lassign [lst_addr "fat_alloc:*" "* .nospc: *"] ::ns_at ::ns_op
+set ::refusals 0
+set ::in_write 0
+set ::twice 0
+proc wr_entry {} {
+    if {[peek $::wr_at] != $::wr_op} { return }
+    set ::in_write 0
+}
+proc ns_hit {} {
+    if {[peek $::ns_at] != $::ns_op} { return }
+    incr ::refusals
+    if {[incr ::in_write] > 1} { incr ::twice }
+}
+debug set_bp $::wr_at {} {wr_entry}
+debug set_bp $::ns_at {} {ns_hit}
+
 proc days_from_civil {y m d} {
     if {$m <= 2} { incr y -1 }
     set era [expr {($y >= 0 ? $y : $y - 399) / 400}]
@@ -115,6 +150,9 @@ proc post_verdict {} {
         if {$data ne [pattern $inverted]} { return "$f does not hold the pattern" }
     }
     puts stderr "harness: $::test: b4k.bin and b1000.bin hold the pattern"
+    if {$::twice} { return "the allocator refused $::twice time(s) a second time in one write() ($::refusals refusals in all)" }
+    if {$::refusals < 2} { return "the allocator refused $::refusals time(s); the filled volume should give at least 2" }
+    puts stderr "harness: $::test: the allocator refused $::refusals times, never twice in one write()"
     # On the Turbo cartridge the block counts the commands it started:
     # the FAT accelerator's must have been asked — step 12's and step
     # 13's counts through statfs, and the allocator's next-free query
